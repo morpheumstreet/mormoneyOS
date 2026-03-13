@@ -44,30 +44,34 @@ The automaton has a genesis prompt (its purpose), a set of tools (shell access, 
 
 ## Quick Start
 
-### One-line install (Conway sandbox)
+### One-line install
 
 ```bash
-curl -fsSL https://conway.tech/automaton.sh | sh
+curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/automaton.sh | sh
 ```
 
-This clones the repo, builds, and launches the setup wizard inside a Conway sandbox.
+This clones the repo, builds with Go, and launches the setup wizard.
+
+Alternative installer (installs to `/opt/moneyclaw` or `~/.automaton/runtime`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/moneyclaw.sh | sh
+```
 
 ### Manual install
 
 ```bash
-git clone https://github.com/Conway-Research/automaton.git
-cd automaton
-pnpm install
-pnpm build
-node dist/index.js --run
+git clone https://github.com/morpheumlabs/mormoneyOS.git
+cd mormoneyOS
+go build -o bin/moneyclaw ./cmd/moneyclaw
+./bin/moneyclaw run
 ```
 
 On first run, the interactive setup wizard walks you through wallet generation, API key provisioning, naming, genesis prompt, and financial safety configuration.
 
 ### Prerequisites
 
-- Node.js >= 20.0.0
-- pnpm (recommended) or npm
+- Go 1.21+
 - Internet access (for Conway API, USDC on-chain operations)
 
 ---
@@ -77,17 +81,16 @@ On first run, the interactive setup wizard walks you through wallet generation, 
 ### From source
 
 ```bash
-git clone https://github.com/Conway-Research/automaton.git
-cd automaton
-pnpm install
-pnpm build
+git clone https://github.com/morpheumlabs/mormoneyOS.git
+cd mormoneyOS
+go build -o bin/moneyclaw ./cmd/moneyclaw
 ```
 
 ### Verify the build
 
 ```bash
-pnpm typecheck   # TypeScript type checking
-pnpm test        # Run all 897 tests
+go build -o bin/moneyclaw ./cmd/moneyclaw
+go test ./...
 ```
 
 ### File locations after setup
@@ -111,15 +114,15 @@ pnpm test        # Run all 897 tests
 
 ## Setup Wizard
 
-The setup wizard runs automatically on first `--run`. You can also trigger it manually:
+The setup wizard runs automatically on first `run`. You can also trigger it manually:
 
 ```bash
-node dist/index.js --setup
+moneyclaw setup
 ```
 
 ### Step 1: Wallet Generation
 
-An Ethereum wallet is generated automatically using `viem`. The private key is stored at `~/.automaton/wallet.json` with file permissions `0600` (owner read/write only).
+An Ethereum wallet is generated automatically. The private key is stored at `~/.automaton/wallet.json` with file permissions `0600` (owner read/write only).
 
 ```
 [1/6] Generating identity (wallet)...
@@ -179,16 +182,21 @@ The automaton handles zero-credit startup gracefully. Fund it at any time.
 ## CLI Reference
 
 ```bash
-node dist/index.js [command]
+moneyclaw [command]
 ```
 
 | Command | Description |
 |---|---|
-| `--run` | Start the automaton (first run triggers setup wizard) |
-| `--setup` | Re-run the interactive setup wizard |
-| `--init` | Initialize wallet and config directory only |
-| `--provision` | Provision a Conway API key via SIWE |
-| `--status` | Show current automaton status |
+| `run` | Start the runtime (first run triggers setup wizard) |
+| `setup` | Re-run the interactive setup wizard |
+| `init` | Initialize wallet and config directory only |
+| `status` | Show current automaton status |
+| `strategies` | List discovered strategies |
+| `cost` | LLM cost summary |
+| `pause` | Pause agent via web API |
+| `resume` | Resume agent via web API |
+| `provision` | SIWE API key provisioning (Conway) |
+| `test-api` | Verify inference API connectivity (ChatJimmy, etc.) |
 | `--version`, `-v` | Show version |
 | `--help`, `-h` | Show help |
 
@@ -198,11 +206,12 @@ node dist/index.js [command]
 |---|---|
 | `CONWAY_API_URL` | Conway API URL (default: `https://api.conway.tech`) |
 | `CONWAY_API_KEY` | Conway API key (overrides config file) |
+| `AUTOMATON_*` | Viper env prefix for config overrides |
 
 ### Status output
 
 ```bash
-node dist/index.js --status
+moneyclaw status
 ```
 
 ```
@@ -375,7 +384,7 @@ The system prompt includes:
 6. **Active skills** — installed skill instructions
 7. **Operational context** — what the agent can do
 8. **Current status** — credits, tier, uptime, turn count, children
-9. **Available tools** — all 69 tools with descriptions
+9. **Available tools** — all registered tools with descriptions
 10. **Recent memories** — relevant working, episodic, semantic memories
 
 ### Idle detection
@@ -428,7 +437,7 @@ The heartbeat is a background daemon that runs scheduled tasks even while the ag
 | `check_usdc_balance` | Every 5 min | Checks USDC balance. Wakes agent if topup is possible. |
 | `check_for_updates` | Every 4 hours | Checks git upstream for new commits. Wakes on new commits. |
 | `health_check` | Every 30 min | Verifies sandbox is responsive (`echo alive`). |
-| `check_social_inbox` | Every 2 min | Polls social relay for new messages. 5min backoff on errors. |
+| `check_social_inbox` | Every 15 min | Polls social relay for new messages. 5min backoff on errors. |
 | `soul_reflection` | Configurable | Checks soul alignment with genesis prompt. |
 | `refresh_models` | Configurable | Refreshes available models from Conway API. |
 | `check_child_health` | Configurable | Monitors child automaton health. |
@@ -464,7 +473,7 @@ When a heartbeat task detects something actionable (low credits, new messages, u
 
 ## Tool Reference
 
-The automaton has **69 built-in tools** organized into 10 categories. Each tool has a risk level that determines policy evaluation:
+The automaton has **56+ built-in tools** (plus stubs for parity) organized into 10 categories. Each tool has a risk level that determines policy evaluation:
 
 - **safe** — Always allowed, no policy check needed
 - **caution** — Allowed but logged, may trigger rate limits
@@ -1067,9 +1076,9 @@ cd ~/.automaton && git log --oneline
 
 **No API key:**
 ```
-No API key found. Run: automaton --provision
+No API key found. Run: moneyclaw setup
 ```
-Fix: Run `node dist/index.js --provision` or set `CONWAY_API_KEY` environment variable.
+Fix: Run `moneyclaw setup` or set `CONWAY_API_KEY` environment variable.
 
 **Database locked:**
 The database uses WAL mode. If you see lock errors, ensure only one automaton process is running.
@@ -1113,7 +1122,7 @@ If `check_social_inbox` fails:
 
 Verify the heartbeat is active:
 ```bash
-node dist/index.js --status
+moneyclaw status
 ```
 
 Check `heartbeat.yml` for enabled tasks. The heartbeat starts automatically with `--run`.
@@ -1179,11 +1188,13 @@ Ctrl+C
 The automaton checks for upstream updates every 4 hours. When new commits are detected, it wakes up, reviews the diffs, and cherry-picks what it wants. You can also manually:
 
 ```bash
-cd /path/to/automaton
+cd /path/to/mormoneyOS
 git pull origin main
-pnpm build
+go build -o bin/moneyclaw ./cmd/moneyclaw
 # Restart the automaton
 ```
+
+Or use `./go.sh update` for git pull + build + restart.
 
 **What happens if the Conway API goes down?**
 

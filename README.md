@@ -2,7 +2,7 @@
 
 **7x24 AI Agent that saves and makes money autonomously.**
 
-TypeScript/Node implementation aligned with [moneyclaw-py](https://github.com/Qiyd81/moneyclaw-py) — sovereign AI agent runtime with web dashboard, skills, and survival economics.
+Go implementation aligned with [moneyclaw-py](https://github.com/Qiyd81/moneyclaw-py) — sovereign AI agent runtime with web dashboard, skills, and survival economics.
 
 Design reference: [mormoneyOS/docs/design](../mormoneyOS/docs/design)
 

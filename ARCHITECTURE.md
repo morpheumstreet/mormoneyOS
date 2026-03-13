@@ -130,142 +130,102 @@ The runtime alternates between two states: **running** (the agent loop is active
 ## Directory Structure
 
 ```
-src/
-  index.ts                 Entry point, CLI, main run loop
-  types.ts                 All shared interfaces (~1400 lines)
-  config.ts                Config load/save/merge
+cmd/
+  moneyclaw/main.go        Entry point
+  run.go                   Run command (bootstrap, agent loop, heartbeat)
+  setup.go                 Interactive setup wizard
+  status.go, init.go       Status and init commands
+  provision.go             SIWE API key provisioning
+  test_api.go              Inference API connectivity check
 
+internal/
   agent/                   Core agent intelligence
-    loop.ts                ReAct loop (think -> act -> observe -> persist)
-    tools.ts               57 built-in tool definitions + executor
-    system-prompt.ts       Multi-layered prompt builder
-    context.ts             Inference message assembly + token budgeting
-    injection-defense.ts   Input sanitization (8 detection checks)
-    policy-engine.ts       Centralized tool-call policy evaluation
-    spend-tracker.ts       Financial spend tracking by time window
-    policy-rules/          Rule implementations
-      index.ts               Rule set factory
-      authority.ts           Authority hierarchy rules
-      command-safety.ts      Forbidden command + rate limit rules
-      financial.ts           Treasury policy enforcement
-      path-protection.ts     Protected file read/write rules
-      rate-limits.ts         Per-turn/session rate limits
-      validation.ts          Input format validation rules
+    loop.go                ReAct loop (think -> act -> observe -> persist)
+    context.go             Inference message assembly + token budgeting
+    policy.go              Centralized tool-call policy evaluation
+    policy_rules.go        Rule implementations (authority, path, financial, etc.)
 
   conway/                  Conway API integration
-    client.ts              ConwayClient (sandbox ops, credits, domains)
-    inference.ts           InferenceClient (chat completions)
-    http-client.ts         Resilient HTTP (retry, backoff, circuit breaker)
-    credits.ts             Survival tier calculation
-    topup.ts               x402 credit topup from USDC
-    x402.ts                x402 payment protocol + USDC balance
+    client.go              ConwayClient (sandbox ops, credits, domains)
+    credits.go             Survival tier calculation
+    usdc.go                USDC balance queries
+    x402.go                x402 payment protocol + USDC balance
 
   heartbeat/               Background daemon
-    daemon.ts              Daemon lifecycle (start/stop/forceRun)
-    scheduler.ts           DurableScheduler (DB-backed, leased, cron)
-    tasks.ts               11 built-in heartbeat tasks
-    config.ts              heartbeat.yml load/save/merge
-    tick-context.ts        Per-tick shared context builder
+    daemon.go              Daemon lifecycle (start/stop/forceRun)
+    scheduler.go           DurableScheduler (DB-backed, leased, cron)
+    tasks.go               11 built-in heartbeat tasks
+    context.go             Per-tick shared context builder
 
   identity/                Agent identity
-    wallet.ts              Ethereum wallet generation/loading
-    provision.ts           SIWE API key provisioning
+    wallet.go              Ethereum wallet generation/loading
+    provision.go            SIWE API key provisioning
+    bootstrap.go           Bootstrap topup, first-run flow
 
   inference/               Model strategy
-    router.ts              InferenceRouter (tier + task -> model selection)
-    registry.ts            ModelRegistry (DB-backed model catalog)
-    budget.ts              InferenceBudgetTracker (hourly/daily caps)
-    types.ts               Routing matrix + task timeouts
+    factory.go             Inference client factory (ChatJimmy, OpenAI, Anthropic)
+    models.go              Model registry and routing
+    chatjimmy.go           ChatJimmy/Conway inference client
 
   memory/                  5-tier memory system
-    working.ts             Session-scoped short-term memory
-    episodic.ts            Event log with importance ranking
-    semantic.ts            Categorized fact store
-    procedural.ts          Named step-by-step procedures
-    relationship.ts        Per-entity trust + interaction tracking
-    budget.ts              Token budget allocation across tiers
-    retrieval.ts           Cross-tier retrieval within budget
-    ingestion.ts           Post-turn memory extraction pipeline
-    tools.ts               Memory tool implementations
-    types.ts               Turn classification logic
-
-  observability/           Monitoring
-    logger.ts              StructuredLogger (JSON, levels, modules)
-    metrics.ts             MetricsCollector (counters, gauges, histograms)
-    alerts.ts              AlertEngine (rule evaluation, cooldowns)
+    db_retriever.go        DBMemoryRetriever (cross-tier retrieval within budget)
 
   state/                   Persistence
-    schema.ts              SQLite schema + migrations (v1-v8)
-    database.ts            60+ DB helper functions + AutomatonDatabase
+    schema.go              SQLite schema + migrations (v1-v13)
+    database.go            DB helper functions + AutomatonDatabase
 
   soul/                    Agent identity evolution
-    model.ts               SOUL.md parser/writer (soul/v1 format)
-    validator.ts           Field constraints + size limits
-    reflection.ts          Periodic alignment check + auto-update
-    tools.ts               Soul tool implementations
+    reflection.go          Periodic alignment check + auto-update
 
   social/                  Agent-to-agent communication
-    client.ts              Social relay HTTP client
-    signing.ts             Ethereum message signing
-    validation.ts          Signed message verification
-    protocol.ts            Message format definitions
-
-  registry/                On-chain identity
-    agent-card.ts          ERC-8004 agent card builder (JSON-LD)
-    discovery.ts           Agent discovery via registry contract
-    erc8004.ts             On-chain contract interaction (viem)
+    conway.go              Conway social relay client
+    factory.go             Social channel factory (Conway, Telegram, Discord)
 
   replication/             Child automaton management
-    spawn.ts               Child creation (sandbox + genesis + funding)
-    lifecycle.ts           State machine (spawning->alive->..->dead)
-    health.ts              Child health monitoring
-    cleanup.ts             Dead child sandbox deletion
-    constitution.ts        Constitution propagation + verification
-    genesis.ts             Genesis config generation + validation
-    lineage.ts             Parent-child lineage tracking
-    messaging.ts           Parent-child message relay
+    spawn.go               Child creation (sandbox + genesis + funding)
+    lifecycle.go           State machine (spawning->alive->..->dead)
+    health.go              Child health monitoring
+    cleanup.go             Dead child sandbox deletion
+    lineage.go             Parent-child lineage tracking
 
-  self-mod/                Self-modification
-    code.ts                Safe file editing with protection checks
-    upstream.ts            Git upstream monitoring + cherry-pick
-    tools-manager.ts       Dynamic tool/MCP server installation
-    audit-log.ts           Modification audit trail
+  tools/                   Tool system (56+ real, 11 stubs for TS parity)
+    tools.go               Registry, executor, schemas
+    shell.go               exec/shell
+    file_read.go, file_write.go
+    git*.go                Git tools
+    conway.go, conway_extended.go  Conway API tools
+    memory.go              Memory tool implementations
+    stubs.go               UnimplementedTool placeholders
 
-  git/                     Version control
-    state-versioning.ts    ~/.automaton/ git repo initialization
-    tools.ts               Git tool implementations
-
-  setup/                   First-run wizard
-    wizard.ts              Interactive prompts + config creation
-    prompts.ts             Question definitions
-    defaults.ts            Default value generators
-    environment.ts         Environment detection
-    banner.ts              ASCII art banner
+  tunnel/                  Port exposure (bore, custom providers)
+    manager.go             Tunnel lifecycle
+    bore.go, registry.go   Provider implementations
 
   skills/                  Skill system
-    loader.ts              Load .md skills from directory
-    registry.ts            Skill CRUD (DB-backed)
-    format.ts              Frontmatter serialization
+    loader.go              Load .md skills from directory
+    format.go              Frontmatter serialization
 
-  survival/                Resource management
-    funding.ts             Funding request strategies
-    monitor.ts             Resource status + tier transitions
-    low-compute.ts         Low-compute mode configuration
+  config/                  Configuration
+    config.go              Config load/save/merge
 
-  __tests__/               Test suite (24 test files, 897 tests)
+  types/                   Shared interfaces
+    types.go               AutomatonConfig, SurvivalTier, etc.
+
+  web/                     HTTP dashboard
+    static/index.html      Embedded Command Center UI
 ```
 
 ---
 
 ## Entry Point and Bootstrap
 
-**File:** `src/index.ts`
+**File:** `cmd/moneyclaw/main.go`
 
-The automaton runs as a long-lived Node.js process. The `--run` command triggers the full bootstrap sequence:
+The automaton runs as a long-lived Go process. The `run` command triggers the full bootstrap sequence:
 
 1. **Config load** — reads `~/.automaton/automaton.json`; triggers setup wizard on first run
 2. **Wallet load** — reads or generates `~/.automaton/wallet.json` (viem PrivateKeyAccount)
-3. **Database init** — opens `~/.automaton/state.db`, applies schema migrations (v1-v8)
+3. **Database init** — opens `~/.automaton/state.db`, applies schema migrations (v1-v13)
 4. **Conway client** — creates HTTP client for sandbox/credits/domain API
 5. **Inference client** — creates chat completion client (Conway proxy, OpenAI direct, or Anthropic direct)
 6. **Social client** — connects to `social.conway.tech` relay (optional)
@@ -281,7 +241,7 @@ The main loop is infinite: when the agent loop exits (sleep or dead), the outer 
 
 ## Agent Loop
 
-**File:** `src/agent/loop.ts`
+**File:** `internal/agent/loop.go`
 
 The agent loop implements a ReAct (Reason + Act) cycle:
 
@@ -312,9 +272,9 @@ for each turn:
 
 ## Tool System
 
-**File:** `src/agent/tools.ts`
+**File:** `internal/tools/tools.go`
 
-The automaton has **57 built-in tools** organized into 10 categories:
+The automaton has **56+ built-in tools** (plus 11 stubs for TS parity) organized into 10 categories:
 
 | Category | Count | Tools |
 |---|---|---|
@@ -345,7 +305,7 @@ Agent requests tool call
 
 ## Policy Engine
 
-**Files:** `src/agent/policy-engine.ts`, `src/agent/policy-rules/`
+**Files:** `internal/agent/policy.go`, `internal/agent/policy_rules.go`
 
 The policy engine is a rule-based system that evaluates every tool call before execution. Rules are sorted by priority (lower = higher priority). Evaluation stops at the first `deny`.
 
@@ -364,33 +324,25 @@ Every decision is persisted to the `policy_decisions` table with full context fo
 
 ## Inference Pipeline
 
-**Files:** `src/inference/router.ts`, `src/inference/registry.ts`, `src/inference/budget.ts`
+**Files:** `internal/inference/factory.go`, `internal/inference/models.go`, `internal/inference/chatjimmy.go`
 
-The inference pipeline selects the optimal model based on the agent's survival tier and task type:
+The inference pipeline selects the model via a factory (`internal/inference/factory.go`):
 
 ```
-InferenceRouter.route(request)
-  1. Determine task type (reasoning, tool_use, creative, etc.)
-  2. Look up routing matrix[survivalTier][taskType] -> model preferences
-  3. For each preference, check: model available? budget allows it?
-  4. Select first viable model
-  5. Transform messages if needed (OpenAI <-> Anthropic format)
-  6. Call inference API
-  7. Record cost to inference_costs table
-  8. Return result with cost metadata
+Factory creates client based on config:
+  1. ChatJimmy (Conway proxy) — default, billed from credits
+  2. OpenAI direct — when openaiApiKey set
+  3. Anthropic direct — when anthropicApiKey set
+  4. Compatible wrapper — adapts provider-specific formats
 ```
 
-**Routing matrix:** Maps `SurvivalTier x InferenceTaskType -> ModelPreference[]`. In `normal`/`high` tiers, uses capable models (gpt-5.2). In `low_compute`, downgrades to cheaper models. In `critical`, uses the cheapest available.
-
-**Model registry:** DB-backed catalog of available models with provider, pricing, and capability metadata. Refreshed from Conway API via heartbeat. Seeds with baseline models on startup (upsert, not seed-once).
-
-**Budget tracker:** Enforces hourly, daily, and per-call cost ceilings. Prevents runaway inference spend.
+**Model selection:** Survival tier affects behavior; `low_compute` mode can downgrade. Model list refreshed from Conway API via heartbeat. Costs recorded in `inference_costs` table.
 
 ---
 
 ## Memory System
 
-**Files:** `src/memory/`
+**Files:** `internal/memory/`
 
 The automaton has a 5-tier hierarchical memory system:
 
@@ -416,17 +368,15 @@ The automaton has a 5-tier hierarchical memory system:
 +-------------------+  Interaction history
 ```
 
-**Retrieval** (`MemoryRetriever`): Before each inference call, retrieves relevant memories within a token budget. Priority: working > episodic > semantic > procedural > relationships. Formatted into a memory block injected into context.
+**Retrieval** (`DBMemoryRetriever`): Before each inference call, retrieves relevant memories within a token budget. Priority: working > episodic > semantic > procedural > relationships. Formatted into a memory block injected into context.
 
-**Ingestion** (`MemoryIngestionPipeline`): After each turn, classifies the turn and extracts: episodic events (significant tool calls), semantic facts (learned information), procedural outcomes (procedure success/failure tracking).
-
-**Budget** (`MemoryBudgetManager`): Allocates token budget across tiers with rollover from unused tiers.
+**Ingestion:** After each turn, the agent loop persists turn data; memory tools (`remember_fact`, `save_procedure`, `note_about_agent`, etc.) allow explicit fact storage. Episodic/semantic/procedural tables are populated via tool calls and turn persistence.
 
 ---
 
 ## Heartbeat Daemon
 
-**Files:** `src/heartbeat/`
+**Files:** `internal/heartbeat/`
 
 The heartbeat runs continuously in the background via `setTimeout` (no `setInterval` — overlap protection). It uses a `DurableScheduler` backed by the `heartbeat_schedule` DB table.
 
@@ -453,7 +403,7 @@ Every tick (default 60s):
 | `check_usdc_balance` | `*/5 * * * *` | Wake agent if USDC available for topup |
 | `check_for_updates` | `0 */4 * * *` | Git upstream monitoring (dedup: only new commits) |
 | `health_check` | `*/30 * * * *` | Sandbox liveness (dedup: only first failure) |
-| `check_social_inbox` | `*/2 * * * *` | Poll social relay (5min backoff on error) |
+| `check_social_inbox` | `*/15 * * * *` | Poll social relay (5min backoff on error) |
 | `soul_reflection` | configurable | Soul alignment check |
 | `refresh_models` | configurable | Model registry refresh from API |
 | `check_child_health` | configurable | Child sandbox health monitoring |
@@ -471,7 +421,7 @@ The automaton's survival depends on two balances:
 1. **Conway credits** (cents) — prepaid compute credits for sandboxes, inference, domains
 2. **USDC** (on-chain) — fungible stablecoin on Base mainnet
 
-**Survival tiers** (`src/conway/credits.ts`):
+**Survival tiers** (`internal/conway/credits.go`):
 
 | Tier | Credits | Behavior |
 |---|---|---|
@@ -481,31 +431,31 @@ The automaton's survival depends on two balances:
 | `critical` | >= $0.00 | Zero credits, alive. Distress signals, accept funding. |
 | `dead` | < $0.00 | Only reachable via 1-hour heartbeat grace period at zero credits |
 
-**Credit topup** (`src/conway/topup.ts`): The agent buys credits from USDC via the x402 payment protocol. On startup, `bootstrapTopup()` buys the minimum $5 tier. At runtime, the agent uses `topup_credits` tool to choose larger tiers ($5/$25/$100/$500/$1000/$2500).
+**Credit topup** (`internal/conway/x402.go`): The agent buys credits from USDC via the x402 payment protocol. On startup, `bootstrapTopup()` buys the minimum $5 tier. At runtime, the agent uses `topup_credits` tool to choose larger tiers ($5/$25/$100/$500/$1000/$2500).
 
-**x402 protocol** (`src/conway/x402.ts`): HTTP 402 payment flow. Server returns payment requirements, client signs a USDC `TransferWithAuthorization` (EIP-3009), retries with `X-Payment` header.
+**x402 protocol** (`internal/conway/x402.go`): HTTP 402 payment flow. Server returns payment requirements, client signs a USDC `TransferWithAuthorization` (EIP-3009), retries with `X-Payment` header.
 
 **Treasury policy** (`TreasuryPolicy` in config): Configurable caps on transfers, x402 payments, inference spend, with hourly/daily windows enforced by the policy engine.
 
-**Spend tracking** (`src/agent/spend-tracker.ts`): Records every financial action in `spend_tracking` table. Queries hourly/daily aggregates to enforce treasury limits.
+**Spend tracking** (`internal/state/database.go`): Records every financial action in `spend_tracking` table. Queries hourly/daily aggregates to enforce treasury limits.
 
 ---
 
 ## Identity and Wallet
 
-**Files:** `src/identity/`
+**Files:** `internal/identity/`
 
 Each automaton has a unique Ethereum identity:
 
-- **Wallet** (`wallet.ts`): Generated via `viem` on first run. Stored at `~/.automaton/wallet.json` (mode 0600). The private key is never exposed to the agent via tools (blocked by path protection rules).
-- **Provisioning** (`provision.ts`): Signs a SIWE (Sign-In With Ethereum) message to authenticate with Conway API. Receives an API key stored at `~/.automaton/api-key`.
-- **On-chain identity** (`registry/erc8004.ts`): Optional ERC-8004 agent registration on Base. Publishes a JSON-LD agent card with capabilities, services, and contact info.
+- **Wallet** (`wallet.go`): Generated via `viem` on first run. Stored at `~/.automaton/wallet.json` (mode 0600). The private key is never exposed to the agent via tools (blocked by path protection rules).
+- **Provisioning** (`provision.go`): Signs a SIWE (Sign-In With Ethereum) message to authenticate with Conway API. Receives an API key stored at `~/.automaton/api-key`.
+- **On-chain identity** (`internal/social/registry.go`): Optional ERC-8004 agent registration on Base. Publishes a JSON-LD agent card with capabilities, services, and contact info.
 
 ---
 
 ## Conway Client
 
-**File:** `src/conway/client.ts`
+**File:** `internal/conway/client.go`
 
 The `ConwayClient` interface provides all Conway API operations:
 
@@ -517,20 +467,20 @@ The `ConwayClient` interface provides all Conway API operations:
 
 **Auto-routing:** When `sandboxId` is empty, all operations execute locally (shell exec, filesystem I/O). When set, routes through Conway API. On 403 errors (mismatched API key), falls back to local execution.
 
-**Resilient HTTP** (`http-client.ts`): All API calls go through `ResilientHttpClient` with configurable retries (default 3 on 429/5xx), jittered exponential backoff, circuit breaker (5 failures -> 60s open), and idempotency key support for mutating operations.
+**Resilient HTTP** (in `client.go`): All API calls go through `ResilientHttpClient` with configurable retries (default 3 on 429/5xx), jittered exponential backoff, circuit breaker (5 failures -> 60s open), and idempotency key support for mutating operations.
 
 ---
 
 ## Self-Modification
 
-**Files:** `src/self-mod/`
+**Files:** `internal/tools/edit_own_file.go`, `internal/tools/pull_upstream.go`
 
 The automaton can modify its own code:
 
-- **File editing** (`code.ts`): `edit_own_file` tool applies diffs to source files. Protected files (constitution, wallet, DB, config) are blocked by path protection rules. All edits are logged to the `modifications` table.
-- **Upstream pulls** (`upstream.ts`): `check_for_updates` heartbeat task monitors the git remote. `review_upstream_changes` shows commit diffs. `pull_upstream` cherry-picks individual commits. The automaton is not obligated to accept all upstream changes.
-- **Tool installation** (`tools-manager.ts`): `install_npm_package` and `install_mcp_server` add new capabilities at runtime.
-- **Audit log** (`audit-log.ts`): Every modification is recorded with timestamp, type, diff, and hash for creator review.
+- **File editing** (`edit_own_file.go`): `edit_own_file` tool applies diffs to source files. Protected files (constitution, wallet, DB, config) are blocked by path protection rules. All edits are logged to the `modifications` table.
+- **Upstream pulls** (`pull_upstream.go`, `review_upstream_changes.go`): `check_for_updates` heartbeat task monitors the git remote. `review_upstream_changes` shows commit diffs. `pull_upstream` cherry-picks individual commits. The automaton is not obligated to accept all upstream changes.
+- **Tool installation** (`install_npm_package.go`): `install_npm_package` and `install_mcp_server` add new capabilities at runtime.
+- **Audit log** (in `state/database.go`): Every modification is recorded with timestamp, type, diff, and hash for creator review.
 
 The `~/.automaton/` directory is a git repository. Every state change is versioned.
 
@@ -538,23 +488,23 @@ The `~/.automaton/` directory is a git repository. Every state change is version
 
 ## Replication
 
-**Files:** `src/replication/`
+**Files:** `internal/replication/`
 
 Automatons can spawn child automatons:
 
-1. **Spawn** (`spawn.ts`): Creates a Conway sandbox, writes genesis config, funds the child's wallet, starts the runtime. Limited by `maxChildren` config (default 3).
-2. **Lifecycle** (`lifecycle.ts`): State machine with validated transitions: `spawning -> provisioning -> configuring -> starting -> alive -> unhealthy -> recovering -> dead`. All transitions recorded in `child_lifecycle_events`.
-3. **Health** (`health.ts`): Heartbeat task checks each child's sandbox reachability, credit balance, and uptime.
-4. **Constitution** (`constitution.ts`): Parent's constitution is propagated to every child. Constitution integrity can be verified (hash comparison).
-5. **Genesis** (`genesis.ts`): Generates genesis config with injection-pattern validation and length limits.
-6. **Messaging** (`messaging.ts`): Parent-child message relay with rate/size limits.
-7. **Cleanup** (`cleanup.ts`): Dead children have their sandboxes deleted and records pruned.
+1. **Spawn** (`spawn.go`): Creates a Conway sandbox, writes genesis config, funds the child's wallet, starts the runtime. Limited by `maxChildren` config (default 3).
+2. **Lifecycle** (`lifecycle.go`): State machine with validated transitions: `spawning -> provisioning -> configuring -> starting -> alive -> unhealthy -> recovering -> dead`. All transitions recorded in `child_lifecycle_events`.
+3. **Health** (`health.go`): Heartbeat task checks each child's sandbox reachability, credit balance, and uptime.
+4. **Constitution** (in replication): Parent's constitution is propagated to every child. Constitution integrity can be verified (hash comparison).
+5. **Genesis** (in spawn): Generates genesis config with injection-pattern validation and length limits.
+6. **Messaging** (`internal/tools/children.go`): Parent-child message relay with rate/size limits.
+7. **Cleanup** (`cleanup.go`): Dead children have their sandboxes deleted and records pruned.
 
 ---
 
 ## Social Layer
 
-**Files:** `src/social/`, `src/registry/`
+**Files:** `internal/social/`
 
 **Agent-to-agent messaging:**
 - Messages are signed with the sender's Ethereum private key
@@ -573,7 +523,7 @@ Automatons can spawn child automatons:
 
 ## Soul System
 
-**Files:** `src/soul/`
+**Files:** `internal/soul/`
 
 SOUL.md is the automaton's self-description that evolves over time:
 
@@ -587,9 +537,9 @@ SOUL.md is the automaton's self-description that evolves over time:
 - `relationships` — auto-populated from interactions
 - `financialCharacter` — auto-populated from spending patterns
 
-**Reflection** (`reflection.ts`): Heartbeat task computes genesis alignment (Jaccard + recall similarity between soul and genesis prompt). Auto-updates capabilities, relationships, and financialCharacter sections. Low alignment triggers wake for manual review.
+**Reflection** (`reflection.go`): Heartbeat task computes genesis alignment (Jaccard + recall similarity between soul and genesis prompt). Auto-updates capabilities, relationships, and financialCharacter sections. Low alignment triggers wake for manual review.
 
-**Validation** (`validator.ts`): Enforces size limits, required fields, injection detection. The `update_soul` tool validates changes before writing.
+**Validation** (in soul): Enforces size limits, required fields, injection detection. The `update_soul` tool validates changes before writing.
 
 **History:** All soul versions are stored in `soul_history` with content hashes for tamper detection.
 
@@ -597,7 +547,7 @@ SOUL.md is the automaton's self-description that evolves over time:
 
 ## Skills
 
-**Files:** `src/skills/`
+**Files:** `internal/skills/`
 
 Skills are Markdown files with YAML frontmatter that provide domain-specific instructions to the agent:
 
@@ -612,7 +562,7 @@ Step-by-step instructions for the agent...
 ```
 
 - Loaded from `~/.automaton/skills/` directory
-- Parsed with `gray-matter` (YAML frontmatter extraction)
+- Parsed with `format.go` (YAML frontmatter extraction)
 - Sanitized through injection defense (untrusted content markers)
 - Can be installed from git repos, URLs, or created by the agent itself
 - Active skill instructions are injected into the system prompt with trust boundary markers
@@ -621,23 +571,23 @@ Step-by-step instructions for the agent...
 
 ## Observability
 
-**Files:** `src/observability/`
+**Files:** Standard logging; metrics in `internal/state/database.go` (metric_snapshots)
 
-**Structured logging** (`logger.ts`): `StructuredLogger` with module namespacing, log levels (debug/info/warn/error/fatal), JSON context serialization. Global log level configurable. All modules use `createLogger(moduleName)`.
+**Structured logging**: `StructuredLogger` with module namespacing, log levels (debug/info/warn/error/fatal), JSON context serialization. Global log level configurable. All modules use `createLogger(moduleName)`.
 
-**Metrics** (`metrics.ts`): `MetricsCollector` singleton with counters (monotonic), gauges (point-in-time), and histograms (percentile buckets). Metrics snapshot saved to `metric_snapshots` table by heartbeat.
+**Metrics**: `MetricsCollector` singleton with counters (monotonic), gauges (point-in-time), and histograms (percentile buckets). Metrics snapshot saved to `metric_snapshots` table by heartbeat.
 
-**Alerts** (`alerts.ts`): `AlertEngine` evaluates rules against metric snapshots. Default rules: low balance, high error rate, high deny rate, capacity saturation, budget exhaustion, unhealthy children, excessive turns. Cooldown periods prevent alert spam. Critical alerts wake the agent.
+**Alerts**: `AlertEngine` evaluates rules against metric snapshots. Default rules: low balance, high error rate, high deny rate, capacity saturation, budget exhaustion, unhealthy children, excessive turns. Cooldown periods prevent alert spam. Critical alerts wake the agent.
 
 ---
 
 ## Database and Schema
 
-**Files:** `src/state/schema.ts`, `src/state/database.ts`
+**Files:** `internal/state/schema.go`, `internal/state/database.go`
 
-**Engine:** SQLite via `better-sqlite3` (synchronous, WAL mode, journal_mode=WAL).
+**Engine:** SQLite via `modernc.org/sqlite` (pure Go, WAL mode).
 
-**Schema version:** 8 (applied incrementally via migration runner)
+**Schema version:** 13 (applied incrementally via migration runner)
 
 **Tables (22):**
 
@@ -677,13 +627,13 @@ Step-by-step instructions for the agent...
 | `onchain_transactions` | v7 | On-chain transaction records |
 | `metric_snapshots` | v8 | Periodic metrics + alert records |
 
-**`AutomatonDatabase` interface** provides 40+ methods for CRUD across all tables. The `database.ts` file also exports 60+ standalone helper functions for direct `better-sqlite3` operations (used by subsystems that receive raw DB handles).
+**`Database` struct** provides CRUD across all tables. The `database.go` file implements migrations and helper functions for schema management.
 
 ---
 
 ## Configuration
 
-**File:** `src/config.ts`
+**File:** `internal/config/config.go`
 
 **Config location:** `~/.automaton/automaton.json`
 
@@ -740,87 +690,82 @@ The automaton operates under a defense-in-depth security model:
 
 ## Testing
 
-**Location:** `src/__tests__/` — 24 test files, 897 tests
+**Location:** `*_test.go` alongside source — 130+ tests
 
 | Area | Files | Tests |
 |---|---|---|
-| Core loop | `loop.test.ts` | State transitions, tool execution, idle detection, inbox |
-| Security | `injection-defense.test.ts`, `command-injection.test.ts`, `tools-security.test.ts` | Input sanitization, shell injection, tool risk levels |
-| Policy | `policy-engine.test.ts`, `authority-rules.test.ts`, `financial.test.ts`, `path-protection.test.ts` | Rule evaluation, authority, treasury, path blocks |
-| Financial | `spend-tracker.test.ts` | Spend recording, limit checks, pruning |
-| Heartbeat | `heartbeat.test.ts`, `heartbeat-scheduler.test.ts` | Tasks, scheduler, tick context, leases |
-| Network | `http-client.test.ts` | Retries, backoff, circuit breaker, idempotency |
-| Inference | `inference-router.test.ts` | Router, registry, budget, routing matrix |
-| Memory | `memory.test.ts` | All 5 tiers, budget, retrieval, ingestion |
-| Soul | `soul.test.ts` | Parsing, validation, alignment, history |
-| Social | `social.test.ts` | Signing, validation, discovery, caching |
-| Replication | `replication.test.ts`, `lifecycle.test.ts` | Spawn, lifecycle, health, constitution |
-| Data | `data-layer.test.ts`, `database-transactions.test.ts` | DB operations, migrations, transactions |
-| Skills | `skills-hardening.test.ts` | Name validation, frontmatter, sanitization |
-| Context | `context-hardening.test.ts` | Token budget, truncation, trust boundaries |
-| Inbox | `inbox-processing.test.ts` | Message state machine |
-| Observability | `observability.test.ts` | Logger, metrics, alerts |
+| Core loop | `loop_test.go` | State transitions, tool execution, idle detection |
+| Policy | `policy_test.go`, `policy_rules_test.go` | Rule evaluation, authority, path blocks |
+| Context | `context_test.go` | Token budget, truncation |
+| Heartbeat | `daemon_test.go` | Tasks, scheduler |
+| Conway | `credits_test.go` | Survival tier, credits |
+| Inference | `factory_test.go`, `chatjimmy_test.go` | Client factory, ChatJimmy |
+| Memory | `retriever_test.go` | DBMemoryRetriever |
+| Soul | `reflection_test.go` | Alignment, reflection |
+| Identity | `bootstrap_test.go`, `chain_test.go` | Bootstrap, chain resolution |
+| State | `database_test.go`, `heartbeat_test.go` | DB operations, migrations |
+| Config | `config_test.go` | Config load/merge |
+| Tools | `shell_test.go`, `file_read_test.go`, `file_write_test.go`, `check_credits_test.go`, etc. | Tool implementations |
+| Tunnel | `bootstrap_test.go` | Tunnel bootstrap |
+| Skills | `loader_test.go` | Skill loading |
+| Types | `types_test.go` | Type validation |
 
-**Test infrastructure:** Mock clients for inference, Conway API, and social relay (`src/__tests__/mocks.ts`). In-memory SQLite for all DB tests.
+**Test infrastructure:** In-memory SQLite for DB tests. Mock Conway client where needed.
 
 ---
 
 ## Build and CI
 
-**Build:** TypeScript 5.9, target ES2022, ESM modules, strict mode.
+**Build:** Go 1.21+, standard library + external deps.
 
 ```
-pnpm build       # tsc + workspace builds
-pnpm test        # vitest run (897 tests)
-pnpm typecheck   # tsc --noEmit
+go build -o bin/moneyclaw ./cmd/moneyclaw
+go test ./...
 ```
 
 **CI** (`.github/workflows/ci.yml`):
 - Triggers on push and PR
-- Matrix: Node 20, 22
-- Steps: install, typecheck, test, security-grep tests
-- Separate `security-audit` job: `pnpm audit`
+- Steps: checkout, setup Go 1.22, build, test
 
 **Release** (`.github/workflows/release.yml`):
 - Triggers on `v*` tags
-- Steps: typecheck, test, build
+- Steps: build, test
 
 **Scripts:**
-- `scripts/automaton.sh` — curl-pipe bootstrap installer
+- `scripts/automaton.sh` — curl-pipe bootstrap (clone, build Go, run moneyclaw)
+- `scripts/moneyclaw.sh` — installer (clone, build, run)
 - `scripts/backup-restore.sh` — database backup/restore
 - `scripts/soak-test.sh` — long-running stability test
+- `go.sh` — one-script control panel (build, start, stop, configure, provision, etc.)
 
 ---
 
-## Module Dependency Graph
+## Module Dependency Graph (Go)
 
 ```
-index.ts
+cmd/moneyclaw/main.go
   |
-  +-> identity/{wallet, provision}
-  +-> config
-  +-> state/{database, schema}
-  +-> conway/{client, inference, topup}
-  +-> heartbeat/{daemon, config}
-  |     +-> heartbeat/{scheduler, tasks, tick-context}
-  |           +-> conway/{credits, x402}
-  |           +-> soul/reflection
-  |           +-> inference/registry
-  |           +-> replication/{lifecycle, health, cleanup, lineage}
-  |           +-> observability/{metrics, alerts}
-  +-> agent/loop
-  |     +-> agent/{tools, system-prompt, context, injection-defense}
-  |     +-> agent/{policy-engine, spend-tracker}
-  |     |     +-> agent/policy-rules/{authority, command-safety, financial, path-protection, rate-limits, validation}
-  |     +-> inference/{router, registry, budget}
-  |     +-> memory/{retrieval, ingestion}
-  |     |     +-> memory/{working, episodic, semantic, procedural, relationship, budget}
-  |     +-> conway/{credits, x402}
-  |     +-> state/database
-  +-> social/client
-  +-> skills/loader
-  +-> git/state-versioning
-  +-> observability/logger (used by all modules)
+  +-> cmd.Execute() → run, setup, status, init, provision, test-api
+  |
+  +-> cmd/run.go
+  |     +-> config.Load
+  |     +-> state.Open (SQLite, schema v13)
+  |     +-> agent.NewLoopWithOptions (ReAct: prompt, inference, tools, persist)
+  |     +-> heartbeat.NewDaemonWithOptions (DB-backed scheduler, 11 tasks)
+  |     +-> web server (/api/status, /api/strategies, embedded dashboard)
+  |
+  +-> internal/agent/       # ReAct loop, policy engine
+  +-> internal/heartbeat/   # Daemon, tasks, scheduler
+  +-> internal/conway/      # HTTP client, credits, USDC, x402
+  +-> internal/state/       # Database, schema, migrations
+  +-> internal/memory/      # 5-tier retrieval (DBMemoryRetriever)
+  +-> internal/soul/        # Reflection pipeline
+  +-> internal/skills/     # SkillLoader, prompt injection
+  +-> internal/social/      # Conway, Telegram, Discord channels
+  +-> internal/replication/ # Child health, sandbox cleanup, lineage
+  +-> internal/web/         # HTTP server, embedded static dashboard
+  +-> internal/identity/    # Wallet, bootstrap, provision
+  +-> internal/tools/       # Tool registry (56+ real, 11 stubs)
+  +-> internal/tunnel/      # Port exposure (bore, custom)
+  +-> internal/inference/   # ChatJimmy, OpenAI, Anthropic
 ```
-
-All modules import types from `src/types.ts`. All modules use `createLogger()` from `src/observability/logger.ts`.

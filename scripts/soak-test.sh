@@ -120,8 +120,10 @@ summarize() {
 # Main
 log "Starting soak test: duration=${DURATION_HOURS}h, db=${DB_PATH}, interval=${CHECK_INTERVAL}s"
 
-# Start automaton in background
-NODE_ENV=test node dist/index.js >> "$LOG_FILE" 2>&1 &
+# Build and start moneyclaw in background
+./go.sh build 2>/dev/null || { cd "$(dirname "$0")/.." && go build -o bin/moneyclaw ./cmd/moneyclaw; }
+cd "$(dirname "$0")/.."
+./bin/moneyclaw run >> "$LOG_FILE" 2>&1 &
 AUTOMATON_PID=$!
 log "Started automaton process (PID: ${AUTOMATON_PID})"
 

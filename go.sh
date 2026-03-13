@@ -133,15 +133,15 @@ show_menu_banner() {
 }
 
 configure_interactive() {
-  ensure_node
+  ensure_go
   cd "${APP_DIR}"
-  node dist/index.js --configure
+  ./bin/moneyclaw setup
 }
 
 pick_model_interactive() {
-  ensure_node
+  ensure_go
   cd "${APP_DIR}"
-  node dist/index.js --pick-model
+  ./bin/moneyclaw setup
 }
 
 json_get() {
@@ -153,19 +153,21 @@ json_get() {
   if command -v jq >/dev/null 2>&1; then
     jq -r ".${key} // empty" "$file"
   else
-    node -e "const fs=require('fs');const p=process.argv[1];const k=process.argv[2];const o=JSON.parse(fs.readFileSync(p,'utf8'));process.stdout.write(String(o[k]??''));" "$file" "$key"
+    log_err "jq required for json_get. Install: apt install jq / brew install jq"
+    return 1
   fi
 }
 
 wallet_info() {
-  ensure_node
+  ensure_go
+  require_cmd jq
   local cfg="${HOME}/.automaton/automaton.json"
   local address api_key
   address="$(json_get "$cfg" "walletAddress" 2>/dev/null || true)"
   api_key="$(json_get "$cfg" "conwayApiKey" 2>/dev/null || true)"
 
   if [ -z "$address" ]; then
-    log_err "walletAddress not found in ~/.automaton/automaton.json"
+    log_err "walletAddress not found in ~/.automaton/automaton.json (run: ./go.sh setup)"
     return 1
   fi
 
@@ -174,15 +176,15 @@ wallet_info() {
 
   local credits="N/A"
   if [ -n "$api_key" ]; then
-    credits="$(curl -s https://api.conway.tech/v1/credits/balance -H "Authorization: $api_key" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);const c=j.balance_cents??j.credits_cents;process.stdout.write(c==null?'N/A':('$'+(c/100).toFixed(2)));}catch{process.stdout.write('N/A')}})")"
+    credits="$(curl -s https://api.conway.tech/v1/credits/balance -H "Authorization: $api_key" | jq -r '(.balance_cents // .credits_cents | tostring) as $c | if $c == "null" or $c == "" then "N/A" else ("$" + ((.balance_cents // .credits_cents) / 100 | tostring)) end' 2>/dev/null || echo "N/A")"
   fi
   printf "Conway Credits: %s\n" "$credits"
 
   local rpc="${BASE_RPC_URL:-https://mainnet.base.org}"
   local eth_hex
-  eth_hex="$(curl -s -X POST "$rpc" -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$address\",\"latest\"],\"id\":1}" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.stdout.write(j.result||'0x0')}catch{process.stdout.write('0x0')}})")"
+  eth_hex="$(curl -s -X POST "$rpc" -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$address\",\"latest\"],\"id\":1}" | jq -r '.result // "0x0"' 2>/dev/null || echo "0x0")"
   local eth_fmt
-  eth_fmt="$(node -e "const h=(process.argv[1]||'0x0');const v=BigInt(h);const n=Number(v)/1e18;process.stdout.write(n.toFixed(6));" "$eth_hex")"
+  eth_fmt="$(printf '%s' "$eth_hex" | awk 'BEGIN{s=0} {gsub(/0x/,"");for(i=1;i<=length;i++){c=substr($0,i,1);s=s*16+index("0123456789abcdef",tolower(c))}} END{printf "%.6f",s/1e18}')"
   printf "Base ETH: %s\n" "$eth_fmt"
 
   local usdc="0x833589fCD6EDb6E08f4c7C32D4f71b54bDa02913"
@@ -191,9 +193,9 @@ wallet_info() {
   pad="$(printf '%064s' "$addr_no0x" | tr ' ' '0')"
   local data="0x70a08231${pad}"
   local usdc_hex
-  usdc_hex="$(curl -s -X POST "$rpc" -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_call\",\"params\":[{\"to\":\"$usdc\",\"data\":\"$data\"},\"latest\"],\"id\":1}" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.stdout.write(j.result||'0x0')}catch{process.stdout.write('0x0')}})")"
+  usdc_hex="$(curl -s -X POST "$rpc" -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_call\",\"params\":[{\"to\":\"$usdc\",\"data\":\"$data\"},\"latest\"],\"id\":1}" | jq -r '.result // "0x0"' 2>/dev/null || echo "0x0")"
   local usdc_fmt
-  usdc_fmt="$(node -e "const h=(process.argv[1]||'0x0');const v=BigInt(h);const n=Number(v)/1e6;process.stdout.write(n.toFixed(2));" "$usdc_hex")"
+  usdc_fmt="$(printf '%s' "$usdc_hex" | awk 'BEGIN{s=0} {gsub(/0x/,"");for(i=1;i<=length;i++){c=substr($0,i,1);s=s*16+index("0123456789abcdef",tolower(c))}} END{printf "%.2f",s/1e6}')"
   printf "Base USDC: %s\n\n" "$usdc_fmt"
 }
 
@@ -254,53 +256,29 @@ require_cmd() {
   fi
 }
 
-ensure_node() {
-  if ! command -v node >/dev/null 2>&1; then
-    log_err "Node.js not found. Please install Node.js >= 20 first."
+ensure_go() {
+  if ! command -v go >/dev/null 2>&1; then
+    log_err "Go not found. Please install Go 1.21+ from https://go.dev/dl/"
     exit 1
   fi
-  local major
-  major="$(node -p "process.versions.node.split('.')[0]")"
-  if [ "${major}" -lt 20 ]; then
-    log_err "Node.js >= 20 required, current: $(node -v)"
-    exit 1
-  fi
-  log_ok "Node.js $(node -v)"
-}
-
-ensure_pnpm() {
-  if command -v pnpm >/dev/null 2>&1; then
-    log_ok "pnpm $(pnpm -v)"
-    return
-  fi
-
-  if command -v corepack >/dev/null 2>&1; then
-    log_info "Enabling pnpm via corepack..."
-    corepack enable
-    corepack prepare pnpm@10.28.1 --activate
-  else
-    log_warn "corepack not found, installing pnpm globally via npm..."
-    npm install -g pnpm@10.28.1
-  fi
-
-  require_cmd pnpm
-  log_ok "pnpm $(pnpm -v)"
+  log_ok "Go $(go version)"
 }
 
 install_deps() {
-  ensure_node
-  ensure_pnpm
+  ensure_go
   mkdir -p "${PID_DIR}"
   cd "${APP_DIR}"
-  log_info "Installing dependencies..."
-  pnpm install --frozen-lockfile || pnpm install
-  log_ok "Dependencies installed"
+  log_info "Checking dependencies (go mod)..."
+  go mod download 2>/dev/null || true
+  log_ok "Dependencies ready"
 }
 
 build_app() {
+  ensure_go
   cd "${APP_DIR}"
-  log_info "Building project..."
-  npm run build
+  mkdir -p bin
+  log_info "Building moneyclaw..."
+  GOWORK=off go build -o bin/moneyclaw ./cmd/moneyclaw
   log_ok "Build success"
 }
 
@@ -309,7 +287,6 @@ update_app() {
   cd "${APP_DIR}"
   log_info "Updating from remote (git pull --ff-only)..."
   git pull --ff-only
-  install_deps
   build_app
   stop_bg || true
   start_bg
@@ -337,7 +314,8 @@ start_bg() {
   fi
 
   log_info "Starting MoneyClaw in background..."
-  nohup node dist/index.js --run >"${LOG_FILE}" 2>&1 &
+  build_app
+  nohup ./bin/moneyclaw run >"${LOG_FILE}" 2>&1 &
   local pid=$!
   echo "${pid}" >"${PID_FILE}"
   sleep 1
@@ -403,55 +381,48 @@ doctor() {
   log_info "Running diagnostics..."
   cd "${APP_DIR}"
 
-  if command -v node >/dev/null 2>&1; then
-    log_ok "node: $(node -v)"
+  if command -v go >/dev/null 2>&1; then
+    log_ok "go: $(go version)"
   else
-    log_err "node: missing"
+    log_err "go: missing (install from https://go.dev/dl/)"
   fi
 
-  if command -v pnpm >/dev/null 2>&1; then
-    log_ok "pnpm: $(pnpm -v)"
+  if [ -f "go.mod" ]; then
+    log_ok "go.mod found"
   else
-    log_err "pnpm: missing"
+    log_err "go.mod missing (not in mormoneyOS root?)"
   fi
 
-  if [ -f "package.json" ]; then
-    log_ok "package.json found"
+  if [ -f "bin/moneyclaw" ]; then
+    log_ok "bin/moneyclaw present"
   else
-    log_err "package.json missing"
-  fi
-
-  if [ -f "dist/index.js" ]; then
-    log_ok "dist/index.js present"
-  else
-    log_warn "dist/index.js missing (run ./go.sh build)"
+    log_warn "bin/moneyclaw missing (run ./go.sh build)"
   fi
 
   status_app
 }
 
 setup_interactive() {
+  ensure_go
   cd "${APP_DIR}"
-  node dist/index.js --setup
+  build_app
+  ./bin/moneyclaw setup
 }
 
 run_fg() {
+  ensure_go
   cd "${APP_DIR}"
-  exec node dist/index.js --run
+  build_app
+  exec ./bin/moneyclaw run
 }
 
 key_setup() {
-  ensure_node
+  ensure_go
   cd "${APP_DIR}"
-
-  if [ ! -f "${APP_DIR}/dist/index.js" ]; then
-    log_warn "dist/index.js not found, building first..."
-    ensure_pnpm
-    build_app
-  fi
+  build_app
 
   log_info "Provisioning Conway API key via SIWE..."
-  node dist/index.js --provision
+  ./bin/moneyclaw provision
   log_ok "Provision finished. You can run: ./go.sh status"
 }
 
@@ -467,8 +438,9 @@ run_as_root() {
 }
 
 service_install() {
-  ensure_node
-  ensure_pnpm
+  ensure_go
+  cd "${APP_DIR}"
+  build_app
   mkdir -p "${PID_DIR}"
 
   local run_user
@@ -479,8 +451,7 @@ service_install() {
 
   local unit_file="/etc/systemd/system/${APP_NAME}.service"
   local run_path="${APP_DIR}"
-  local node_path
-  node_path="$(command -v node)"
+  local binary_path="${run_path}/bin/moneyclaw"
 
   run_as_root mkdir -p "${run_path}/.run"
   run_as_root chown -R "${run_user}:${run_user}" "${run_path}/.run"
@@ -496,13 +467,12 @@ Wants=network-online.target
 Type=simple
 User=${run_user}
 WorkingDirectory=${run_path}
-ExecStart=${node_path} ${run_path}/dist/index.js --run
+ExecStart=${binary_path} run
 Restart=always
 RestartSec=3
 StartLimitIntervalSec=0
 KillSignal=SIGINT
 TimeoutStopSec=20
-Environment=NODE_ENV=production
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 StandardOutput=append:${run_path}/.run/systemd.log
 StandardError=append:${run_path}/.run/systemd.log

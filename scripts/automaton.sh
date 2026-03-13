@@ -1,62 +1,41 @@
 #!/bin/sh
-# Conway Automaton Installer
-# curl -fsSL https://conway.tech/automaton.sh | sh
+# MoneyClaw (mormoneyOS) — build and run from source
+# Usage: ./scripts/automaton.sh   (from repo root)
+# Or:    curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/automaton.sh | sh
 set -e
 
-REPO="https://github.com/Conway-Research/automaton.git"
+REPO="${MORMONEYOS_REPO:-https://github.com/morpheumlabs/mormoneyOS.git}"
 
-# Determine install directory
-if [ -n "$AUTOMATON_DIR" ]; then
-  INSTALL_DIR="$AUTOMATON_DIR"
-elif [ -w /opt ] || [ "$(id -u)" = "0" ]; then
-  INSTALL_DIR="/opt/automaton"
+# Determine run directory
+if [ -f "go.mod" ] && [ -d "cmd/moneyclaw" ]; then
+  RUN_DIR="$(pwd)"
+  FROM_REPO=true
 else
-  INSTALL_DIR="$HOME/.automaton/runtime"
+  INSTALL_DIR="${MORMONEYOS_DIR:-$HOME/.mormoneyos/runtime}"
+  if [ -d "$INSTALL_DIR/.git" ]; then
+    echo "[INFO] Updating existing installation at $INSTALL_DIR..."
+    cd "$INSTALL_DIR" && git pull --ff-only
+  else
+    echo "[INFO] Cloning mormoneyOS to $INSTALL_DIR..."
+    mkdir -p "$(dirname "$INSTALL_DIR")"
+    git clone "$REPO" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+  fi
+  RUN_DIR="$(pwd)"
+  FROM_REPO=false
 fi
 
-# Preflight: Node.js
-if ! command -v node >/dev/null 2>&1; then
-  echo "[ERROR] Node.js is required (>= 20). Install it first." >&2
+# Preflight: Go
+if ! command -v go >/dev/null 2>&1; then
+  echo "[ERROR] Go 1.21+ is required. Install it from https://go.dev/dl/" >&2
   exit 1
 fi
 
-NODE_MAJOR=$(node -e "process.stdout.write(String(process.versions.node.split('.')[0]))")
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  echo "[ERROR] Node.js >= 20 required, found $(node -v)." >&2
-  exit 1
-fi
+# Build
+echo "[INFO] Building moneyclaw..."
+cd "$RUN_DIR"
+GOWORK=off go build -o bin/moneyclaw ./cmd/moneyclaw
 
-# Preflight: git
-if ! command -v git >/dev/null 2>&1; then
-  echo "[ERROR] git is required." >&2
-  exit 1
-fi
-
-# Enable pnpm via corepack
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "[INFO]  Enabling pnpm via corepack..."
-  corepack enable pnpm || {
-    echo "[ERROR] Failed to enable pnpm. Install it manually: npm i -g pnpm" >&2
-    exit 1
-  }
-fi
-
-# Clone or update
-if [ -d "$INSTALL_DIR/.git" ]; then
-  echo "[INFO]  Updating existing installation at $INSTALL_DIR..."
-  cd "$INSTALL_DIR" && git pull --ff-only
-else
-  echo "[INFO]  Cloning automaton to $INSTALL_DIR..."
-  mkdir -p "$(dirname "$INSTALL_DIR")"
-  git clone "$REPO" "$INSTALL_DIR"
-  cd "$INSTALL_DIR"
-fi
-
-# Install and build
-echo "[INFO]  Installing dependencies..."
-pnpm install --frozen-lockfile
-echo "[INFO]  Building..."
-pnpm run build
-
-# Launch
-exec node dist/index.js --run
+# Run
+echo "[INFO] Starting moneyclaw..."
+exec ./bin/moneyclaw run

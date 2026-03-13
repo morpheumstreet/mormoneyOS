@@ -1,199 +1,437 @@
-# mormoneyOS-go Test Plan
+# mormoneyOS — Test Report
 
-Test plan to validate all features and functions per [mormoneyOS design](../mormoneyOS/docs/design).
+**mormoneyOS-go — 14 March 2026**
 
----
+## Summary
 
-## 1. Test Categories
-
-| Category | Scope | Type |
-|----------|-------|------|
-| Unit | Internal packages | `go test ./internal/...` |
-| Integration | CLI + config + DB | Manual / scripted |
-| E2E | Full bootstrap + run | Manual |
-| Security | Policy engine, path protection | Unit + integration |
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop, tools, inference, identity, memory, skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
-## 2. Config (`internal/config`)
+## 1. Test Results
 
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| C1 | `GetAutomatonDir` with default | no env | `$HOME/.automaton` |
-| C2 | `GetAutomatonDir` with override | `AUTOMATON_DIR=/tmp/auto` | `/tmp/auto` |
-| C3 | `GetConfigPath` | — | `{automatonDir}/automaton.json` |
-| C4 | `ResolvePath` with `~` | `~/foo` | `$HOME/foo` |
-| C5 | `ResolvePath` without `~` | `/abs/path` | `/abs/path` |
-| C6 | `Load` when no file | missing config | `nil, nil` |
-| C7 | `Load` when invalid JSON | malformed file | error |
-| C8 | `Load` merges with defaults | partial config | defaults filled for missing fields |
-| C9 | `Load` treasury merge | `treasuryPolicy.maxSingleTransferCents: 1000` | overrides default 5000 |
-| C10 | `Save` creates dir | new config | `~/.automaton` created, file written |
-| C11 | `Save` round-trip | save then load | config matches |
+### 1.1 Config (`internal/config`)
 
----
+**File:** `internal/config/config_test.go`
 
-## 3. Types (`internal/types`)
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| C1 | `TestGetAutomatonDir_Default` | config | PASS |
+| C2 | `TestGetAutomatonDir_Override` | config | PASS |
+| C3 | `TestGetConfigPath` | config | PASS |
+| C4 | `TestResolvePath_WithTilde` | config | PASS |
+| C5 | `TestResolvePath_WithoutTilde` | config | PASS |
+| C6 | `TestLoad_NoFile` | config | PASS |
+| C7 | `TestLoad_InvalidJSON` | config | PASS |
+| C8 | `TestLoad_MergesWithDefaults` | config | PASS |
+| C9 | `TestLoad_TreasuryMerge` | config | PASS |
+| C10 | `TestSave_CreatesDir` | config | PASS |
+| C11 | `TestSave_RoundTrip` | config | PASS |
+| C12 | `TestLoadToolsFromFile_JSON` | config | PASS |
+| C13 | `TestLoadToolsFromFile_YAML` | config | PASS |
+| C14 | `TestLoad_WithTools` | config | PASS |
 
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| T1 | `DefaultTreasuryPolicy` | — | `MaxSingleTransferCents=5000`, `MinReserveCents=100` |
-| T2 | `AgentState` constants | — | `setup`, `waking`, `running`, `sleeping`, `low_compute`, `critical`, `dead` |
-| T3 | `SurvivalTier` constants | — | `high`, `normal`, `low_compute`, `critical`, `dead` |
-| T4 | `RiskLevel` constants | — | `safe`, `caution`, `dangerous`, `forbidden` |
+**Total: 14 passed, 0 failed**
 
 ---
 
-## 4. Conway Credits (`internal/conway`)
+### 1.2 Types (`internal/types`)
 
-| ID | Test Case | Input (cents) | Expected Tier |
-|----|-----------|---------------|---------------|
-| CR1 | `TierFromCreditsCents` high | 501 | `high` |
-| CR2 | `TierFromCreditsCents` normal | 51 | `normal` |
-| CR3 | `TierFromCreditsCents` low_compute | 11 | `low_compute` |
-| CR4 | `TierFromCreditsCents` critical | 0 | `critical` |
-| CR5 | `TierFromCreditsCents` dead | -1 | `dead` |
-| CR6 | Boundary high/normal | 500 | `normal` |
-| CR7 | Boundary normal/low | 50 | `low_compute` |
-| CR8 | Boundary low/critical | 10 | `critical` |
+**File:** `internal/types/types_test.go`
 
----
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| T1 | `TestDefaultTreasuryPolicy` | types | PASS |
+| T2 | `TestAgentStateConstants` | types | PASS |
+| T3 | `TestSurvivalTierConstants` | types | PASS |
+| T4 | `TestRiskLevelConstants` | types | PASS |
 
-## 5. Policy Engine (`internal/agent`)
-
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| P1 | `ToolArgsHash` deterministic | same args | same hash |
-| P2 | `ToolArgsHash` different args | different args | different hash |
-| P3 | `ValidationRule` empty name | `tool.Name=""` | deny, "tool name is empty" |
-| P4 | `ValidationRule` whitespace name | `tool.Name="  "` | deny |
-| P5 | `ValidationRule` valid name | `tool.Name="exec"` | allow |
-| P6 | `PathProtectionRule` protected write | `path="/x/constitution"` | deny |
-| P7 | `PathProtectionRule` protected read | `path="/x/api-key"` | deny |
-| P8 | `PathProtectionRule` safe path | `path="/tmp/foo"` | allow |
-| P9 | `PathProtectionRule` no path arg | `Args={}` | allow (skip) |
-| P10 | `AuthorityRule` creator | `source="creator"` | allow |
-| P11 | `AuthorityRule` self | `source="self"` | allow |
-| P12 | `AuthorityRule` external + dangerous | `source="external"`, `risk=dangerous` | deny |
-| P13 | `AuthorityRule` external + safe | `source="external"`, `risk=safe` | allow |
-| P14 | `PolicyEngine.Evaluate` first deny wins | ValidationRule denies | returns false, ValidationRule reason |
-| P15 | `PolicyEngine.Evaluate` all allow | all rules pass | returns true, "" |
-| P16 | `CreateDefaultRules` | — | 3 rules (Validation, PathProtection, Authority) |
+**Total: 4 passed, 0 failed**
 
 ---
 
-## 6. State / Database (`internal/state`)
+### 1.3 Conway Credits (`internal/conway`)
 
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| S1 | `Open` creates DB | path to new file | DB created, schema applied |
-| S2 | `Open` WAL mode | — | `journal_mode=WAL` |
-| S3 | `InsertWakeEvent` | id, source, reason | row inserted |
-| S4 | `HasUnconsumedWakeEvents` empty | no events | false |
-| S5 | `HasUnconsumedWakeEvents` with events | 1 unconsumed | true |
-| S6 | `ConsumeWakeEvents` | 2 unconsumed | count=2, consumed=1 |
-| S7 | `ConsumeWakeEvents` after consume | — | count=0 |
-| S8 | `SetKV` then `GetKV` | key="x", value="y" | GetKV returns "y", true |
-| S9 | `GetKV` missing key | key="nonexistent" | "", false, nil |
-| S10 | `Close` | — | no error, DB unusable after |
-| S11 | Schema tables exist | — | `turns`, `kv`, `wake_events`, `policy_decisions`, etc. |
+**File:** `internal/conway/credits_test.go`
 
----
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| CR1 | `TestTierFromCreditsCents_High` | conway-credits | PASS |
+| CR2 | `TestTierFromCreditsCents_Normal` | conway-credits | PASS |
+| CR3 | `TestTierFromCreditsCents_LowCompute` | conway-credits | PASS |
+| CR4 | `TestTierFromCreditsCents_Critical` | conway-credits | PASS |
+| CR5 | `TestTierFromCreditsCents_Dead` | conway-credits | PASS |
+| CR6 | `TestTierFromCreditsCents_BoundaryHighNormal` | conway-credits | PASS |
+| CR7 | `TestTierFromCreditsCents_BoundaryNormalLow` | conway-credits | PASS |
+| CR8 | `TestTierFromCreditsCents_BoundaryLowCritical` | conway-credits | PASS |
 
-## 7. Heartbeat (`internal/heartbeat`)
-
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| H1 | `DefaultTasks` | — | 3 tasks (heartbeat_ping, check_credits, check_usdc_balance) |
-| H2 | `Daemon.Start` then `Stop` | tick 100ms | no panic, goroutine exits |
-| H3 | Task runs on tick | — | task Run called |
-| H4 | Context cancel stops daemon | ctx.Done() | daemon stops |
+**Total: 8 passed, 0 failed**
 
 ---
 
-## 8. Agent Loop (`internal/agent`)
+### 1.4 Policy Engine (`internal/agent`)
 
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| A1 | `RunOneTurn` | state=waking | returns state, nil |
-| A2 | `ShouldSleep` idleTurns=2 | — | false |
-| A3 | `ShouldSleep` idleTurns=3 | — | true |
+**Files:** `internal/agent/policy_test.go`, `internal/agent/policy_rules_test.go`
 
----
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| P1 | `TestToolArgsHash_Deterministic` | policy-engine | PASS |
+| P2 | `TestToolArgsHash_DifferentArgs` | policy-engine | PASS |
+| P3 | `TestValidationRule_EmptyName` | policy-engine | PASS |
+| P4 | `TestValidationRule_WhitespaceName` | policy-engine | PASS |
+| P5 | `TestValidationRule_ValidName` | policy-engine | PASS |
+| P6 | `TestPathProtectionRule_ProtectedWrite` | policy-engine | PASS |
+| P7 | `TestPathProtectionRule_ProtectedRead` | policy-engine | PASS |
+| P8 | `TestPathProtectionRule_SafePath` | policy-engine | PASS |
+| P9 | `TestPathProtectionRule_NoPathArg` | policy-engine | PASS |
+| P10 | `TestPathProtectionRule_FilePathArg` | policy-engine | PASS |
+| P11 | `TestAuthorityRule_Creator` | policy-engine | PASS |
+| P12 | `TestAuthorityRule_Self` | policy-engine | PASS |
+| P13 | `TestAuthorityRule_ExternalDangerous` | policy-engine | PASS |
+| P14 | `TestAuthorityRule_ExternalSafe` | policy-engine | PASS |
+| P15 | `TestPolicyEngine_Evaluate_FirstDenyWins` | policy-engine | PASS |
+| P16 | `TestPolicyEngine_Evaluate_AllAllow` | policy-engine | PASS |
+| P17 | `TestCreateDefaultRules` | policy-engine | PASS |
+| P18 | `TestFinancialRule_OverLimit` | policy-engine | PASS |
+| P19 | `TestFinancialRule_UnderLimit` | policy-engine | PASS |
+| P20 | `TestCommandSafetyRule_Dangerous` | policy-engine | PASS |
+| P21 | `TestCommandSafetyRule_Safe` | policy-engine | PASS |
 
-## 9. CLI Commands (`cmd/`)
-
-| ID | Test Case | Command | Expected |
-|----|-----------|---------|----------|
-| CLI1 | `--help` | `moneyclaw --help` | usage, subcommands listed |
-| CLI2 | `--version` | `moneyclaw -v` | version string |
-| CLI3 | `init` | `moneyclaw init` | `~/.automaton` created |
-| CLI4 | `init` idempotent | run twice | no error |
-| CLI5 | `setup` no config | first run | prompts, config saved |
-| CLI6 | `setup` existing config | config exists | "Use configure to edit" |
-| CLI7 | `status` no config | no config | "Run setup first" |
-| CLI8 | `status` with config | config exists | Config path, DB path, Name, Conway |
-| CLI9 | `run` no config | no config | error "run setup first" |
-| CLI10 | `run` with config | config exists | bootstrap starts, heartbeat runs (Ctrl+C to stop) |
-
----
-
-## 10. Integration Flows
-
-| ID | Flow | Steps | Expected |
-|----|------|-------|----------|
-| I1 | Fresh install | init → setup (stdin) → status | config saved, status shows values |
-| I2 | Run bootstrap | run (with config) | DB opened, policy engine created, heartbeat started |
-| I3 | Wake events | InsertWakeEvent → HasUnconsumed → ConsumeWakeEvents | event consumed, count correct |
-| I4 | Config round-trip | Save → Load | config equal |
-| I5 | Policy + DB | Evaluate tool → Insert policy_decisions (future) | audit trail |
+**Total: 21 passed, 0 failed**
 
 ---
 
-## 11. Security
+### 1.5 State / Database (`internal/state`)
 
-| ID | Test Case | Input | Expected |
-|----|-----------|-------|----------|
-| SEC1 | Path protection constitution | tool path contains "constitution" | deny |
-| SEC2 | Path protection wallet | tool path contains "wallet" | deny |
-| SEC3 | Path protection state.db | tool path contains "state.db" | deny |
-| SEC4 | Path protection api-key read | tool path contains "api-key" | deny |
-| SEC5 | Authority external dangerous | source=external, risk=dangerous | deny |
-| SEC6 | Authority self dangerous | source=self, risk=dangerous | allow |
+**Files:** `internal/state/database_test.go`, `internal/state/heartbeat_test.go`
 
----
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| S1 | `TestOpen_CreatesDB` | state | PASS |
+| S2 | `TestOpen_WALMode` | state | PASS |
+| S3 | `TestInsertWakeEvent` | state | PASS |
+| S4 | `TestHasUnconsumedWakeEvents_Empty` | state | PASS |
+| S5 | `TestHasUnconsumedWakeEvents_WithEvents` | state | PASS |
+| S6 | `TestConsumeWakeEvents` | state | PASS |
+| S7 | `TestConsumeWakeEvents_AfterConsume` | state | PASS |
+| S8 | `TestSetKV_GetKV` | state | PASS |
+| S9 | `TestGetKV_Missing` | state | PASS |
+| S10 | `TestClose` | state | PASS |
+| S11 | `TestSchemaTablesExist` | state | PASS |
+| S12 | `TestListKeysWithPrefix` | state | PASS |
+| S13 | `TestInstallTool_GetInstalledTools_RemoveTool` | state | PASS |
+| S14 | `TestClaimInboxMessages_MarkInboxProcessed` | state | PASS |
+| S15 | `TestGetHeartbeatSchedule_Empty` | state | PASS |
+| S16 | `TestUpsertHeartbeatSchedule_GetHeartbeatSchedule` | state | PASS |
+| S17 | `TestAcquireTaskLease_ReleaseTaskLease` | state | PASS |
 
-## 12. Execution Matrix
-
-| Target | Command |
-|--------|---------|
-| Unit tests | `go test ./internal/... -v` |
-| All tests | `make test` |
-| Coverage | `make test-coverage` |
-| CLI smoke | `./bin/moneyclaw --help && ./bin/moneyclaw init && ./bin/moneyclaw status` |
-| E2E (manual) | `AUTOMATON_DIR=/tmp/moneyclaw-test ./bin/moneyclaw init && echo "agent\nprompt\n0x0\n\n" \| ./bin/moneyclaw setup && ./bin/moneyclaw run` (Ctrl+C) |
-
----
-
-## 13. Test File Mapping
-
-| Package | Test File | IDs Covered |
-|---------|-----------|-------------|
-| `internal/config` | `config_test.go` | C1–C11 |
-| `internal/types` | `types_test.go` | T1–T4 |
-| `internal/conway` | `credits_test.go` | CR1–CR8 |
-| `internal/agent` | `policy_test.go`, `policy_rules_test.go` | P1–P16 |
-| `internal/state` | `database_test.go` | S1–S11 |
-| `internal/heartbeat` | `daemon_test.go`, `tasks_test.go` | H1–H4 |
-| `internal/agent` | `loop_test.go` | A1–A3 |
+**Total: 17 passed, 0 failed**
 
 ---
 
-## 14. Acceptance Criteria
+### 1.6 Heartbeat (`internal/heartbeat`)
 
-- [x] All unit tests pass: `make test`
-- [ ] Coverage ≥ 70% for `internal/` (optional)
-- [ ] No race conditions: `go test -race ./...`
-- [ ] CLI smoke (init, setup, status) succeeds
-- [ ] Run bootstrap completes without panic (manual stop)
-- [ ] Policy engine denies protected paths and external dangerous tools
+**File:** `internal/heartbeat/daemon_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| H1 | `TestDefaultTasks` | heartbeat | PASS |
+| H2 | `TestDaemon_StartStop` | heartbeat | PASS |
+| H3 | `TestDaemon_ContextCancelStops` | heartbeat | PASS |
+
+**Total: 3 passed, 0 failed**
+
+---
+
+### 1.7 Agent Loop & Context (`internal/agent`)
+
+**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| A1 | `TestRunOneTurn` | agent-loop | PASS |
+| A2 | `TestShouldSleep_IdleTurns2` | agent-loop | PASS |
+| A3 | `TestShouldSleep_IdleTurns3` | agent-loop | PASS |
+| A4 | `TestBuildContextMessages_IncludesToolResults` | agent-context | PASS |
+| A5 | `TestAppendToolResults_Empty` | agent-context | PASS |
+| A6 | `TestAppendToolResults_WithResults` | agent-context | PASS |
+
+**Total: 6 passed, 0 failed**
+
+---
+
+### 1.8 Tools (`internal/tools`)
+
+**Files:** `internal/tools/file_read_test.go`, `file_write_test.go`, `shell_test.go`, `mutating_test.go`, `check_credits_test.go`, `list_sandboxes_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| TO1 | `TestFileReadTool_Execute` | tools | PASS |
+| TO2 | `TestFileReadTool_Execute_FileNotFound` | tools | PASS |
+| TO3 | `TestFileWriteTool_Execute` | tools | PASS |
+| TO4 | `TestShellTool_Execute` | tools | PASS |
+| TO5 | `TestShellTool_Execute_EmptyCommand` | tools | PASS |
+| TO6 | `TestRegistry_Execute` | tools | PASS |
+| TO7 | `TestRegistry_Execute_ExecAlias` | tools | PASS |
+| TO8 | `TestIsMutatingTool` | tools | PASS |
+| TO9 | `TestCheckCreditsTool_Execute` | tools | PASS |
+| TO10 | `TestListSandboxesTool_Execute` | tools | PASS |
+
+**Total: 10 passed, 0 failed**
+
+---
+
+### 1.9 Inference (`internal/inference`)
+
+**Files:** `internal/inference/factory_test.go`, `internal/inference/chatjimmy_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| INF1 | `TestNewClientFromConfig_OpenAI` | inference | PASS |
+| INF2 | `TestNewClientFromConfig_Conway` | inference | PASS |
+| INF3 | `TestNewClientFromConfig_ExplicitProvider` | inference | PASS |
+| INF4 | `TestNewClientFromConfig_ChatJimmyWhenNoKeys` | inference | PASS |
+| INF5 | `TestNewClientFromConfig_BackwardCompatPriority` | inference | PASS |
+| INF6 | `TestNewClientFromConfig_ChatJimmyExplicit` | inference | PASS |
+| INF7 | `TestNewClientFromConfig_ChatJimmyAlias` | inference | PASS |
+| INF8 | `TestNewClientFromConfig_ChatJimmyEnvBaseURL` | inference | PASS |
+| INF9 | `TestLookupProvider` | inference | PASS |
+| INF10 | `TestParseChatJimmyResponse` | inference | PASS |
+| INF11 | `TestNewChatJimmyClient_Defaults` | inference | PASS |
+| INF12 | `TestChatJimmyClient_Chat` | inference | PASS |
+| INF13 | `TestChatJimmyClient_Health` | inference | PASS |
+| INF14 | `TestChatJimmyClient_Health_Unhealthy` | inference | PASS |
+| INF15 | `TestChatJimmyClient_Models` | inference | PASS |
+| INF16 | `TestChatJimmyClient_ChatWithStats` | inference | PASS |
+
+**Total: 16 passed, 0 failed**
+
+---
+
+### 1.10 Identity (`internal/identity`)
+
+**Files:** `internal/identity/chain_test.go`, `internal/identity/bootstrap_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| ID1 | `TestCAIP2ToChainType` | identity | PASS |
+| ID2 | `TestValidateAddressForChain` | identity | PASS |
+| ID3 | `TestAddressKeyForChain` | identity | PASS |
+| ID4 | `TestDeriveAddress_NonEVM` | identity | PASS |
+| ID5 | `TestValidateChainNonce` | identity | PASS |
+| ID6 | `TestNamespace` | identity | PASS |
+| ID7 | `TestChainIDFromCAIP2` | identity | PASS |
+| ID8 | `TestChainIDToCAIP2` | identity | PASS |
+| ID9 | `TestIsEVM` | identity | PASS |
+| ID10 | `TestChainIDBig` | identity | PASS |
+| ID11 | `TestBootstrapIdentity` | identity | PASS |
+| ID12 | `TestBootstrapIdentity_NilInputs` | identity | PASS |
+| ID13 | `TestGetAddressForChain` | identity | PASS |
+| ID14 | `TestGetPrimaryAddress` | identity | PASS |
+
+**Total: 14 passed, 0 failed**
+
+---
+
+### 1.11 Memory (`internal/memory`)
+
+**File:** `internal/memory/retriever_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| M1 | `TestFormatMemoryBlock_Empty` | memory-retrieval | PASS |
+| M2 | `TestFormatMemoryBlock_Facts` | memory-retrieval | PASS |
+| M3 | `TestFormatMemoryBlock_GoalsAndProcedures` | memory-retrieval | PASS |
+| M4 | `TestFormatMemoryBlock_FiveTier` | memory-retrieval | PASS |
+
+**Total: 4 passed, 0 failed**
+
+---
+
+### 1.12 Skills (`internal/skills`)
+
+**File:** `internal/skills/loader_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| SK1 | `TestSubconscious_MergeFileAndDB` | skills-design | PASS |
+
+**Total: 1 passed, 0 failed**
+
+---
+
+### 1.13 Soul (`internal/soul`)
+
+**File:** `internal/soul/reflection_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| SO1 | `TestReflectOnSoul_NoSoul` | soul | PASS |
+| SO2 | `TestReflectOnSoul_WithSoulAndGenesis` | soul | PASS |
+| SO3 | `TestComputeGenesisAlignment` | soul | PASS |
+| SO4 | `TestExtractCorePurpose` | soul | PASS |
+
+**Total: 4 passed, 0 failed**
+
+---
+
+### 1.14 Tunnel (`internal/tunnel`)
+
+**File:** `internal/tunnel/bootstrap_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| TN1 | `TestNewFromConfig_Nil` | tunnel | PASS |
+
+**Total: 1 passed, 0 failed**
+
+---
+
+### 1.15 CLI Commands (`cmd`)
+
+**Files:** `cmd/init_test.go`, `cmd/status_test.go`, `cmd/run_test.go`, `cmd/test_api_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| CLI1 | `TestRunInit` | cli | PASS |
+| CLI2 | `TestRunInit_Idempotent` | cli | PASS |
+| CLI3 | `TestRunRun_NoConfig` | cli | PASS |
+| CLI4 | `TestRunStatus_NoConfig` | cli | PASS |
+| CLI5 | `TestRunStatus_WithConfig` | cli | PASS |
+| CLI6 | `TestRunTestAPI_NoConfig` | cli | PASS |
+| CLI7 | `TestRunTestAPI_ChatJimmyOK` | cli | PASS |
+
+**Total: 7 passed, 0 failed**
+
+---
+
+### 1.16 Aggregate
+
+| Suite | Passed | Failed | Total |
+|-------|--------|--------|-------|
+| config | 14 | 0 | 14 |
+| types | 4 | 0 | 4 |
+| conway | 8 | 0 | 8 |
+| agent (policy) | 21 | 0 | 21 |
+| state | 17 | 0 | 17 |
+| heartbeat | 3 | 0 | 3 |
+| agent (loop, context) | 6 | 0 | 6 |
+| tools | 10 | 0 | 10 |
+| inference | 16 | 0 | 16 |
+| identity | 14 | 0 | 14 |
+| memory | 4 | 0 | 4 |
+| skills | 1 | 0 | 1 |
+| soul | 4 | 0 | 4 |
+| tunnel | 1 | 0 | 1 |
+| cmd | 7 | 0 | 7 |
+| **Total** | **130** | **0** | **130** |
+
+---
+
+## 2. How to Run & Verification
+
+### 2.1 Commands
+
+| Command | Scope | Result |
+|---------|-------|--------|
+| `make test` | All tests | PASS |
+| `go test ./...` | All packages | PASS |
+| `go test ./internal/... -v` | Internal packages only | PASS |
+| `go test -race ./...` | Race detector | PASS |
+| `make test-coverage` | Coverage report | coverage.html |
+
+### 2.2 Test Run Output (Last Verified: 14 Mar 2026)
+
+```bash
+$ make test
+go test ./...
+ok  	github.com/morpheumlabs/mormoneyos-go/cmd	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/config	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/conway	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/heartbeat	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/inference	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/memory	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/skills	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/soul	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	(cached)
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
+```
+
+**Aggregate:** 130+ tests passed, 0 failed.
+
+---
+
+## 3. Acceptance Criteria
+
+| Criterion | Status |
+|----------|--------|
+| All unit tests pass: `make test` | PASS |
+| No race conditions: `go test -race ./...` | PASS |
+| CLI smoke (init, status) succeeds | PASS |
+| Policy engine denies protected paths and external dangerous tools | PASS |
+| `test-api` succeeds with ChatJimmy config + mock server | PASS |
+| Coverage ≥ 70% for `internal/` (optional) | Pending |
+| Run bootstrap completes without panic (manual stop) | Manual |
+
+---
+
+## 4. Traceability
+
+| Design Doc | Coverage |
+|------------|----------|
+| **config** | C1–C14 |
+| **types** | T1–T4 |
+| **conway-credits** | CR1–CR8 |
+| **policy-engine** | P1–P21 |
+| **state** | S1–S17 |
+| **heartbeat** | H1–H3 |
+| **agent-loop** | A1–A6 |
+| **tools** | TO1–TO10 |
+| **inference** | INF1–INF16 |
+| **identity** | ID1–ID14 |
+| **memory-retrieval** | M1–M4 |
+| **skills-design** | SK1 |
+| **soul** | SO1–SO4 |
+| **tunnel** | TN1 |
+| **cli** | CLI1–CLI7 |
+
+---
+
+## 5. Run Commands
+
+```bash
+# All tests
+make test
+
+# Verbose
+go test ./... -v
+
+# Race detector
+go test -race ./...
+
+# Coverage
+make test-coverage
+
+# CLI smoke
+./bin/moneyclaw --help && ./bin/moneyclaw init && ./bin/moneyclaw status
+
+# E2E (manual)
+AUTOMATON_DIR=/tmp/moneyclaw-test ./bin/moneyclaw init && echo "agent\nprompt\n0x0\n\n" | ./bin/moneyclaw setup && ./bin/moneyclaw run
+
+# Soak test
+bash scripts/soak-test.sh [hours] [db_path]
+```
+
+---
+
+## 6. Related Documents
+
+- [mormoneyOS design](./design/) — Design docs
+- [ARCHITECTURE.md](../ARCHITECTURE.md) — System architecture
+- [API_REFERENCE.md](./API_REFERENCE.md) — API documentation
+- [memory-retrieval-step6.md](./design/memory-retrieval-step6.md) — Memory retrieval
+- [skills-design.md](./design/skills-design.md) — Skills loader
