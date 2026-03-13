@@ -60,6 +60,15 @@ func (d *Database) migrate() error {
 	if err := d.migrateChildLifecycleEvents(); err != nil {
 		return fmt.Errorf("migrate child_lifecycle_events: %w", err)
 	}
+	if err := d.migrateTransactions(); err != nil {
+		return fmt.Errorf("migrate transactions: %w", err)
+	}
+	if err := d.migrateInboxMessages(); err != nil {
+		return fmt.Errorf("migrate inbox_messages: %w", err)
+	}
+	if err := d.migrateMetricSnapshots(); err != nil {
+		return fmt.Errorf("migrate metric_snapshots: %w", err)
+	}
 	_, err := d.db.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	return err
 }
@@ -159,6 +168,92 @@ func (d *Database) migrateChildLifecycleEvents() error {
 	return err
 }
 
+// migrateTransactions creates transactions table (TS-aligned, application-level financial log).
+// Types: transfer_out, transfer_in, credit_purchase, topup, x402_payment, inference.
+func (d *Database) migrateTransactions() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS transactions (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			amount_cents INTEGER,
+			balance_after_cents INTEGER,
+			description TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+		CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
+	`)
+	return err
+}
+
+// migrateInboxMessages creates inbox_messages table (TS-aligned, social inbox for soul reflection).
+func (d *Database) migrateInboxMessages() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS inbox_messages (
+			id TEXT PRIMARY KEY,
+			from_address TEXT NOT NULL,
+			content TEXT NOT NULL,
+			received_at TEXT NOT NULL DEFAULT (datetime('now')),
+			processed_at TEXT,
+			reply_to TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_inbox_unprocessed ON inbox_messages(received_at) WHERE processed_at IS NULL;
+		CREATE INDEX IF NOT EXISTS idx_inbox_received ON inbox_messages(received_at);
+	`)
+	return err
+}
+
+// migrateMetricSnapshots creates metric_snapshots table (TS-aligned, report_metrics).
+func (d *Database) migrateMetricSnapshots() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS metric_snapshots (
+			id TEXT PRIMARY KEY,
+			snapshot_at TEXT NOT NULL,
+			metrics_json TEXT NOT NULL DEFAULT '{}',
+			alerts_json TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_metric_snapshots_at ON metric_snapshots(snapshot_at);
+	`)
+	return err
+}
+
+// MetricsInsertSnapshot inserts a metrics snapshot (TS metricsInsertSnapshot-aligned).
+func (d *Database) MetricsInsertSnapshot(id, snapshotAt, metricsJSON, alertsJSON string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if metricsJSON == "" {
+		metricsJSON = "{}"
+	}
+	if alertsJSON == "" {
+		alertsJSON = "[]"
+	}
+	_, err := d.db.Exec(
+		`INSERT INTO metric_snapshots (id, snapshot_at, metrics_json, alerts_json, created_at)
+		 VALUES (?, ?, ?, ?, datetime('now'))`,
+		id, snapshotAt, metricsJSON, alertsJSON,
+	)
+	return err
+}
+
+// MetricsPruneOld deletes metric_snapshots older than n days (TS metricsPruneOld-aligned).
+func (d *Database) MetricsPruneOld(days int) (int64, error) {
+	if days <= 0 {
+		days = 7
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	res, err := d.db.Exec(
+		"DELETE FROM metric_snapshots WHERE snapshot_at < datetime('now', ?)",
+		fmt.Sprintf("-%d days", days),
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // Close closes the database.
 func (d *Database) Close() error {
 	return d.db.Close()
@@ -233,12 +328,174 @@ func (d *Database) GetKV(key string) (string, bool, error) {
 	return value, err == nil, err
 }
 
+// ListKeysWithPrefix returns keys matching the prefix (e.g. "procedure:").
+// Used for procedure enumeration in memory retrieval.
+func (d *Database) ListKeysWithPrefix(prefix string) ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	pattern := prefix + "%"
+	rows, err := d.db.Query("SELECT key FROM kv WHERE key LIKE ?", pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 // DeleteKV removes a key from kv.
 func (d *Database) DeleteKV(key string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	_, err := d.db.Exec("DELETE FROM kv WHERE key = ?", key)
 	return err
+}
+
+// GetRecentToolNames returns distinct tool names from recent tool_calls (soul reflection evidence).
+func (d *Database) GetRecentToolNames() ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		"SELECT DISTINCT name FROM tool_calls ORDER BY created_at DESC LIMIT 50",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// InboxMessage represents a claimed inbox message (TS claimInboxMessages-aligned).
+type InboxMessage struct {
+	ID          string
+	FromAddress string
+	Content     string
+}
+
+// ClaimInboxMessages selects up to limit unprocessed inbox messages for agent consumption.
+// TS-aligned: when no pendingInput, agent claims messages and uses them as pendingInput.
+// Uses processed_at IS NULL for simplicity (single-process); no status/retry columns needed.
+func (d *Database) ClaimInboxMessages(limit int) ([]InboxMessage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	d.mu.RLock()
+	rows, err := d.db.Query(
+		"SELECT id, from_address, content FROM inbox_messages WHERE processed_at IS NULL ORDER BY received_at ASC LIMIT ?",
+		limit,
+	)
+	d.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []InboxMessage
+	for rows.Next() {
+		var m InboxMessage
+		if err := rows.Scan(&m.ID, &m.FromAddress, &m.Content); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// MarkInboxProcessed marks inbox messages as processed (TS markInboxProcessed-aligned).
+// Call after turn persistence when claimed messages were used as pendingInput.
+func (d *Database) MarkInboxProcessed(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, id := range ids {
+		_, err := d.db.Exec(
+			"UPDATE inbox_messages SET processed_at = datetime('now') WHERE id = ?",
+			id,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InsertInboxMessage inserts a message into inbox_messages (TS insertInboxMessage-aligned).
+// Used by check_social_inbox when polling channels. INSERT OR IGNORE for deduplication.
+func (d *Database) InsertInboxMessage(id, fromAddress, content, receivedAt string) error {
+	if receivedAt == "" {
+		receivedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`INSERT OR IGNORE INTO inbox_messages (id, from_address, content, received_at) VALUES (?, ?, ?, ?)`,
+		id, fromAddress, content, receivedAt,
+	)
+	return err
+}
+
+// GetRecentInboxAddresses returns from_address from recent inbox_messages (soul reflection evidence).
+func (d *Database) GetRecentInboxAddresses() ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		"SELECT from_address FROM inbox_messages ORDER BY received_at DESC LIMIT 20",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := make(map[string]bool)
+	var out []string
+	for rows.Next() {
+		var addr string
+		if err := rows.Scan(&addr); err != nil {
+			return nil, err
+		}
+		if !seen[addr] {
+			seen[addr] = true
+			out = append(out, addr)
+		}
+	}
+	return out, rows.Err()
+}
+
+// GetRecentTransactionDescriptions returns "type: description" from recent transactions (soul reflection evidence).
+func (d *Database) GetRecentTransactionDescriptions() ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		"SELECT type, description FROM transactions ORDER BY created_at DESC LIMIT 20",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var typ, desc string
+		if err := rows.Scan(&typ, &desc); err != nil {
+			return nil, err
+		}
+		out = append(out, typ+": "+desc)
+	}
+	return out, rows.Err()
 }
 
 // GetIdentity returns a value from the identity table.

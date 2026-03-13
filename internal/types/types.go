@@ -59,6 +59,7 @@ type AutomatonConfig struct {
 	MoonshotAPIKey     string         `json:"moonshotApiKey,omitempty"`
 	ChatJimmyAPIURL    string         `json:"chatjimmyApiUrl,omitempty"` // optional; default https://chatjimmy.ai (no auth)
 	InferenceModel     string         `json:"inferenceModel"`
+	LowComputeModel    string         `json:"lowComputeModel,omitempty"` // Optional; used when tier is critical/low_compute
 	MaxTokensPerTurn   int            `json:"maxTokensPerTurn"`
 	HeartbeatConfigPath string        `json:"heartbeatConfigPath"`
 	DBPath             string         `json:"dbPath"`

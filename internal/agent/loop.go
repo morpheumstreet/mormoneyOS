@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
+	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
@@ -28,6 +31,19 @@ type AgentStore interface {
 	GetAgentState() (string, bool, error)
 }
 
+// InboxStore provides inbox claim/process for pendingInput (TS step 2: claim inbox messages).
+// Optional: when store implements this, agent uses claimed messages as pendingInput.
+type InboxStore interface {
+	ClaimInboxMessages(limit int) ([]state.InboxMessage, error)
+	MarkInboxProcessed(ids []string) error
+}
+
+// TierStateStore provides SetAgentState for survival tier transitions (TS step 4).
+// Optional: when store implements this, agent updates agent_state from tier.
+type TierStateStore interface {
+	SetAgentState(state string) error
+}
+
 // ToolExecutor runs tools by name. When nil, tool calls are stubbed.
 type ToolExecutor interface {
 	Execute(ctx context.Context, name string, args map[string]any) (result string, err error)
@@ -43,6 +59,7 @@ type Loop struct {
 	config        *LoopConfig
 	creditsFn     func(ctx context.Context) int64
 	lineageStore  replication.LineageStore
+	memoryRetriever memory.MemoryRetriever
 	log           *slog.Logger
 }
 
@@ -61,14 +78,15 @@ func NewLoopWithPersister(policy *PolicyEngine, persister TurnPersister, log *sl
 
 // LoopOptions configures the full ReAct loop (TS AgentLoopOptions-aligned).
 type LoopOptions struct {
-	Policy       *PolicyEngine
-	Store        AgentStore
-	Inference    inference.Client
-	Tools        ToolExecutor
-	Config       *LoopConfig
-	CreditsFn    func(ctx context.Context) int64
-	LineageStore replication.LineageStore // optional; for GetLineageSummary in system prompt
-	Log          *slog.Logger
+	Policy          *PolicyEngine
+	Store           AgentStore
+	Inference       inference.Client
+	Tools           ToolExecutor
+	Config          *LoopConfig
+	CreditsFn       func(ctx context.Context) int64
+	LineageStore    replication.LineageStore   // optional; for GetLineageSummary in system prompt
+	MemoryRetriever memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
+	Log             *slog.Logger
 }
 
 // NewLoopWithOptions creates a loop with full ReAct support.
@@ -77,22 +95,23 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		opts.Log = slog.Default()
 	}
 	return &Loop{
-		policy:       opts.Policy,
-		persister:    opts.Store,
-		store:        opts.Store,
-		inference:    opts.Inference,
-		tools:        opts.Tools,
-		config:       opts.Config,
-		creditsFn:    opts.CreditsFn,
-		lineageStore: opts.LineageStore,
-		log:          opts.Log,
+		policy:          opts.Policy,
+		persister:       opts.Store,
+		store:           opts.Store,
+		inference:       opts.Inference,
+		tools:           opts.Tools,
+		config:          opts.Config,
+		creditsFn:       opts.CreditsFn,
+		lineageStore:    opts.LineageStore,
+		memoryRetriever: opts.MemoryRetriever,
+		log:             opts.Log,
 	}
 }
 
 // RunOneTurn executes one ReAct iteration.
 // Design: think -> act -> observe -> persist (TS-aligned).
-// When inference+store are set: build prompt, call inference, parse tool calls, evaluate via policy, persist.
-func (l *Loop) RunOneTurn(ctx context.Context, agentState types.AgentState) (types.AgentState, error) {
+// Returns TurnResult with State (Running/Sleeping), WasIdle, and Err (step 13 aligned).
+func (l *Loop) RunOneTurn(ctx context.Context, agentState types.AgentState) TurnResult {
 	l.log.Debug("agent loop turn", "state", agentState)
 
 	st := string(agentState)
@@ -114,10 +133,10 @@ func (l *Loop) RunOneTurn(ctx context.Context, agentState types.AgentState) (typ
 			l.log.Warn("insert turn failed", "err", err)
 		}
 	}
-	return types.AgentStateRunning, nil
+	return TurnResult{State: types.AgentStateRunning, WasIdle: false}
 }
 
-func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.AgentState, error) {
+func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult {
 	turnCount, _ := l.store.GetTurnCount()
 	agentState, _, _ := l.store.GetAgentState()
 	if agentState == "" {
@@ -127,8 +146,20 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 	if l.creditsFn != nil {
 		creditsCents = l.creditsFn(ctx)
 	}
+	// API unreachable: creditsCents < 0 means API failed; treat as 0 for tier (TS-aligned)
+	if creditsCents < 0 {
+		creditsCents = 0
+	}
 
-	// Build wakeup/input
+	// Step 4: survival tier — set agent_state, low-compute mode, model selection
+	tier := conway.TierFromCreditsCents(creditsCents)
+	agentState = tierToAgentState(tier)
+	if tierStore, ok := l.store.(TierStateStore); ok {
+		_ = tierStore.SetAgentState(agentState)
+	}
+	l.inference.SetLowComputeMode(tier == types.SurvivalTierCritical || tier == types.SurvivalTierLowCompute)
+
+	// Build wakeup/input (TS step 2: claim inbox messages when no pendingInput)
 	recentTurns, _ := l.store.GetRecentTurns(5)
 	lastSummaries := make([]string, 0, 3)
 	for i := len(recentTurns) - 1; i >= 0 && len(lastSummaries) < 3; i-- {
@@ -143,9 +174,32 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 		}
 		lastSummaries = append(lastSummaries, "["+t.Timestamp+"] "+src+": "+think)
 	}
-	pendingInput := BuildWakeupPrompt(l.config, turnCount, creditsCents, lastSummaries)
-	if turnCount > 0 {
-		pendingInput = "You are awake. What do you want to do next?"
+
+	var pendingInput string
+	var inputSource string
+	var claimedIds []string
+
+	if inboxStore, ok := l.store.(InboxStore); ok {
+		claimed, err := inboxStore.ClaimInboxMessages(10)
+		if err != nil {
+			l.log.Warn("claim inbox failed", "err", err)
+		}
+		if len(claimed) > 0 {
+			parts := make([]string, 0, len(claimed))
+			for _, m := range claimed {
+				parts = append(parts, "[Message from "+m.FromAddress+"]: "+m.Content)
+				claimedIds = append(claimedIds, m.ID)
+			}
+			pendingInput = strings.Join(parts, "\n\n")
+			inputSource = "agent"
+		}
+	}
+	if pendingInput == "" {
+		pendingInput = BuildWakeupPrompt(l.config, turnCount, creditsCents, lastSummaries)
+		if turnCount > 0 {
+			pendingInput = "You are awake. What do you want to do next?"
+		}
+		inputSource = "wakeup"
 	}
 
 	// Build context
@@ -153,16 +207,33 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 	if l.lineageStore != nil {
 		lineageSummary = replication.GetLineageSummary(l.lineageStore)
 	}
-	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, lineageSummary)
+	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary)
 	messages := BuildContextMessages(systemPrompt, recentTurns, pendingInput)
+
+	// Step 6: memory retrieval — inject block at index 1 (after system) when non-empty
+	if l.memoryRetriever != nil {
+		memoryBlock, err := l.memoryRetriever.Retrieve(ctx, "", pendingInput)
+		if err != nil {
+			l.log.Debug("memory retrieval failed", "err", err)
+		}
+		if memoryBlock != "" {
+			// Insert at index 1: [system, memory, ...rest]
+			memMsg := inference.ChatMessage{Role: "system", Content: memoryBlock}
+			messages = append(messages[:1], append([]inference.ChatMessage{memMsg}, messages[1:]...)...)
+		}
+	}
 
 	// Inference options with tool definitions (from registry when available)
 	toolDefs := getToolSchemas(l.tools)
+	model := l.inference.GetDefaultModel()
+	if (tier == types.SurvivalTierCritical || tier == types.SurvivalTierLowCompute) && l.config != nil && l.config.LowComputeModel != "" {
+		model = l.config.LowComputeModel
+	}
 	opts := &inference.InferenceOptions{
-		Model:       l.inference.GetDefaultModel(),
-		MaxTokens:   4096,
-		Tools:       toolDefs,
-		ToolChoice:  "auto",
+		Model:      model,
+		MaxTokens:  4096,
+		Tools:      toolDefs,
+		ToolChoice: "auto",
 	}
 
 	// Call inference
@@ -172,8 +243,17 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 		// Persist error turn
 		id := uuid.New().String()
 		ts := time.Now().UTC().Format(time.RFC3339)
-		_ = l.store.InsertTurn(id, ts, stateStr, pendingInput, "wakeup", "[inference error: "+err.Error()+"]", "[]", "{}", 0)
-		return types.AgentStateRunning, nil
+		_ = l.store.InsertTurn(id, ts, stateStr, pendingInput, inputSource, "[inference error: "+err.Error()+"]", "[]", "{}", 0)
+		return TurnResult{State: types.AgentStateRunning, Err: err}
+	}
+
+	// finishReason stop + no tool calls: natural pause, sleep (TS step 13)
+	if len(resp.ToolCalls) == 0 && resp.FinishReason == "stop" {
+		turnID := uuid.New().String()
+		ts := time.Now().UTC().Format(time.RFC3339)
+		tokenUsage := jsonObject("prompt_tokens", resp.InputTokens, "completion_tokens", resp.OutputTokens)
+		_ = l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, resp.Content, "[]", tokenUsage, resp.CostCents)
+		return TurnResult{State: types.AgentStateSleeping, WasIdle: false}
 	}
 
 	turnID := uuid.New().String()
@@ -181,6 +261,9 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 	thinking := resp.Content
 	toolCallsJSON := "[]"
 	tokenUsage := jsonObject("prompt_tokens", resp.InputTokens, "completion_tokens", resp.OutputTokens)
+
+	var sleepToolSucceeded bool
+	var anyMutatingToolExecuted bool
 
 	if len(resp.ToolCalls) > 0 {
 		tcList := make([]map[string]any, 0, len(resp.ToolCalls))
@@ -217,6 +300,13 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 			} else {
 				result = "[stub] Tool not implemented; policy allowed."
 			}
+			// Step 13: track sleep tool success and mutating tools
+			if tc.Function.Name == "sleep" && errStr == "" {
+				sleepToolSucceeded = true
+			}
+			if tools.IsMutatingTool(tc.Function.Name) && allow {
+				anyMutatingToolExecuted = true
+			}
 			tcList = append(tcList, map[string]any{
 				"id": tc.ID, "name": tc.Function.Name, "arguments": argsMap,
 				"result": result, "error": errStr,
@@ -227,11 +317,23 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 		toolCallsJSON = string(tcBytes)
 	}
 
-	if err := l.store.InsertTurn(turnID, ts, stateStr, pendingInput, "wakeup", thinking, toolCallsJSON, tokenUsage, resp.CostCents); err != nil {
+	if err := l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, thinking, toolCallsJSON, tokenUsage, resp.CostCents); err != nil {
 		l.log.Warn("insert turn failed", "err", err)
 	}
 
-	return types.AgentStateRunning, nil
+	// TS step 2: mark claimed inbox messages as processed (atomic with turn persistence)
+	if len(claimedIds) > 0 {
+		if inboxStore, ok := l.store.(InboxStore); ok {
+			_ = inboxStore.MarkInboxProcessed(claimedIds)
+		}
+	}
+
+	// Step 13: sleep tool immediate transition
+	if sleepToolSucceeded {
+		return TurnResult{State: types.AgentStateSleeping, WasIdle: false}
+	}
+	wasIdle := turnCount > 0 && !anyMutatingToolExecuted
+	return TurnResult{State: types.AgentStateRunning, WasIdle: wasIdle}
 }
 
 // toolSchemasProvider is satisfied by tools.Registry for extensible tool definitions.
@@ -260,4 +362,20 @@ func jsonObject(kv ...interface{}) string {
 // ShouldSleep returns true if agent should sleep (idle or explicit sleep).
 func (l *Loop) ShouldSleep(idleTurns int) bool {
 	return idleTurns >= 3
+}
+
+// tierToAgentState maps SurvivalTier to agent state string for prompt/observability.
+func tierToAgentState(tier types.SurvivalTier) string {
+	switch tier {
+	case types.SurvivalTierCritical:
+		return string(types.AgentStateCritical)
+	case types.SurvivalTierLowCompute:
+		return string(types.AgentStateLowCompute)
+	case types.SurvivalTierDead:
+		return string(types.AgentStateDead)
+	case types.SurvivalTierNormal, types.SurvivalTierHigh:
+		return string(types.AgentStateRunning)
+	default:
+		return string(types.AgentStateRunning)
+	}
 }

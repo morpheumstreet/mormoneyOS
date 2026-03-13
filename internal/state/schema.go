@@ -1,6 +1,6 @@
 package state
 
-const schemaVersion = 10
+const schemaVersion = 12
 
 // SchemaV1 creates core tables per mormoneyOS design.
 const SchemaV1 = `

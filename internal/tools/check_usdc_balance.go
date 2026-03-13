@@ -7,12 +7,15 @@ import (
 	"strings"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
+	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
 // CheckUSDCBalanceTool checks USDC balance across configured chains (chain providers).
+// Uses identity resolver when IdentityGetter is set (multi-chain address support).
 type CheckUSDCBalanceTool struct {
-	Config *types.AutomatonConfig
+	Config         *types.AutomatonConfig
+	IdentityGetter identity.IdentityGetter // Optional; when set, resolves address from identity table
 }
 
 func (CheckUSDCBalanceTool) Name() string        { return "check_usdc_balance" }
@@ -22,12 +25,10 @@ func (CheckUSDCBalanceTool) Parameters() string {
 }
 
 func (t *CheckUSDCBalanceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	address := ""
 	chains := []string{"eip155:8453"}
 	var providers map[string]conway.USDCChainProvider
 
 	if t.Config != nil {
-		address = t.Config.WalletAddress
 		if t.Config.DefaultChain != "" {
 			chains = []string{t.Config.DefaultChain}
 		}
@@ -40,12 +41,27 @@ func (t *CheckUSDCBalanceTool) Execute(ctx context.Context, args map[string]any)
 			}
 		}
 	}
-	if chainArg, ok := args["chain"].(string); ok && strings.TrimSpace(chainArg) != "" {
-		chains = []string{strings.TrimSpace(chainArg)}
+	chainArg := ""
+	if c, ok := args["chain"].(string); ok && strings.TrimSpace(c) != "" {
+		chainArg = strings.TrimSpace(c)
+		chains = []string{chainArg}
 		providers = nil
 	}
+
+	// Resolve address: identity table (multi-chain) first, else config
+	address := ""
+	if t.IdentityGetter != nil {
+		if chainArg != "" {
+			address = identity.GetAddressForChain(chainArg, t.IdentityGetter, t.Config)
+		} else {
+			address = identity.GetPrimaryAddress(t.IdentityGetter, t.Config)
+		}
+	}
+	if address == "" && t.Config != nil {
+		address = t.Config.WalletAddress
+	}
 	if address == "" {
-		return "No wallet address in config. Run 'moneyclaw setup' and set walletAddress.", nil
+		return "No wallet address. Run 'moneyclaw setup' and set walletAddress.", nil
 	}
 
 	results, err := conway.GetUSDCBalanceMulti(ctx, address, chains, providers)

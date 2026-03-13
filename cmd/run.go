@@ -16,6 +16,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/heartbeat"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
+	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
@@ -59,11 +60,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	// 2b. Identity bootstrap: persist address, default_chain, and address_<caip2> for default chain
-	_ = db.SetIdentity("address", cfg.WalletAddress)
-	_ = db.SetIdentity("default_chain", cfg.DefaultChain)
-	if addr, err := identity.DeriveAddress(cfg.DefaultChain); err == nil && addr != "" {
-		_ = db.SetIdentity(identity.AddressKeyForChain(cfg.DefaultChain), addr)
+	// 2b. Identity bootstrap: multi-chain addresses (defaultChain + chainProviders), live wallet first
+	primaryAddr, _ := identity.BootstrapIdentity(db, cfg)
+	identity.EnsureCreatedAt(db)
+	if primaryAddr == "" {
+		primaryAddr = cfg.WalletAddress
 	}
 
 	// 3. Policy engine (with treasury policy and DB-backed rate limits)
@@ -92,7 +93,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	channels := social.NewChannelsFromConfig(cfg)
 
 	// 5d. Bootstrap topup: buy minimum $5 credits from USDC when balance is low (TS-aligned)
-	if conwayClient != nil && cfg.WalletAddress != "" {
+	if conwayClient != nil && primaryAddr != "" {
 		bootstrapTopupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		func() {
 			defer cancel()
@@ -127,7 +128,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Store:          db,
 		Conway:         conwayClient,
 		Name:           cfg.Name,
-		ParentAddress:  cfg.WalletAddress,
+		ParentAddress:  primaryAddr,
 		GenesisPrompt:  cfg.GenesisPrompt,
 		Config:         cfg,
 		ConfigTools:    cfg.Tools,
@@ -138,17 +139,19 @@ func runRun(cmd *cobra.Command, args []string) error {
 		TunnelRegistry: tunnelReg,
 	})
 	loop := agent.NewLoopWithOptions(agent.LoopOptions{
-		Policy:       policy,
-		Store:        db,
-		Inference:    infClient,
-		Tools:        reg,
-		LineageStore: db,
+		Policy:          policy,
+		Store:           db,
+		Inference:       infClient,
+		Tools:           reg,
+		LineageStore:    db,
+		MemoryRetriever: memory.NewKVMemoryRetriever(db),
 		Config: &agent.LoopConfig{
-			Name:           cfg.Name,
-			GenesisPrompt:  cfg.GenesisPrompt,
-			CreatorMsg:     cfg.CreatorAddress,
-			InferenceModel: cfg.InferenceModel,
-			WalletAddress:  cfg.WalletAddress,
+			Name:             cfg.Name,
+			GenesisPrompt:    cfg.GenesisPrompt,
+			CreatorMsg:      cfg.CreatorAddress,
+			InferenceModel:   cfg.InferenceModel,
+			LowComputeModel:  cfg.LowComputeModel,
+			WalletAddress:   primaryAddr,
 		},
 		CreditsFn: creditsFn,
 		Log:       slog.Default(),
@@ -169,7 +172,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			Config:       cfg,
 			Conway:       conwayClient,
 			Channels:     channels,
-			Address:      cfg.WalletAddress,
+			Address:      primaryAddr,
 			HealthMonitor: &replication.ChildHealthMonitor{
 				Conway: conwayClient,
 				Store: db,
@@ -189,7 +192,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			WakeInserter: db,
 			Config:       cfg,
 			Channels:     channels,
-			Address:      cfg.WalletAddress,
+			Address:      primaryAddr,
 			Log:          slog.Default(),
 		})
 	}
@@ -205,7 +208,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if !noWeb {
 		webSrv := web.NewServer(webAddr, webState, db, &web.ServerConfig{
 			Name:          cfg.Name,
-			WalletAddress: cfg.WalletAddress,
+			WalletAddress: primaryAddr,
 			DefaultChain:  cfg.DefaultChain,
 			Version:       web.Version,
 			CreditsGetter: creditsGetter,
@@ -250,19 +253,33 @@ func runRun(cmd *cobra.Command, args []string) error {
 				time.Sleep(wakeCheck)
 				continue
 			}
-			newState, err := loop.RunOneTurn(ctx, agentState)
-			if err != nil {
-				slog.Error("agent turn failed", "err", err)
+			res := loop.RunOneTurn(ctx, agentState)
+			if res.Err != nil {
+				slog.Error("agent turn failed", "err", res.Err)
 				continue
 			}
 			tickNum++
-			if newState == agentState && loop.ShouldSleep(idleTurns) {
+			if res.State == types.AgentStateSleeping {
 				agentState = types.AgentStateSleeping
 				idleTurns = 0
+				// Ensure sleep_until is set (sleep tool sets it; finishReason/idle do not)
+				if _, ok, _ := db.GetKV("sleep_until"); !ok {
+					_ = db.SetKV("sleep_until", time.Now().Add(60*time.Second).UTC().Format(time.RFC3339))
+				}
 				slog.Info("agent sleeping")
 			} else {
-				agentState = newState
-				idleTurns++
+				agentState = res.State
+				if res.WasIdle {
+					idleTurns++
+				} else {
+					idleTurns = 0
+				}
+				if agentState == types.AgentStateRunning && loop.ShouldSleep(idleTurns) {
+					agentState = types.AgentStateSleeping
+					idleTurns = 0
+					_ = db.SetKV("sleep_until", time.Now().Add(60*time.Second).UTC().Format(time.RFC3339))
+					slog.Info("agent sleeping")
+				}
 			}
 
 		case types.AgentStateSleeping:
@@ -273,11 +290,30 @@ func runRun(cmd *cobra.Command, args []string) error {
 			}
 			if hasWake {
 				_, _ = db.ConsumeWakeEvents()
+				_ = db.DeleteKV("sleep_until")
 				agentState = types.AgentStateWaking
 				slog.Info("wake event consumed, waking")
 				continue
 			}
-			time.Sleep(wakeCheck)
+			// Check sleep_until expiry (TS-aligned: wake when timer expires)
+			if until, ok, _ := db.GetKV("sleep_until"); ok && until != "" {
+				if t, err := time.Parse(time.RFC3339, until); err == nil && !t.After(time.Now()) {
+					_ = db.DeleteKV("sleep_until")
+					agentState = types.AgentStateWaking
+					slog.Info("sleep_until expired, waking")
+					continue
+				}
+			}
+			// Sleep until next check; use min(wakeCheck, time until sleep_until) when set
+			sleepDur := wakeCheck
+			if until, ok, _ := db.GetKV("sleep_until"); ok && until != "" {
+				if t, err := time.Parse(time.RFC3339, until); err == nil && t.After(time.Now()) {
+					if d := time.Until(t); d < sleepDur && d > time.Second {
+						sleepDur = d
+					}
+				}
+			}
+			time.Sleep(sleepDur)
 		}
 	}
 }

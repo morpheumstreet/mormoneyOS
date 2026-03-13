@@ -155,6 +155,42 @@ func TestGetKV_Missing(t *testing.T) {
 	}
 }
 
+func TestListKeysWithPrefix(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() err = %v", err)
+	}
+	defer db.Close()
+
+	_ = db.SetKV("procedure:deploy", "steps")
+	_ = db.SetKV("procedure:backup", "steps")
+	_ = db.SetKV("other", "x")
+
+	keys, err := db.ListKeysWithPrefix("procedure:")
+	if err != nil {
+		t.Fatalf("ListKeysWithPrefix() err = %v", err)
+	}
+	if len(keys) != 2 {
+		t.Errorf("ListKeysWithPrefix(procedure:) = %v, want 2 keys", keys)
+	}
+	got := make(map[string]bool)
+	for _, k := range keys {
+		got[k] = true
+	}
+	if !got["procedure:deploy"] || !got["procedure:backup"] {
+		t.Errorf("missing expected keys, got %v", keys)
+	}
+
+	empty, err := db.ListKeysWithPrefix("nonexistent:")
+	if err != nil {
+		t.Fatalf("ListKeysWithPrefix(nonexistent:) err = %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("ListKeysWithPrefix(nonexistent:) = %v, want []", empty)
+	}
+}
+
 func TestClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")
 	db, err := Open(path)
@@ -174,7 +210,7 @@ func TestSchemaTablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"turns", "kv", "wake_events", "policy_decisions", "schema_version", "installed_tools"}
+	tables := []string{"turns", "kv", "wake_events", "policy_decisions", "schema_version", "installed_tools", "transactions", "inbox_messages", "metric_snapshots"}
 	for _, tbl := range tables {
 		var n int
 		err := db.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tbl).Scan(&n)
@@ -237,5 +273,42 @@ func TestInstallTool_GetInstalledTools_RemoveTool(t *testing.T) {
 	}
 	if len(tools) != 0 {
 		t.Errorf("GetInstalledTools() after RemoveTool = %d tools, want 0", len(tools))
+	}
+}
+
+func TestClaimInboxMessages_MarkInboxProcessed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() err = %v", err)
+	}
+	defer db.Close()
+
+	// Insert messages
+	_ = db.InsertInboxMessage("msg-1", "0xabc", "hello", "")
+	_ = db.InsertInboxMessage("msg-2", "0xdef", "world", "")
+
+	claimed, err := db.ClaimInboxMessages(10)
+	if err != nil {
+		t.Fatalf("ClaimInboxMessages() err = %v", err)
+	}
+	if len(claimed) != 2 {
+		t.Errorf("ClaimInboxMessages() = %d, want 2", len(claimed))
+	}
+	if claimed[0].ID != "msg-1" || claimed[0].FromAddress != "0xabc" || claimed[0].Content != "hello" {
+		t.Errorf("ClaimInboxMessages()[0] = %+v", claimed[0])
+	}
+
+	err = db.MarkInboxProcessed([]string{"msg-1", "msg-2"})
+	if err != nil {
+		t.Fatalf("MarkInboxProcessed() err = %v", err)
+	}
+
+	claimed2, err := db.ClaimInboxMessages(10)
+	if err != nil {
+		t.Fatalf("ClaimInboxMessages() after mark err = %v", err)
+	}
+	if len(claimed2) != 0 {
+		t.Errorf("ClaimInboxMessages() after mark = %d, want 0", len(claimed2))
 	}
 }

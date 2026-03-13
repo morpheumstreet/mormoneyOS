@@ -119,6 +119,9 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["inferenceModel"].(string); ok && v != "" {
 		cfg.InferenceModel = v
 	}
+	if v, ok := raw["lowComputeModel"].(string); ok {
+		cfg.LowComputeModel = v
+	}
 	if v, ok := raw["dbPath"].(string); ok && v != "" {
 		cfg.DBPath = ResolvePath(v)
 	} else {

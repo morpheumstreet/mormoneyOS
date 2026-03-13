@@ -12,12 +12,12 @@ func TestRunOneTurn(t *testing.T) {
 	loop := NewLoop(policy, nil)
 	ctx := context.Background()
 
-	state, err := loop.RunOneTurn(ctx, types.AgentStateWaking)
-	if err != nil {
-		t.Fatalf("RunOneTurn() err = %v", err)
+	res := loop.RunOneTurn(ctx, types.AgentStateWaking)
+	if res.Err != nil {
+		t.Fatalf("RunOneTurn() err = %v", res.Err)
 	}
-	if state != types.AgentStateRunning {
-		t.Errorf("RunOneTurn() state = %q, want running", state)
+	if res.State != types.AgentStateRunning {
+		t.Errorf("RunOneTurn() state = %q, want running", res.State)
 	}
 }
 

@@ -7,16 +7,18 @@ import (
 
 // LoopConfig holds config for prompt building (TS-aligned subset).
 type LoopConfig struct {
-	Name          string
-	GenesisPrompt string
-	CreatorMsg    string
-	InferenceModel string
-	WalletAddress string
+	Name             string
+	GenesisPrompt    string
+	CreatorMsg       string
+	InferenceModel   string
+	LowComputeModel  string // Optional; used when tier is critical/low_compute
+	WalletAddress    string
 }
 
 // BuildSystemPrompt builds the system prompt (TS buildSystemPrompt-aligned, simplified).
 // lineageSummary is optional; when non-empty, appended to status block (TS getLineageSummary-aligned).
-func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCents int64, lineageSummary string) string {
+// tierStr is the survival tier from conway.TierFromCreditsCents (high, normal, low_compute, critical, dead).
+func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCents int64, tierStr string, lineageSummary string) string {
 	if cfg == nil {
 		cfg = &LoopConfig{Name: "automaton", InferenceModel: "stub"}
 	}
@@ -25,11 +27,9 @@ func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCe
 		stateStr = "running"
 	}
 	credits := float64(creditsCents) / 100
-	tier := "normal"
-	if creditsCents <= 10 {
-		tier = "critical"
-	} else if creditsCents <= 50 {
-		tier = "low_compute"
+	tier := tierStr
+	if tier == "" {
+		tier = "normal"
 	}
 
 	var b strings.Builder

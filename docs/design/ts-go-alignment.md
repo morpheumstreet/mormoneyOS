@@ -8,16 +8,16 @@
 ## 1. Executive Summary
 
 
-| Aspect                | TypeScript (src/)                                                                                    | Go (cmd/ + internal/)                                         | Alignment           |
-| --------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------- |
-| **Maturity**          | Full implementation (75 built-in tools, 5-tier memory, 11 heartbeat tasks)                           | Core aligned (ReAct loop, DB-backed heartbeat, 11 tasks); 56–65 real tools (when Conway+Channels+Tunnel configured), 11 stubs | TS is reference     |
-| **CLI**               | `automaton --run`, `--setup`, `--status`, etc.                                                       | `moneyclaw run`, `setup`, `status`, etc.                      | ✅ Aligned           |
-| **Runtime lifecycle** | waking → running → sleeping → waking                                                                 | Same                                                          | ✅ Aligned           |
-| **Web API**           | `/api/status`, `/api/strategies`, `/api/cost`, `/api/risk`, `/api/pause`, `/api/resume`, `/api/chat` | Same routes including `/api/chat`                             | ✅ Aligned           |
-| **Schema**            | v8, 22+ tables                                                                                       | v8 (SchemaV1: core + inference_costs, heartbeat_dedup, skills, children) | ⚠️ Go schema subset |
-| **Policy engine**     | 6 rule categories, policy_decisions audit                                                            | 6 rules (validation, path, financial, command-safety, rate-limit, authority) | ✅ Aligned |
-| **Agent loop**        | Full ReAct (prompt, inference, tools, persist)                                                       | Full ReAct: prompt, inference (real when OpenAI/Conway keys set), tools, persist | ✅ Aligned            |
-| **Heartbeat**         | DurableScheduler, DB-backed, 11 tasks, wake events                                                   | DB-backed scheduler, cron, leases, 11 tasks, TickContext | ✅ Aligned           |
+| Aspect                | TypeScript (src/)                                                                                    | Go (cmd/ + internal/)                                                                                                         | Alignment                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **Maturity**          | Full implementation (75 built-in tools, 5-tier memory, 11 heartbeat tasks)                           | Core aligned (ReAct loop, DB-backed heartbeat, 11 tasks); 56–65 real tools (when Conway+Channels+Tunnel configured), 11 stubs | TS is reference                                 |
+| **CLI**               | `automaton --run`, `--setup`, `--status`, etc.                                                       | `moneyclaw run`, `setup`, `status`, etc.                                                                                      | ✅ Aligned                                       |
+| **Runtime lifecycle** | waking → running → sleeping → waking                                                                 | Same                                                                                                                          | ✅ Aligned                                       |
+| **Web API**           | `/api/status`, `/api/strategies`, `/api/cost`, `/api/risk`, `/api/pause`, `/api/resume`, `/api/chat` | Same routes including `/api/chat`                                                                                             | ✅ Aligned                                       |
+| **Schema**            | v8, 22+ tables                                                                                       | v12, 21 tables (+ metric_snapshots)                                                                                           | ⚠️ Go subset; soul reflection + metrics aligned |
+| **Policy engine**     | 6 rule categories, policy_decisions audit                                                            | 6 rules (validation, path, financial, command-safety, rate-limit, authority)                                                  | ✅ Aligned                                       |
+| **Agent loop**        | Full ReAct (prompt, inference, tools, persist)                                                       | Full ReAct: prompt, inference (real when OpenAI/Conway keys set), tools, persist                                              | ✅ Aligned                                       |
+| **Heartbeat**         | DurableScheduler, DB-backed, 11 tasks, wake events                                                   | DB-backed scheduler, cron, leases, 11 tasks, TickContext                                                                      | ✅ Aligned                                       |
 
 
 ---
@@ -44,7 +44,7 @@ index.ts
 cmd/moneyclaw/main.go → cmd.Execute()
   └── run
         ├── config.Load()
-        ├── state.Open() — SQLite, SchemaV1 + inference_costs/skills/heartbeat_dedup, wake_events migration
+        ├── state.Open() — SQLite, SchemaV1 + migrations (v11: transactions, inbox_messages, onchain_transactions, registry, child_lifecycle_events)
         ├── conway.NewHTTPClient() — when conwayApiUrl + conwayApiKey
         ├── social.NewChannelsFromConfig() — Conway, Telegram, Discord when socialChannels + credentials
         ├── tunnel.NewFromConfig() — expose_port, remove_port, tunnel_status when tunnel configured
@@ -61,42 +61,45 @@ cmd/moneyclaw/main.go → cmd.Execute()
 ### 3.1 Tables Present in Both
 
 
-| Table              | TS  | Go  | Notes                                                                                           |
-| ------------------ | --- | --- | ----------------------------------------------------------------------------------------------- |
-| schema_version     | ✅   | ✅   |                                                                                                 |
-| identity           | ✅   | ✅   |                                                                                                 |
-| turns              | ✅   | ✅   |                                                                                                 |
-| tool_calls         | ✅   | ✅   |                                                                                                 |
-| kv                 | ✅   | ✅   |                                                                                                 |
-| policy_decisions   | ✅   | ✅   | Go: fewer columns (no rules_evaluated, etc.)                                                    |
-| spend_tracking     | ✅   | ✅   | Go: different columns (window_start/end vs window_hour/day)                                     |
-| heartbeat_schedule | ✅   | ✅   | Go: `name` vs `task_name`, different structure                                                  |
-| heartbeat_history  | ✅   | ✅   | Go: `finished_at`, `success`, `should_wake` vs TS `completed_at`, `result`                      |
-| wake_events        | ✅   | ✅   | **Aligned**: both use `id INTEGER AUTOINCREMENT`, `consumed_at TEXT`, `payload` |
-| heartbeat_dedup    | ✅   | ✅   | dedup_key, task_name, expires_at                                                |
-| inference_costs    | ✅   | ✅   | TS-aligned columns                                                              |
-| skills             | ✅   | ✅   | name, description, enabled, etc.                                                |
-| children           | ✅   | ✅   | TS-aligned; GetChildren for /api/strategies                                      |
+| Table                  | TS  | Go  | Notes                                                                             |
+| ---------------------- | --- | --- | --------------------------------------------------------------------------------- |
+| schema_version         | ✅   | ✅   |                                                                                   |
+| identity               | ✅   | ✅   |                                                                                   |
+| turns                  | ✅   | ✅   |                                                                                   |
+| tool_calls             | ✅   | ✅   |                                                                                   |
+| kv                     | ✅   | ✅   |                                                                                   |
+| policy_decisions       | ✅   | ✅   | Go: fewer columns (no rules_evaluated, etc.)                                      |
+| spend_tracking         | ✅   | ✅   | Go: different columns (window_start/end vs window_hour/day)                       |
+| heartbeat_schedule     | ✅   | ✅   | Go: `name` vs `task_name`, different structure                                    |
+| heartbeat_history      | ✅   | ✅   | Go: `finished_at`, `success`, `should_wake` vs TS `completed_at`, `result`        |
+| wake_events            | ✅   | ✅   | **Aligned**: both use `id INTEGER AUTOINCREMENT`, `consumed_at TEXT`, `payload`   |
+| heartbeat_dedup        | ✅   | ✅   | dedup_key, task_name, expires_at                                                  |
+| inference_costs        | ✅   | ✅   | TS-aligned columns                                                                |
+| skills                 | ✅   | ✅   | name, description, enabled, etc.                                                  |
+| children               | ✅   | ✅   | TS-aligned; GetChildren for /api/strategies                                       |
+| onchain_transactions   | ✅   | ✅   | TS-aligned; chain, tx_hash, from_address, etc.                                    |
+| registry               | ✅   | ✅   | TS-aligned; chain, address, sandbox_id                                            |
+| installed_tools        | ✅   | ✅   | TS-aligned; id, name, type, config, enabled                                       |
+| child_lifecycle_events | ✅   | ✅   | TS-aligned; added in schema v10                                                   |
+| transactions           | ✅   | ✅   | TS-aligned; id, type, amount_cents, balance_after_cents, description (schema v11) |
+| inbox_messages         | ✅   | ✅   | TS-aligned; id, from_address, content, received_at, processed_at (schema v11)     |
+| metric_snapshots       | ✅   | ✅   | TS-aligned; id, snapshot_at, metrics_json, alerts_json (schema v12)               |
 
 
 ### 3.2 Tables in TS Only (Go Missing)
 
 - heartbeat_entries (legacy)
-- transactions
-- installed_tools
 - modifications
-- registry, reputation
-- inbox_messages
+- reputation
 - soul_history
 - working_memory, episodic_memory, semantic_memory, procedural_memory, relationship_memory
 - session_summaries
 - model_registry
-- child_lifecycle_events (Go: added in schema v10, migration migrateChildLifecycleEvents)
 - discovered_agents_cache
-- onchain_transactions
-- metric_snapshots
 
-**Go has:** inference_costs, heartbeat_dedup, skills, children (added in schema).
+**Go has:** inference_costs, heartbeat_dedup, skills, children, transactions, inbox_messages (v11), metric_snapshots (v12).
+
+**Schema gap summary:** Soul reflection evidence (transactions, inbox_messages); metric_snapshots (report_metrics) in v12. Remaining TS-only: memory tiers, soul_history, model_registry, modifications, reputation, session_summaries, discovered_agents_cache.
 
 ### 3.3 Schema: wake_events (Aligned)
 
@@ -122,16 +125,16 @@ Go applies migration for existing DBs with the old schema (`id TEXT`, `consumed 
 ### 4.1 Web API
 
 
-| Endpoint            | TS  | Go  | TS behavior                     | Go behavior                          |
-| ------------------- | --- | --- | ------------------------------- | ------------------------------------ |
-| GET /api/status     | ✅   | ✅   | DB + Conway credits, turn count | DB + kv/identity, TS-aligned shape   |
+| Endpoint            | TS  | Go  | TS behavior                     | Go behavior                                                 |
+| ------------------- | --- | --- | ------------------------------- | ----------------------------------------------------------- |
+| GET /api/status     | ✅   | ✅   | DB + Conway credits, turn count | DB + kv/identity, TS-aligned shape                          |
 | GET /api/strategies | ✅   | ✅   | Skills + children from DB       | Skills + children from DB when tables exist; else hardcoded |
-| GET /api/history    | ❌   | ✅   | —                               | Returns []                           |
-| GET /api/cost       | ✅   | ✅   | inference_costs table           | Queries inference_costs when exists   |
-| GET /api/risk       | ✅   | ✅   | DB agent_state                  | RuntimeState.Paused                  |
-| POST /api/pause     | ✅   | ✅   | DB: set sleeping, sleep_until   | DB: SetAgentState + SetKV (persisted) |
-| POST /api/resume    | ✅   | ✅   | insertWakeEvent                 | DB: DeleteKV + InsertWakeEvent        |
-| POST /api/chat      | ✅   | ✅   | Simple status/help parsing      | status/help parsing, DB-backed       |
+| GET /api/history    | ❌   | ✅   | —                               | Returns []                                                  |
+| GET /api/cost       | ✅   | ✅   | inference_costs table           | Queries inference_costs when exists                         |
+| GET /api/risk       | ✅   | ✅   | DB agent_state                  | RuntimeState.Paused                                         |
+| POST /api/pause     | ✅   | ✅   | DB: set sleeping, sleep_until   | DB: SetAgentState + SetKV (persisted)                       |
+| POST /api/resume    | ✅   | ✅   | insertWakeEvent                 | DB: DeleteKV + InsertWakeEvent                              |
+| POST /api/chat      | ✅   | ✅   | Simple status/help parsing      | status/help parsing, DB-backed                              |
 
 
 **Status shape (aligned):** Both return `{ is_running, state, tick_count, wallet_value, today_pnl, dry_run, address, name, version }` plus legacy `running`, `paused`, `agent_state`, `tick`.
@@ -141,9 +144,9 @@ Go applies migration for existing DBs with the old schema (`id TEXT`, `consumed 
 ### 4.2 Pause/Resume Semantics (Aligned)
 
 
-| Runtime | Pause                                                     | Resume                                                                    |
-| ------- | --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **TS**  | `db.setAgentState("sleeping")` + `sleep_until` far future | `db.deleteKV("sleep_until")` + `insertWakeEvent(db.raw, "web", "resume")` |
+| Runtime | Pause                                                                 | Resume                                                                              |
+| ------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **TS**  | `db.setAgentState("sleeping")` + `sleep_until` far future             | `db.deleteKV("sleep_until")` + `insertWakeEvent(db.raw, "web", "resume")`           |
 | **Go**  | `db.SetAgentState("sleeping")` + `db.SetKV("sleep_until", farFuture)` | `db.DeleteKV("sleep_until")` + `db.InsertWakeEvent("web", "resume from dashboard")` |
 
 
@@ -212,18 +215,31 @@ Both implement: `waking → running → sleeping → waking`.
 12. Memory ingestion
 13. Loop detection, idle detection, sleep tool handling
 
-### 7.2 Go Implementation (`internal/agent/`)
+### 7.2 Go Implementation (`internal/agent/` + `cmd/run.go`)
 
-| Step | TS | Go | Notes |
-|------|----|----|-------|
-| System prompt | `buildSystemPrompt` | `BuildSystemPrompt` | TS-aligned: status, credits, tier, genesis |
-| Wakeup prompt | `buildWakeupPrompt` | `BuildWakeupPrompt` | First-turn vs resume |
-| Context messages | `buildContextMessages` | `BuildContextMessages` | system + recent turns + pending input |
-| Inference | router (OpenAI/Anthropic/Conway) | `inference.Client` (OpenAIClient when keys set, else StubClient) | ✅ Real client wired |
-| Tool calls | `executeTool` | Policy evaluate + Registry.Execute | 56–65 real, 11 stubs |
-| Persist | turn + tool_calls | `InsertTurn` + `InsertToolCall` | DB-backed |
+Step-by-step alignment against TS reference flow (§7.1):
 
-**Loop wiring (`cmd/run.go`):** `NewLoopWithOptions` with `Store` (db), `Inference` (StubClient), `Config`, `CreditsFn` (Conway when configured).
+
+| Step                       | TS                                                                  | Go                                                                                                                                                                                              | Status                                                                                                |
+| -------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1. Check sleep_until       | `db.getKV("sleep_until")` at turn start; if > now → sleeping, break | Sleep tool/ShouldSleep set `sleep_until`; Sleeping case checks expiry, wakes when expired; wake events clear it; `min(wakeCheck, time until sleep_until)` for sleep duration                    | ✅ Aligned                                                                                             |
+| 2. Claim inbox messages    | `claimInboxMessages(db.raw, 10)` when no pendingInput               | `ClaimInboxMessages(10)` when store implements InboxStore; format as pendingInput; `MarkInboxProcessed` after turn; check_social_inbox inserts via `InsertInboxMessage` | ✅ Aligned |
+| 3. Refresh financial state | `getFinancialState(conway, identity, db)`                           | `CreditsFn(ctx)` in RunOneTurn; Conway GetCreditsBalance                                                                                                                                        | ✅ Aligned (credits); USDC not in turn (heartbeat)                                                     |
+| 4. Check survival tier     | `getSurvivalTier`, `setAgentState`, `inference.setLowComputeMode`   | `conway.TierFromCreditsCents`; `tierToAgentState`; `TierStateStore.SetAgentState`; `inference.SetLowComputeMode`; `LowComputeModel` when critical/low_compute; `BuildSystemPrompt` uses shared tier | ✅ Aligned                                                                                             |
+| 5. Build system prompt     | `buildSystemPrompt`                                                 | `BuildSystemPrompt`                                                                                                                                                                             | ✅ TS-aligned: status, credits, tier, genesis, lineageSummary                                          |
+| 6. Retrieve memories       | `MemoryRetriever.retrieve`, `formatMemoryBlock`                     | `memory.KVMemoryRetriever` in loop; pre-turn retrieval from KV (facts, goals, procedures); inject at index 1                                                                                   | ✅ Aligned (Phase 1 KV-backed; 5-tier deferred)                                                         |
+| 7. Build context messages  | `buildContextMessages`                                              | `BuildContextMessages`                                                                                                                                                                          | ✅ system + recent turns + pending input                                                               |
+| 8. Call inference          | `inferenceRouter.route`                                             | `inference.Client.Chat`                                                                                                                                                                         | ✅ OpenAIClient/Conway when keys set; StubClient fallback                                              |
+| 9. Parse tool calls        | From router result                                                  | From `resp.ToolCalls`                                                                                                                                                                           | ✅ Aligned                                                                                             |
+| 10. Execute tools          | `executeTool` (policy engine)                                       | `policy.Evaluate` + `l.tools.Execute`; `InsertPolicyDecision` for audit                                                                                                                         | ✅ Policy-gated; 56–65 real, 11 stubs                                                                  |
+| 11. Persist turn           | turn + tool_calls                                                   | `InsertTurn` + `InsertToolCall`                                                                                                                                                                 | ✅ DB-backed                                                                                           |
+| 12. Memory ingestion       | `MemoryIngestionPipeline` after turn                                | Agent-driven via tools (remember_fact, set_goal, save_procedure, etc.); no automatic extraction                                                                                                 | ✅ Aligned: Go uses KV-backed explicit persistence; ingestion pipeline not required for current design |
+| 13. Loop/idle/sleep        | Idle detection, sleep tool handling, finishReason stop              | `TurnResult` with State, WasIdle; sleep tool → immediate Sleeping; finishReason stop → Sleeping; idle-only turn counting via `tools.IsMutatingTool`; `ShouldSleep(idleTurns >= 3)` in main loop | ✅ Aligned                                                                                             |
+
+
+**Loop wiring (`cmd/run.go`):** `NewLoopWithOptions` with `Store` (db), `Inference` (OpenAIClient when keys set), `Tools` (Registry), `Config`, `CreditsFn` (Conway when configured), `LineageStore` (db for GetLineageSummary).
+
+**Summary:** Core ReAct path (steps 1–13) is aligned. Inbox claim (2) implemented: ClaimInboxMessages, MarkInboxProcessed, InsertInboxMessage; check_social_inbox persists to inbox_messages. Survival tier (4): conway.TierFromCreditsCents, tierToAgentState, TierStateStore.SetAgentState, inference.SetLowComputeMode, LowComputeModel selection. Memory retrieval (6): KVMemoryRetriever pre-turn retrieval from facts/goals/procedures; inject at index 1 (TS-aligned). 5-tier tables deferred to Phase 2.
 
 ---
 
@@ -239,31 +255,35 @@ Both implement: `waking → running → sleeping → waking`.
 
 ### 7.3.2 Go Implementation (11 tasks)
 
-| Task | TS | Go | Notes |
-|------|----|----|-------|
-| heartbeat_ping | ✅ | ✅ | Distress on critical/dead; last_heartbeat_ping, last_distress KV |
-| check_credits | ✅ | ✅ | Tier drop wake; zero-credits grace → dead |
-| check_usdc_balance | ✅ | ✅ | Real: Base RPC eth_call; chainProviders config for multi-chain |
-| check_social_inbox | ✅ | ✅ | Real when social channels (Conway/Telegram/Discord) configured; Poll + InsertWakeEvent |
-| check_for_updates | ✅ | ✅ | Git fetch + rev-list; wake when behind origin/main |
-| soul_reflection | ✅ | ⚠️ | Stub; records last_soul_reflection; TS LLM reflection not wired |
-| refresh_models | ✅ | ✅ | Conway ListModels; caches in last_models_refresh KV |
-| check_child_health | ✅ | ✅ | ChildStore; wake when children critical/spawning/stale (>7d) |
-| prune_dead_children | ✅ | ✅ | ChildStore; marks children dead when last_checked >7d |
-| health_check | ✅ | ⚠️ | Stub; no Conway exec yet |
-| report_metrics | ✅ | ⚠️ | Stub; no external metrics endpoint |
 
-**Remaining stubs:** soul_reflection (LLM), health_check (Conway exec), report_metrics (metrics endpoint). check_usdc_balance and check_social_inbox are real.
+| Task                | TS  | Go  | Notes                                                                                                           |
+| ------------------- | --- | --- | --------------------------------------------------------------------------------------------------------------- |
+| heartbeat_ping      | ✅   | ✅   | Distress on critical/dead; last_heartbeat_ping, last_distress KV                                                |
+| check_credits       | ✅   | ✅   | Tier drop wake; zero-credits grace → dead                                                                       |
+| check_usdc_balance  | ✅   | ✅   | Real: Base RPC eth_call; chainProviders config for multi-chain                                                  |
+| check_social_inbox  | ✅   | ✅   | Real when social channels (Conway/Telegram/Discord) configured; Poll + InsertWakeEvent                          |
+| check_for_updates   | ✅   | ✅   | Git fetch + rev-list; wake when behind origin/main                                                              |
+| soul_reflection     | ✅   | ✅   | Real: internal/soul/reflection.go; alignment, evidence from tool_calls/inbox_messages/transactions, suggestions |
+| refresh_models      | ✅   | ✅   | Conway ListModels; caches in last_models_refresh KV                                                             |
+| check_child_health  | ✅   | ✅   | ChildStore; wake when children critical/spawning/stale (>7d)                                                    |
+| prune_dead_children | ✅   | ✅   | ChildStore; marks children dead when last_checked >7d                                                           |
+| health_check        | ✅   | ✅   | Real: Conway ExecInSandbox("echo alive"); sandbox from config/identity/CONWAY_SANDBOX_ID                        |
+| report_metrics      | ✅   | ✅   | Real: metric_snapshots table; balance_cents, survival_tier; critical alert wake                                 |
+
+
+**All 11 heartbeat tasks real.** soul_reflection, check_usdc_balance, check_social_inbox, health_check, report_metrics implemented.
 
 ### 7.3.3 DB-Backed Scheduler (Aligned)
 
-| Feature | TS | Go | Notes |
-|---------|----|----|-------|
-| Cron scheduling | ✅ | ✅ | robfig/cron; only due tasks run |
-| heartbeat_schedule | ✅ | ✅ | Get, Upsert, Update, seed on startup |
-| Leases | ✅ | ✅ | AcquireTaskLease, ReleaseTaskLease, ClearExpiredLeases |
-| heartbeat_history | ✅ | ✅ | InsertHeartbeatHistory |
-| Tier minimum | ✅ | ✅ | Skip tasks when tier below minimum |
+
+| Feature            | TS  | Go  | Notes                                                  |
+| ------------------ | --- | --- | ------------------------------------------------------ |
+| Cron scheduling    | ✅   | ✅   | robfig/cron; only due tasks run                        |
+| heartbeat_schedule | ✅   | ✅   | Get, Upsert, Update, seed on startup                   |
+| Leases             | ✅   | ✅   | AcquireTaskLease, ReleaseTaskLease, ClearExpiredLeases |
+| heartbeat_history  | ✅   | ✅   | InsertHeartbeatHistory                                 |
+| Tier minimum       | ✅   | ✅   | Skip tasks when tier below minimum                     |
+
 
 **TickContext:** Credits fetched once per tick via `CreditsFn`, shared across tasks (TS buildTickContext-aligned).
 
@@ -287,49 +307,51 @@ Both implement: `waking → running → sleeping → waking`.
 
 ### 8.2 Outstanding Tools (Need Work)
 
-| Tool | Blocker | Category |
-|------|---------|----------|
-| **Conway / USDC** | | |
-| topup_credits | Conway/USDC API | Conway |
-| check_usdc_balance | — | ✅ **Done:** `internal/conway/usdc.go`; DefaultChainProviders (Base, Eth, Polygon, Arbitrum); chainProviders config |
-| **MCP** | | |
-| install_mcp_server | MCP client/runtime | Extensibility |
-| **Registry** | | |
-| discover_agents | Agent registry API | Registry |
-| give_feedback | Registry API | Registry |
-| check_reputation | Registry API | Registry |
-| **Domains** | | |
-| search_domains | Domain registry API | Domains |
-| register_domain | Domain registrar API | Domains |
-| manage_dns | DNS provider API | Domains |
-| **Other** | | |
-| register_erc8004 | ERC-8004/identity chain | Identity |
-| update_agent_card | Agent card/registry | Identity |
-| x402_fetch | x402 payment protocol | Payments |
+
+| Tool               | Blocker                 | Category      |
+| ------------------ | ----------------------- | ------------- |
+| **Conway / USDC**  |                         |               |
+| topup_credits      | Conway/USDC API         | Conway        |
+| **MCP**            |                         |               |
+| install_mcp_server | MCP client/runtime      | Extensibility |
+| **Registry**       |                         |               |
+| discover_agents    | Agent registry API      | Registry      |
+| give_feedback      | Registry API            | Registry      |
+| check_reputation   | Registry API            | Registry      |
+| **Domains**        |                         |               |
+| search_domains     | Domain registry API     | Domains       |
+| register_domain    | Domain registrar API    | Domains       |
+| manage_dns         | DNS provider API        | Domains       |
+| **Other**          |                         |               |
+| register_erc8004   | ERC-8004/identity chain | Identity      |
+| update_agent_card  | Agent card/registry     | Identity      |
+| x402_fetch         | x402 payment protocol   | Payments      |
+
 
 **Implemented (removed from Outstanding):** transfer_credits, create_sandbox, delete_sandbox (Conway HTTP); check_usdc_balance (USDC via Base RPC, `internal/conway/usdc.go`); send_message (social channels: Conway, Telegram, Discord); spawn_child, fund_child, start_child, message_child, verify_child_constitution (Conway + child runtime; see `internal/social/`, `internal/tools/child_runtime.go`, `docs/design/child-runtime-protocol.md`).
 
 ### 8.3 Readiness Table
 
-| Component        | TS                     | Go              | Notes                                             |
-| ---------------- | ---------------------- | --------------- | ------------------------------------------------- |
-| Config load/save | ✅                      | ✅               |                                                   |
-| Wallet/identity  | ✅                      | ⚠️               | Config has WalletAddress; identity table + GetIdentity |
-| Conway client    | ✅                      | ✅               | GetCreditsBalance, GetCreditsPricing, ListSandboxes, ListModels, TransferCredits, CreateSandbox, DeleteSandbox, ExecInSandbox, ReadFileInSandbox, WriteFileInSandbox (HTTP) |
-| Inference client | ✅                      | ✅               | OpenAI + Conway when keys set; StubClient fallback |
-| Agent ReAct loop | ✅                      | ✅               | Full ReAct: prompt, inference, tools (policy), persist |
-| Tool system      | 75 built-in tools      | ⚠️ 56–65 real + 11 stubs. Real: shell, file, git×7, edit, install, review, pull; Store: sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model; Conway: check_credits, list_sandboxes, list_models, transfer_credits, create_sandbox, delete_sandbox, heartbeat_ping, fund_child, spawn_child, start_child, message_child, verify_child_constitution; Config: check_usdc_balance; Channels: send_message; Tunnel (when TunnelManager set): expose_port, remove_port, tunnel_status | Policy-gated; Store/Conway/Channels/Tunnel tools when configured |
-| Policy engine    | 6 categories           | 6 rules         | validation, path, financial, command-safety, rate-limit, authority |
-| Memory (5-tier)  | ✅                      | ⚠️               | Go: KV-backed facts, goals, procedures, soul; no 5-tier |
-| Soul system      | ✅                      | ✅               | view_soul, update_soul, reflect_on_soul, view_soul_history |
-| Skills           | ✅                      | ⚠️               | skills table + GetSkills; strategies from DB     |
-| Heartbeat tasks  | 11, DB-backed          | 11, DB-backed   | Cron scheduler, leases, heartbeat_history; 8 real (check_usdc_balance, check_social_inbox when channels), 3 stubs |
-| Heartbeat → wake | ✅                      | ✅               | InsertWakeEvent wired via WakeInserter            |
-| Pause/Resume     | ✅ DB-backed           | ✅ DB-backed    | SetAgentState, sleep_until, load on startup       |
-| Web dashboard    | ✅ + @mormoneyOS/dashui | Embedded static |                                                   |
-| Bootstrap topup  | ✅                      | ✅               | TS-aligned: credits check, USDC balance, x402 topup on startup |
-| Social/registry  | ✅                      | ✅               | Conway, Telegram, Discord channels; send_message, check_social_inbox; message_child via SocialChannelAdapter |
-| Replication      | ✅                      | ✅               | child_lifecycle_events, ChildHealthMonitor, SandboxCleanup, GetLineageSummary in prompt |
+
+| Component        | TS                     | Go                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Notes                                                                                                                                                                                                                                                                |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config load/save | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                                                                                                                                                                                                                                                                      |
+| Wallet/identity  | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | BootstrapIdentity: live wallet first, multi-chain (address_<caip2>) for defaultChain + chainProviders; GetAddressForChain resolver; name/creator/sandbox/createdAt in identity table; TS-aligned                                                                      |
+| Conway client    | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | HTTP: GetCreditsBalance, GetCreditsPricing, ListSandboxes, ListModels, TransferCredits, CreateSandbox, DeleteSandbox, ExecInSandbox, ReadFileInSandbox, WriteFileInSandbox. USDC: GetUSDCBalance, GetUSDCBalanceMulti (`internal/conway/usdc.go`, Base RPC eth_call) |
+| Inference client | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | OpenAI + Conway when keys set; StubClient fallback                                                                                                                                                                                                                   |
+| Agent ReAct loop | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Full ReAct: prompt, inference, tools (policy), persist                                                                                                                                                                                                               |
+| Tool system      | 75 built-in tools      | ⚠️ 56–65 real + 11 stubs. Real: shell, file, git×7, edit, install, review, pull; Store: sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model; Conway: check_credits, list_sandboxes, list_models, transfer_credits, create_sandbox, delete_sandbox, heartbeat_ping, fund_child, spawn_child, start_child, message_child, verify_child_constitution; Config: check_usdc_balance; Channels: send_message; Tunnel (when TunnelManager set): expose_port, remove_port, tunnel_status | Policy-gated; Store/Conway/Channels/Tunnel tools when configured                                                                                                                                                                                                     |
+| Policy engine    | 6 categories           | 6 rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | validation, path, financial, command-safety, rate-limit, authority                                                                                                                                                                                                   |
+| Memory (5-tier)  | ✅                      | ⚠️                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Go: KV-backed facts, goals, procedures, soul; no 5-tier                                                                                                                                                                                                              |
+| Soul system      | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | view_soul, update_soul, reflect_on_soul, view_soul_history                                                                                                                                                                                                           |
+| Skills           | ✅                      | ⚠️                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | skills table + GetSkills; strategies from DB                                                                                                                                                                                                                         |
+| Heartbeat tasks  | 11, DB-backed          | 11, DB-backed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | All 11 real: health_check (Conway exec), report_metrics (metric_snapshots)                                                                                                                                                                                           |
+| Heartbeat → wake | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | InsertWakeEvent wired via WakeInserter                                                                                                                                                                                                                               |
+| Pause/Resume     | ✅ DB-backed            | ✅ DB-backed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | SetAgentState, sleep_until, load on startup                                                                                                                                                                                                                          |
+| Web dashboard    | ✅ + @mormoneyOS/dashui | Embedded static                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |                                                                                                                                                                                                                                                                      |
+| Bootstrap topup  | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | TS-aligned: credits check, USDC balance, x402 topup on startup                                                                                                                                                                                                       |
+| Social/registry  | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Conway, Telegram, Discord channels; send_message, check_social_inbox; message_child via SocialChannelAdapter                                                                                                                                                         |
+| Replication      | ✅                      | ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | child_lifecycle_events, ChildHealthMonitor, SandboxCleanup, GetLineageSummary in prompt                                                                                                                                                                              |
 
 
 ---
@@ -362,13 +384,17 @@ Both implement: `waking → running → sleeping → waking`.
 - ~~**Extension points:** Config, DB (installed_tools), Plugins~~ ✅ **Done:** `tools`/`toolsConfigPath` in config, `installed_tools` table + GetInstalledTools/InstallTool/RemoveTool, `pluginPaths` for .so (Linux).
 - ~~**Local tools:** modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model~~ ✅ **Done:** DB-backed; no Conway/external API required.
 - ~~**Bootstrap topup:** Buy minimum $5 credits from USDC on startup when balance low~~ ✅ **Done:** `internal/conway/topup.go`, x402 payment, USDC balance (Base RPC), wired in `cmd/run.go`.
+- ~~**Schema: transactions, inbox_messages**~~ ✅ **Done:** Soul reflection evidence tables (schema v11).
+- ~~**Soul reflection pipeline**~~ ✅ **Done:** `internal/soul/reflection.go`; alignment, evidence, suggestions; heartbeat + reflect_on_soul tool wired.
+- ~~**health_check**~~ ✅ **Done:** Conway ExecInSandbox("echo alive"); sandbox from config.SandboxID, identity "sandbox", or CONWAY_SANDBOX_ID.
+- ~~**report_metrics**~~ ✅ **Done:** metric_snapshots table (schema v12); balance_cents, survival_tier; critical alert wake; MetricsInsertSnapshot, MetricsPruneOld.
 
 ### 9.2 High Priority (Remaining)
 
 1. ~~**Inference client:** Add real OpenAI/Anthropic/Conway proxy client~~ ✅ **Done:** OpenAI + Conway via `OpenAIClient`; Anthropic optional.
 2. ~~**Tool execution:** Wire real tool implementations (shell, file, etc.) when policy allows~~ ✅ **Done:** shell, file_read via `internal/tools`; policy-gated.
 3. ~~**Conway client:** Extend with GetCreditsPricing, ListSandboxes, ListModels~~ ✅ **Done:** HTTP implementation in `internal/conway/http.go`; graceful fallback on 404.
-4. **Heartbeat:** ~~USDC balance~~ ✅, Conway exec for health_check. check_social_inbox is done (social channels). check_usdc_balance uses GetUSDCBalanceMulti with chainProviders.
+4. **Heartbeat:** ~~USDC balance~~ ✅, ~~Conway exec for health_check~~ ✅, ~~report_metrics~~ ✅. health_check uses ExecInSandbox("echo alive"); report_metrics saves to metric_snapshots, critical alert wake.
 
 ### 9.3 Lower Priority (Full Parity)
 
@@ -408,7 +434,7 @@ The **TypeScript implementation** is the reference design: full ReAct loop, 75 b
 - Full ReAct agent loop (prompt → inference → tools → persist)
 - Inference Client (OpenAI/Conway when keys set)
 - Heartbeat DB-backed scheduler (cron, leases, heartbeat_history)
-- TickContext + real task logic (8 tasks: ping, credits, usdc, social_inbox, updates, refresh_models, child_health, prune_dead_children)
+- TickContext + real task logic (all 11 tasks: ping, credits, usdc, social_inbox, updates, soul_reflection, refresh_models, child_health, prune_dead_children, health_check, report_metrics)
 - Strategies from skills table + children when table exists
 - Soul system (view/update/reflect/history)
 - KV-backed memory (facts, goals, procedures, agent notes)
@@ -420,5 +446,8 @@ The **TypeScript implementation** is the reference design: full ReAct loop, 75 b
 - Child runtime (spawn_child, fund_child, start_child, message_child, verify_child_constitution)
 - Replication (child_lifecycle_events, ChildHealthMonitor, SandboxCleanup, GetLineageSummary in prompt)
 - Bootstrap topup (credits check, USDC balance via Base RPC, x402 payment on startup)
+- USDC balance (check_usdc_balance tool + heartbeat task; `internal/conway/usdc.go`, chainProviders config)
+- Schema: transactions, inbox_messages (soul reflection evidence; schema v11)
+- Soul reflection pipeline (internal/soul/reflection.go; heartbeat + reflect_on_soul tool)
 
-**Remaining gaps:** topup_credits (agent tool; bootstrap topup implemented), Conway exec for health_check, 11 stubbed tools (see §8.2 Outstanding Tools). check_usdc_balance, bootstrap topup (credits + USDC + x402), social channels, child runtime, Conway extended API, tunnel tools are implemented.
+**Remaining gaps:** topup_credits (agent tool; bootstrap topup implemented), 11 stubbed tools (see §8.2 Outstanding Tools).

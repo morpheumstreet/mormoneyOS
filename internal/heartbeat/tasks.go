@@ -12,6 +12,8 @@ import (
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
+	"github.com/morpheumlabs/mormoneyos-go/internal/soul"
+	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
@@ -204,9 +206,39 @@ func runCheckForUpdates(ctx context.Context, tc *TaskContext) (bool, string, err
 }
 
 func runHealthCheck(ctx context.Context, tc *TaskContext) (bool, string, error) {
-	// Go: no Conway exec yet; stub - just record ok
 	if tc == nil {
 		return false, "", nil
+	}
+	sandboxID := ""
+	if tc.Config != nil && tc.Config.SandboxID != "" {
+		sandboxID = tc.Config.SandboxID
+	}
+	if sandboxID == "" {
+		if s, ok, _ := tc.DB.GetKV("sandbox"); ok && s != "" {
+			sandboxID = s
+		}
+	}
+	if sandboxID == "" {
+		sandboxID = os.Getenv("CONWAY_SANDBOX_ID")
+	}
+	if tc.Conway != nil && sandboxID != "" {
+		res, err := tc.Conway.ExecInSandbox(ctx, sandboxID, "echo alive", 5000)
+		if err != nil {
+			prevStatus, _, _ := tc.DB.GetKV("health_check_status")
+			if prevStatus != "failing" {
+				_ = tc.DB.SetKV("health_check_status", "failing")
+				return true, fmt.Sprintf("Health check failed: %v", err), nil
+			}
+			return false, "", nil
+		}
+		if res.ExitCode != 0 {
+			prevStatus, _, _ := tc.DB.GetKV("health_check_status")
+			if prevStatus != "failing" {
+				_ = tc.DB.SetKV("health_check_status", "failing")
+				return true, "Health check failed: sandbox exec returned non-zero", nil
+			}
+			return false, "", nil
+		}
 	}
 	_ = tc.DB.SetKV("health_check_status", "ok")
 	_ = tc.DB.SetKV("last_health_check", time.Now().UTC().Format(time.RFC3339))
@@ -218,7 +250,7 @@ func runCheckSocialInbox(ctx context.Context, tc *TaskContext) (bool, string, er
 		return false, "", nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if tc.Channels == nil || len(tc.Channels) == 0 {
+	if len(tc.Channels) == 0 {
 		_ = tc.DB.SetKV("last_social_check", `{"status":"no_channels","checkedAt":"`+now+`"}`)
 		return false, "", nil
 	}
@@ -243,6 +275,14 @@ func runCheckSocialInbox(ctx context.Context, tc *TaskContext) (bool, string, er
 			if wakeMsg == "" {
 				wakeMsg = fmt.Sprintf("New message from %s on %s", m.Sender, m.Channel)
 			}
+			// Persist to inbox_messages for agent claim (TS-aligned: insertInboxMessage + inbox_seen dedup)
+			if db, ok := tc.DB.(*state.Database); ok {
+				seen, _, _ := tc.DB.GetKV("inbox_seen_" + m.ID)
+				if seen == "" {
+					_ = db.InsertInboxMessage(m.ID, m.Sender, m.Content, "")
+					_ = tc.DB.SetKV("inbox_seen_"+m.ID, "1")
+				}
+			}
 		}
 	}
 	if shouldWake && tc.DB != nil {
@@ -255,11 +295,30 @@ func runCheckSocialInbox(ctx context.Context, tc *TaskContext) (bool, string, er
 }
 
 func runSoulReflection(ctx context.Context, tc *TaskContext) (bool, string, error) {
-	// Go: stub; TS soul_reflection triggers LLM reflection. Record last check.
 	if tc == nil {
 		return false, "", nil
 	}
-	_ = tc.DB.SetKV("last_soul_reflection", time.Now().UTC().Format(time.RFC3339))
+	db, ok := tc.DB.(*state.Database)
+	if !ok {
+		_ = tc.DB.SetKV("last_soul_reflection", time.Now().UTC().Format(time.RFC3339))
+		return false, "", nil
+	}
+	ref, err := soul.ReflectOnSoul(db)
+	if err != nil {
+		_ = tc.DB.SetKV("last_soul_reflection", `{"error":"`+err.Error()+`","checkedAt":"`+time.Now().UTC().Format(time.RFC3339)+`"}`)
+		return false, "", nil
+	}
+	payload := map[string]any{
+		"alignment":       ref.CurrentAlignment,
+		"autoUpdated":     ref.AutoUpdated,
+		"suggestedCount":  len(ref.SuggestedUpdates),
+		"timestamp":       time.Now().UTC().Format(time.RFC3339),
+	}
+	b, _ := json.Marshal(payload)
+	_ = tc.DB.SetKV("last_soul_reflection", string(b))
+	if len(ref.SuggestedUpdates) > 0 || ref.CurrentAlignment < 0.3 {
+		return true, fmt.Sprintf("Soul reflection: alignment=%.2f, %d suggested update(s)", ref.CurrentAlignment, len(ref.SuggestedUpdates)), nil
+	}
 	return false, "", nil
 }
 
@@ -359,10 +418,61 @@ func runPruneDeadChildren(ctx context.Context, tc *TaskContext) (bool, string, e
 }
 
 func runReportMetrics(ctx context.Context, tc *TaskContext) (bool, string, error) {
-	// Go: stub; TS report_metrics sends metrics to external endpoint.
 	if tc == nil {
 		return false, "", nil
 	}
-	_ = tc.DB.SetKV("last_metrics_report", fmt.Sprintf(`{"status":"stub","checkedAt":"%s"}`, time.Now().UTC().Format(time.RFC3339)))
+	now := time.Now().UTC().Format(time.RFC3339)
+	db, ok := tc.DB.(*state.Database)
+	if !ok {
+		_ = tc.DB.SetKV("last_metrics_report", fmt.Sprintf(`{"status":"no_db","checkedAt":"%s"}`, now))
+		return false, "", nil
+	}
+	metrics := map[string]any{
+		"balance_cents":  tc.Tick.CreditBalance,
+		"survival_tier":  int(tierToInt(tc.Tick.SurvivalTier)),
+	}
+	metricsJSON, _ := json.Marshal(metrics)
+	var alerts []map[string]any
+	if tc.Tick.SurvivalTier == types.SurvivalTierDead || tc.Tick.SurvivalTier == types.SurvivalTierCritical {
+		alerts = append(alerts, map[string]any{
+			"rule":     "survival_tier",
+			"message":  "Survival tier is " + string(tc.Tick.SurvivalTier) + " — need funding",
+			"severity": "critical",
+		})
+	}
+	alertsJSON, _ := json.Marshal(alerts)
+	id := fmt.Sprintf("ms-%d", time.Now().UnixNano())
+	if err := db.MetricsInsertSnapshot(id, now, string(metricsJSON), string(alertsJSON)); err != nil {
+		_ = tc.DB.SetKV("last_metrics_report", fmt.Sprintf(`{"status":"error","error":"%s","checkedAt":"%s"}`, err.Error(), now))
+		return false, "", nil
+	}
+	if _, err := db.MetricsPruneOld(7); err != nil {
+		// non-fatal
+	}
+	_ = tc.DB.SetKV("last_metrics_report", fmt.Sprintf(`{"status":"ok","checkedAt":"%s","alerts":%d}`, now, len(alerts)))
+	criticalWake := false
+	for _, a := range alerts {
+		if s, _ := a["severity"].(string); s == "critical" {
+			criticalWake = true
+			break
+		}
+	}
+	if criticalWake {
+		return true, fmt.Sprintf("%d critical alert(s) fired", len(alerts)), nil
+	}
 	return false, "", nil
+}
+
+func tierToInt(t types.SurvivalTier) int {
+	m := map[types.SurvivalTier]int{
+		types.SurvivalTierDead:       0,
+		types.SurvivalTierCritical:   1,
+		types.SurvivalTierLowCompute: 2,
+		types.SurvivalTierNormal:     3,
+		types.SurvivalTierHigh:       4,
+	}
+	if v, ok := m[t]; ok {
+		return v
+	}
+	return 0
 }

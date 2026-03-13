@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
+	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
@@ -109,8 +110,12 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 			r.Register(&ReviewMemoryTool{Store: opts.Store})
 			r.Register(&DistressSignalTool{Conway: opts.Conway, Store: opts.Store})
 		}
-		if opts.Config != nil && opts.Config.WalletAddress != "" {
-			r.Register(&CheckUSDCBalanceTool{Config: opts.Config})
+		if opts.Config != nil {
+			var ig identity.IdentityGetter
+			if opts.Store != nil {
+				ig, _ = opts.Store.(identity.IdentityGetter)
+			}
+			r.Register(&CheckUSDCBalanceTool{Config: opts.Config, IdentityGetter: ig})
 		}
 		if opts.Conway != nil {
 			r.RegisterMany(NewConwayTools(opts.Conway))
