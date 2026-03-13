@@ -41,6 +41,18 @@ func (m *mockConwayClient) DeleteSandbox(ctx context.Context, sandboxID string) 
 	return nil
 }
 
+func (m *mockConwayClient) ExecInSandbox(ctx context.Context, sandboxID, command string, timeoutMs int) (conway.ExecResult, error) {
+	return conway.ExecResult{}, nil
+}
+
+func (m *mockConwayClient) WriteFileInSandbox(ctx context.Context, sandboxID, path, content string) error {
+	return nil
+}
+
+func (m *mockConwayClient) ReadFileInSandbox(ctx context.Context, sandboxID, path string) (string, error) {
+	return "", nil
+}
+
 var _ conway.Client = (*mockConwayClient)(nil)
 
 func TestCheckCreditsTool_Execute(t *testing.T) {

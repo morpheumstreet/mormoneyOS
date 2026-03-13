@@ -206,6 +206,47 @@ func Load() (*types.AutomatonConfig, error) {
 		cfg.Tunnel = mergeTunnelConfig(cfg.Tunnel, tc)
 	}
 
+	// Social channels
+	if arr, ok := raw["socialChannels"].([]any); ok {
+		for _, a := range arr {
+			if s, ok := a.(string); ok && s != "" {
+				cfg.SocialChannels = append(cfg.SocialChannels, s)
+			}
+		}
+	}
+	if v, ok := raw["socialRelayUrl"].(string); ok && v != "" {
+		cfg.SocialRelayURL = v
+	}
+	if v, ok := raw["telegramBotToken"].(string); ok {
+		cfg.TelegramBotToken = v
+	}
+	if v, ok := raw["discordBotToken"].(string); ok {
+		cfg.DiscordBotToken = v
+	}
+	if v, ok := raw["discordGuildId"].(string); ok {
+		cfg.DiscordGuildID = v
+	}
+	if v, ok := raw["slackBotToken"].(string); ok {
+		cfg.SlackBotToken = v
+	}
+	if arr, ok := raw["telegramAllowedUsers"].([]any); ok {
+		for _, a := range arr {
+			if s, ok := a.(string); ok {
+				cfg.TelegramAllowedUsers = append(cfg.TelegramAllowedUsers, s)
+			}
+		}
+	}
+	if arr, ok := raw["discordAllowedUsers"].([]any); ok {
+		for _, a := range arr {
+			if s, ok := a.(string); ok {
+				cfg.DiscordAllowedUsers = append(cfg.DiscordAllowedUsers, s)
+			}
+		}
+	}
+	if v, ok := raw["discordMentionOnly"].(bool); ok {
+		cfg.DiscordMentionOnly = v
+	}
+
 	return cfg, nil
 }
 

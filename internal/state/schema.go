@@ -1,6 +1,6 @@
 package state
 
-const schemaVersion = 8
+const schemaVersion = 10
 
 // SchemaV1 creates core tables per mormoneyOS design.
 const SchemaV1 = `
@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS children (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   address TEXT NOT NULL,
+  chain TEXT NOT NULL DEFAULT 'eip155:8453',
   sandbox_id TEXT NOT NULL,
   genesis_prompt TEXT NOT NULL,
   creator_message TEXT,
@@ -156,6 +157,31 @@ CREATE INDEX IF NOT EXISTS idx_wake_events_unconsumed ON wake_events(created_at)
 CREATE INDEX IF NOT EXISTS idx_dedup_expires ON heartbeat_dedup(expires_at);
 CREATE INDEX IF NOT EXISTS idx_inf_created ON inference_costs(created_at);
 CREATE INDEX IF NOT EXISTS idx_children_status ON children(status);
+
+-- Onchain transactions (TS-aligned): chain required for multi-chain.
+CREATE TABLE IF NOT EXISTS onchain_transactions (
+  id TEXT PRIMARY KEY,
+  chain TEXT NOT NULL,
+  tx_hash TEXT,
+  from_address TEXT NOT NULL,
+  to_address TEXT,
+  amount_cents INTEGER,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_onchain_transactions_chain ON onchain_transactions(chain);
+CREATE INDEX IF NOT EXISTS idx_onchain_transactions_created ON onchain_transactions(created_at);
+
+-- Registry (TS-aligned): parent automaton registry with chain.
+CREATE TABLE IF NOT EXISTS registry (
+  id TEXT PRIMARY KEY,
+  chain TEXT NOT NULL DEFAULT 'eip155:8453',
+  address TEXT NOT NULL,
+  sandbox_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- Installed tools (TS-aligned): id, name, type, config, installed_at, enabled
 CREATE TABLE IF NOT EXISTS installed_tools (

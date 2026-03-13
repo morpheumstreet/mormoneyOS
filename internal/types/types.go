@@ -73,6 +73,17 @@ type AutomatonConfig struct {
 	Tools             []ConfigToolDef `json:"tools,omitempty"`          // Inline tool definitions
 	PluginPaths       []string       `json:"pluginPaths,omitempty"`     // Paths to .so plugin dirs
 	Tunnel            *TunnelConfig  `json:"tunnel,omitempty"`           // Tunnel providers for expose_port
+
+	// Social channels (Conway, Telegram, Discord, etc.)
+	SocialChannels    []string `json:"socialChannels,omitempty"`    // e.g. ["conway", "telegram"]
+	SocialRelayURL    string   `json:"socialRelayUrl,omitempty"`    // For conway channel
+	TelegramBotToken  string   `json:"telegramBotToken,omitempty"`
+	DiscordBotToken   string   `json:"discordBotToken,omitempty"`
+	DiscordGuildID    string   `json:"discordGuildId,omitempty"`
+	SlackBotToken     string   `json:"slackBotToken,omitempty"`
+	TelegramAllowedUsers []string `json:"telegramAllowedUsers,omitempty"`
+	DiscordAllowedUsers  []string `json:"discordAllowedUsers,omitempty"`
+	DiscordMentionOnly   bool     `json:"discordMentionOnly,omitempty"`
 }
 
 // TunnelConfig configures tunnel providers (expose_port tool).

@@ -112,13 +112,24 @@ func GetWalletAddress() string {
 }
 
 // DeriveAddress returns the address for the given CAIP-2 chain.
-// Phase 1: only eip155 (EVM) supported; same address for all EVM chains.
-// Non-EVM returns error (Phase 3).
+// EVM (eip155): same secp256k1 address for all EVM chains; validates format before return.
+// Non-EVM (bip122, tron, xrpl, sui, polkadot): returns error until per-chain derivation libs are added.
 func DeriveAddress(chainCAIP2 string) (string, error) {
-	if !IsEVM(chainCAIP2) {
-		return "", fmt.Errorf("chain %s: non-EVM derivation not yet implemented", chainCAIP2)
+	if IsEVM(chainCAIP2) {
+		addr := GetWalletAddress()
+		if addr == "" {
+			return "", fmt.Errorf("no wallet: run 'moneyclaw init' first")
+		}
+		if err := ValidateAddressForChain(addr, chainCAIP2); err != nil {
+			return "", fmt.Errorf("validate EVM address: %w", err)
+		}
+		return addr, nil
 	}
-	return GetWalletAddress(), nil
+	// Non-EVM: requires chain-specific libs (btcutil, tron, ripple, sui-go-sdk, etc.)
+	if _, err := CAIP2ToChainType(chainCAIP2); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("chain %s: non-EVM derivation not yet implemented (requires chain-specific libs)", chainCAIP2)
 }
 
 // WalletExists returns true if wallet.json exists.

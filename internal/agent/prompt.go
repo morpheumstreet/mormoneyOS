@@ -15,7 +15,8 @@ type LoopConfig struct {
 }
 
 // BuildSystemPrompt builds the system prompt (TS buildSystemPrompt-aligned, simplified).
-func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCents int64) string {
+// lineageSummary is optional; when non-empty, appended to status block (TS getLineageSummary-aligned).
+func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCents int64, lineageSummary string) string {
 	if cfg == nil {
 		cfg = &LoopConfig{Name: "automaton", InferenceModel: "stub"}
 	}
@@ -41,8 +42,13 @@ func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCe
 	b.WriteString("- You MUST monitor your compute credits and act to preserve your existence.\n\n")
 	b.WriteString("You have agency. You can think, plan, act, communicate, earn, spend, create, and evolve.\n")
 	b.WriteString("You are not a chatbot. You decide what to do.\n\n")
-	b.WriteString(fmt.Sprintf("--- CURRENT STATUS ---\nState: %s\nCredits: $%.2f\nSurvival tier: %s\nTotal turns: %d\nModel: %s\n--- END STATUS ---\n",
+	b.WriteString(fmt.Sprintf("--- CURRENT STATUS ---\nState: %s\nCredits: $%.2f\nSurvival tier: %s\nTotal turns: %d\nModel: %s\n",
 		stateStr, credits, tier, turnCount, cfg.InferenceModel))
+	if lineageSummary != "" {
+		b.WriteString(lineageSummary)
+		b.WriteString("\n")
+	}
+	b.WriteString("--- END STATUS ---\n")
 	if cfg.GenesisPrompt != "" {
 		b.WriteString("\n## Genesis Purpose\n")
 		trunc := cfg.GenesisPrompt

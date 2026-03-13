@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/google/uuid"
 )
@@ -313,6 +314,125 @@ func (c *HTTPClient) CreateSandbox(ctx context.Context, opts CreateSandboxOption
 func (c *HTTPClient) DeleteSandbox(ctx context.Context, sandboxID string) error {
 	_ = sandboxID
 	return nil
+}
+
+// ExecInSandbox runs a command in a Conway sandbox (POST /v1/sandboxes/{id}/exec).
+func (c *HTTPClient) ExecInSandbox(ctx context.Context, sandboxID, command string, timeoutMs int) (ExecResult, error) {
+	if sandboxID == "" {
+		return ExecResult{}, fmt.Errorf("sandbox_id required for exec")
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 30000
+	}
+	payload := map[string]interface{}{
+		"command": command,
+		"timeout": timeoutMs,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("marshal payload: %w", err)
+	}
+	url := c.BaseURL + "/v1/sandboxes/" + sandboxID + "/exec"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return ExecResult{}, fmt.Errorf("conway api %s: %d %s", url, resp.StatusCode, string(respBody))
+	}
+
+	var data struct {
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+		ExitCode int    `json:"exit_code"`
+		Exitcode int    `json:"exitcode"`
+	}
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return ExecResult{}, fmt.Errorf("decode response: %w", err)
+	}
+	exitCode := data.ExitCode
+	if exitCode == 0 && data.Exitcode != 0 {
+		exitCode = data.Exitcode
+	}
+	return ExecResult{
+		Stdout:   data.Stdout,
+		Stderr:   data.Stderr,
+		ExitCode: exitCode,
+	}, nil
+}
+
+// WriteFileInSandbox writes a file in a Conway sandbox (POST /v1/sandboxes/{id}/files/upload/json).
+func (c *HTTPClient) WriteFileInSandbox(ctx context.Context, sandboxID, path, content string) error {
+	if sandboxID == "" {
+		return fmt.Errorf("sandbox_id required for write_file")
+	}
+	payload := map[string]interface{}{
+		"path":    path,
+		"content": content,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	url := c.BaseURL + "/v1/sandboxes/" + sandboxID + "/files/upload/json"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("conway api %s: %d %s", url, resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// ReadFileInSandbox reads a file from a Conway sandbox (GET /v1/sandboxes/{id}/files/read).
+func (c *HTTPClient) ReadFileInSandbox(ctx context.Context, sandboxID, path string) (string, error) {
+	if sandboxID == "" {
+		return "", fmt.Errorf("sandbox_id required for read_file")
+	}
+	url := c.BaseURL + "/v1/sandboxes/" + sandboxID + "/files/read?path=" + url.QueryEscape(path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	c.setHeaders(req)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("conway api %s: %d %s", url, resp.StatusCode, string(respBody))
+	}
+
+	var data struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return string(respBody), nil // raw string response
+	}
+	return data.Content, nil
 }
 
 // setHeaders sets common request headers for Conway API.

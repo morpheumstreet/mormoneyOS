@@ -7,7 +7,7 @@
 
 ## 1. Executive Summary
 
-The automaton has a **sovereign multi-chain identity**: a wallet (or HD seed) whose keys are the automaton's root of trust. The design is **multi-chain from the foundation**, supporting **EVM, Bitcoin, Tron, XRP, Sui, Polkadot**, and other chain ecosystems via CAIP-2 identifiers. Chain identifiers, per-chain address derivation, default/primary chain, and chain-scoped operations are first-class. The TS implementation uses `viem` for EVM; the Go implementation will support multiple chain types via `internal/identity/` and chain-specific crypto libraries.
+The automaton has a **sovereign multi-chain identity**: a wallet (or HD seed) whose keys are the automaton's root of trust. The design is **multi-chain from the foundation**, supporting **EVM, Bitcoin, Tron, XRP, Sui, Polkadot, Morpheum**, and other chain ecosystems via CAIP-2 identifiers. Chain identifiers, per-chain address derivation, default/primary chain, and chain-scoped operations are first-class. The TS implementation uses `viem` for EVM; the Go implementation will support multiple chain types via `internal/identity/` and chain-specific crypto libraries.
 
 | Component        | TS Reference                    | Go Target                          |
 | ---------------- | ------------------------------- | ---------------------------------- |
@@ -45,13 +45,15 @@ Use **CAIP-2** (Chain Agnostic Improvement Proposal 2):
 | `sui` | Sui | Chain identifier | `sui:mainnet` |
 | `tron` | Tron | Network ID | `tron:728126428` (mainnet) |
 | `xrpl` | XRP Ledger | Network ID or hash | `xrpl:0` (mainnet) |
+| `eip155` | Morpheum | EIP-155 chain ID | `eip155:10900` (testnet) |
 
 **EVM (eip155):** `eip155:1`, `eip155:8453`, `eip155:42161`, `eip155:137`, `eip155:10`  
 **Bitcoin (bip122):** Mainnet `bip122:000000000019d6689c085ae165831e93`, Testnet `bip122:000000000933ea01ad0ee984209779ba`  
 **Tron:** `tron:728126428` (mainnet), `tron:2494104990` (shasta testnet)  
 **XRP Ledger:** `xrpl:0` (mainnet), `xrpl:1` (testnet)  
 **Sui:** `sui:mainnet`, `sui:testnet`  
-**Polkadot:** `polkadot:91b171bb158e2d3848fa23a9f1c25182` (mainnet)
+**Polkadot:** `polkadot:91b171bb158e2d3848fa23a9f1c25182` (mainnet)  
+**Morpheum:** `eip155:10900` (testnet) — mr4m addresses (ECDSA+ML-DSA-44 hybrid)
 
 ### 2.2 Address Model (Multi-Chain)
 
@@ -61,6 +63,7 @@ Use **CAIP-2** (Chain Agnostic Improvement Proposal 2):
 - **XRP (xrpl):** secp256k1, base58 `r`-prefixed (classic) or X-address format.
 - **Sui:** Ed25519 or secp256k1, `0x`-prefixed (different from EVM; 32-byte hash).
 - **Polkadot:** Ed25519 or Sr25519, SS58 format (chain-specific prefix).
+- **Morpheum:** ECDSA+ML-DSA-44 hybrid, Bech32m `mr4m1...` addresses (HRP `mr4m`, witness v1).
 
 **Identity storage:** Store **address per chain** (or per namespace) in identity table or `addresses` map:
 
@@ -71,6 +74,7 @@ identity: address_tron:728126428 → "T..."
 identity: address_xrpl:0 → "r..."
 identity: address_sui:mainnet → "0x..."
 identity: address_polkadot:... → "1..."
+identity: address_eip155:10900 → "mr4m1..."  # Morpheum
 ```
 
 **Default/primary address:** When `defaultChain` is EVM, `address` key holds the EVM address (backward compatible). For non-EVM default, `address` holds the address for `defaultChain`.
@@ -85,8 +89,9 @@ identity: address_polkadot:... → "1..."
 | XRP (xrpl) | secp256k1 | XRP key derivation | ripple/keypair |
 | Sui | Ed25519 or secp256k1 | Sui key scheme | sui-go-sdk |
 | Polkadot | Ed25519 or Sr25519 | Substrate key derivation | go-substrate-rpc-client |
+| Morpheum (eip155:10900) | ECDSA+ML-DSA-44 hybrid | Morpheum key derivation | standards `keys.MorpheumPrivateKey` |
 
-**HD wallet (optional):** BIP-39 mnemonic + BIP-44 paths per chain type for single-seed multi-chain. Phase 1 can use single EVM key; Phase 3+ adds HD and per-chain derivation.
+**HD wallet (optional):** BIP-39 mnemonic + BIP-44 paths per chain type for single-seed multi-chain. Phase 1 can use single EVM key; Phase 3+ adds HD and per-chain derivation. Morpheum requires mnemonic (standards `MultiChainKeyManager.DeriveKey(..., ChainTypeMorpheum, index)`).
 
 ### 2.3 Default Chain
 
@@ -128,6 +133,10 @@ identity: address_polkadot:... → "1..."
     "polkadot:91b171bb158e2d3848fa23a9f1c25182": {
       "name": "Polkadot",
       "rpcUrl": "wss://rpc.polkadot.io"
+    },
+    "eip155:10900": {
+      "name": "Morpheum",
+      "rpcUrl": "https://..."
     }
   }
 }
@@ -232,6 +241,7 @@ Standards supports multi-chain address validation (Ethereum, Solana, Bitcoin var
 - **XRP (xrpl):** Classic `r...` or X-address format.
 - **Sui:** `0x` + 64 hex chars (32-byte hash).
 - **Polkadot:** SS58 format, chain-specific prefix (e.g. 0 for Polkadot, 2 for Kusama).
+- **Morpheum (eip155:10900):** Bech32m `mr4m1...` (standards `ValidateMorpheumAddress`).
 
 `ValidateAddressForChain(addr, chainCAIP2) error` — validate address format per chain namespace.
 
@@ -366,9 +376,10 @@ CREATE TABLE identity (
 
 ```
 internal/identity/
-  wallet.go      # GetAutomatonDir, GetWalletPath, GetWallet, GetWalletAddress, WalletExists
+  wallet.go      # GetAutomatonDir, GetWalletPath, GetWallet, GetWalletAddress, DeriveAddress, WalletExists
   provision.go   # LoadAPIKeyFromConfig, Provision, RegisterParent
-  chain.go       # ChainIDFromCAIP2, ChainIDToCAIP2, DefaultChainBase; Domain (name, version, chainId)
+  chain.go       # ChainIDFromCAIP2, ChainIDToCAIP2, CAIP2ToChainType, DefaultChainBase; Domain (name, version, chainId)
+  validation.go  # AddressValidator, chain validators registry; ValidateAddressForChain delegates here
   nonce.go       # ChainNonce, ValidateChainNonce (optional; borrow from standards auth/nonce)
   types.go       # WalletData, ProvisionResult, ChainConfig (optional, or use types pkg)
 ```
@@ -382,29 +393,37 @@ internal/identity/
 | SIWE message      | `github.com/spruceid/siwe-go` or manual |
 | JSON (wallet)     | `encoding/json`                     |
 
-### 4.3 Wallet Interface
+### 4.3 Wallet Interface (Multi-Chain, Standards-Aligned)
+
+The wallet interface supports **multi-chain requirements** per [morpheumlabs/standards](https://github.com/morpheumlabs/standards) design:
+
+- **CAIP-2 identifiers** for chain selection (e.g. `eip155:8453`, `bip122:...`, `tron:728126428`)
+- **Per-chain address derivation** with chain-aware validation
+- **Multiple key types** (secp256k1 for EVM/Bitcoin/Tron/XRP; Ed25519 for Sui/Solana; Sr25519 for Polkadot)
+- **Chain-aware address validation** (`ValidateAddressForChain`) aligned with standards `types.Address` and `clitool/validation.ValidateAddressByChain`
+- **Optional standards package** for `ChainPrivateKey`, `ChainPublicKey`, `types.Address` when dependency is acceptable
 
 ```go
 // WalletData is the persisted wallet format (TS-aligned for EVM; extended for multi-chain).
 type WalletData struct {
-    PrivateKey string `json:"privateKey"` // 0x-prefixed hex (EVM/secp256k1)
+    PrivateKey string `json:"privateKey"` // 0x-prefixed hex (EVM/secp256k1 primary)
     Mnemonic   string `json:"mnemonic,omitempty"`   // BIP-39 seed for HD derivation (optional)
     CreatedAt  string `json:"createdAt"`
 }
 
-// Account holds address and signing capability (EVM-focused for Phase 1).
+// Account holds address and signing capability. Phase 1: EVM; Phase 3+: multi-chain.
 type Account interface {
     Address() string
     SignMessage(message []byte) ([]byte, error)
 }
 
-// ChainAccount extends Account with chain-specific address.
+// ChainAccount extends Account with chain-specific address (CAIP-2).
 type ChainAccount interface {
     Account
-    Chain() string  // CAIP-2
+    Chain() string  // CAIP-2 (e.g. eip155:8453, bip122:..., tron:728126428)
 }
 
-// GetWallet loads or creates the automaton wallet (EVM primary).
+// GetWallet loads or creates the automaton wallet (EVM primary; multi-chain ready).
 func GetWallet() (Account, bool, error)
 
 // GetWalletAddress returns the primary (defaultChain) address, or "" if no wallet.
@@ -412,11 +431,45 @@ func GetWalletAddress() string
 
 // DeriveAddress returns the address for the given CAIP-2 chain.
 // Supports eip155, bip122, tron, xrpl, sui, polkadot namespaces.
+// Per standards: chain-specific format validation before return.
 func DeriveAddress(chainCAIP2 string) (string, error)
+
+// ValidateAddressForChain validates address format for the given CAIP-2 chain.
+// Aligned with standards clitool/validation.ValidateAddressByChain(addr, chainType).
+// ChainType derived from CAIP-2 via CAIP2ToChainType().
+func ValidateAddressForChain(addr, chainCAIP2 string) error
+
+// CAIP2ToChainType maps CAIP-2 to ChainType for validation/signing.
+// When standards package is used: returns standards types.ChainType.
+// Otherwise: returns local ChainType alias (ethereum, bitcoin_*, tron, xrpl, sui, polkadot).
+// eip155:* -> ethereum; bip122:* -> bitcoin_*; tron:* -> (extend); xrpl:* -> (extend); sui:* -> (extend); polkadot:* -> (extend)
+func CAIP2ToChainType(caip2 string) (ChainType, error)
 
 // WalletExists returns true if wallet.json exists.
 func WalletExists() bool
 ```
+
+**Standards alignment:**
+
+| mormoneyOS | Standards Package |
+| ---------- | ----------------- |
+| `Account` / `ChainAccount` | `types.Address`, `ChainPrivateKey`, `ChainPublicKey` |
+| `ValidateAddressForChain(addr, caip2)` | `validation.ValidateAddressByChain(addr, chainType)` |
+| `DeriveAddress(caip2)` | `MultiChainKeyManager` + per-chain derivation |
+| CAIP-2 identifiers | `ChainType` enum; map via `CAIP2ToChainType` |
+| Per-chain address storage | `address_<caip2>` keys in identity table |
+
+**Key derivation by chain (standards reference):**
+
+| CAIP-2 namespace | Key type | Derivation | Standards SigType / ChainType |
+| ----------------- | -------- | ---------- | ----------------------------- |
+| eip155 | secp256k1 | Direct from privkey | ECDSA_LEGACY_ETHEREUM |
+| eip155:10900 (Morpheum) | ECDSA+ML-DSA-44 | Mnemonic → Morpheum key | ECDSA_MLDSA44 |
+| bip122 | secp256k1 | BIP-44 m/44'/0'/0'/0/0 | ECDSA_LEGACY_BITCOIN, SCHNORR_TAPROOT |
+| tron | secp256k1 | Tron-specific | (extend ChainType) |
+| xrpl | secp256k1 | XRP key derivation | (extend ChainType) |
+| sui | Ed25519 or secp256k1 | Sui key scheme | ED25519 |
+| polkadot | Ed25519 or Sr25519 | Substrate derivation | (extend ChainType) |
 
 ### 4.4 Provision Interface
 
@@ -507,7 +560,30 @@ Proposed flow:
 
 ---
 
-## 5. Security Contract
+## 5. Design Principles (CLEAN, DRY, SOLID)
+
+### 5.1 CLEAN
+
+- **Single responsibility:** `chain.go` — CAIP-2 parsing and chain identification; `validation.go` — address format validation only; `wallet.go` — wallet I/O and derivation; `provision.go` — SIWE flow.
+- **Clear naming:** `CAIP2ToChainType`, `ValidateAddressForChain`, `AddressKeyForChain` are self-documenting.
+- **Minimal functions:** Each function does one thing; no side effects in pure helpers.
+
+### 5.2 DRY
+
+- **Shared validation helpers:** `validateHexAddress` (EVM, Sui), `validatePrefixBased` (Bitcoin SegWit/Taproot, XRP), `validateFirstChar` (Bitcoin Legacy/Nested), `isHexChar`.
+- **Validator composition:** `hexValidator`, `prefixValidator`, `firstCharValidator`, `lengthRangeValidator` reuse helpers; chain-specific validators (Tron, Polkadot) implement `AddressValidator` directly when rules differ.
+
+### 5.3 SOLID
+
+- **S — Single Responsibility:** Each module has one concern; validators are isolated.
+- **O — Open/Closed:** Add new chain by registering a validator in `validation.go` init; no modification to `validateAddressFormat` switch.
+- **L — Liskov Substitution:** All validators implement `AddressValidator` and are interchangeable.
+- **I — Interface Segregation:** `AddressValidator` has a single method `Validate(addr string) error`.
+- **D — Dependency Inversion:** `ValidateAddressForChain` depends on the validator registry abstraction, not concrete switch logic.
+
+---
+
+## 6. Security Contract
 
 1. **File permissions:** `wallet.json` and `config.json` must be 0600.
 2. **Path protection:** Policy engine must block reads of `wallet.json`, `config.json`, `.env`, and any path containing `privateKey` or `apiKey`.
@@ -516,7 +592,7 @@ Proposed flow:
 
 ---
 
-## 6. Implementation Phases
+## 7. Implementation Phases
 
 ### Phase 1: Wallet Only (No SIWE)
 
@@ -540,16 +616,41 @@ Proposed flow:
 
 ### Phase 3: Full Identity Wiring
 
-- [ ] RegisterParent (optional)
-- [ ] Ensure heartbeat, web, agent all use identity table or config consistently
-- [ ] Setup wizard: create wallet, provision, write config (if not already done)
-- [ ] **Multi-chain:** Schema: registry, children, onchain_transactions use CAIP-2 chain; API accepts optional `chain` param
-- [ ] **Standards-aligned:** Chain-aware nonce (per owner, chainID) for replay prevention
-- [ ] **Non-EVM:** `DeriveAddress(chainCAIP2)` for Bitcoin, Tron, XRP, Sui, Polkadot; `address_<caip2>` in identity table
+- [x] RegisterParent (optional) — implemented in provision.go
+- [x] Ensure heartbeat, web, agent all use identity table or config consistently
+- [x] Setup wizard: create wallet, provision, write config — `moneyclaw setup` creates wallet, optionally provisions, sets defaultChain
+- [x] **Multi-chain:** Schema: registry, children (chain column), onchain_transactions tables; API /api/status accepts optional `?chain=` param
+- [x] **Standards-aligned:** Chain-aware nonce (per owner, chainID) for replay prevention — `internal/identity/nonce.go`
+- [x] **Non-EVM:** `DeriveAddress(chainCAIP2)` interface; EVM implemented; non-EVM returns clear error until chain libs added; `address_<caip2>` persisted in bootstrap
+- [x] **Phase 4 (standards):** `github.com/morpheum-labs/standards` added; `ValidateAddressForChain` delegates to `clitool/validation.ValidateAddressByChain` for EVM, Bitcoin, Solana (full checksum); local validation for Tron, XRP, Sui, Polkadot
+- [ ] **Phase 4 (remaining):** Non-EVM `DeriveAddress` via `MultiChainKeyManager` — requires mnemonic-based wallet (mormoneyOS currently uses raw private key)
+- [x] **Wallet interface:** `ValidateAddressForChain`, `CAIP2ToChainType`, `AddressKeyForChain`; format validation for eip155, bip122, tron, xrpl, sui, solana, polkadot, morpheum (eip155:10900)
+
+### Phase 4: Standards Package Integration
+
+**Implemented:** `github.com/morpheum-labs/standards` dependency added. `ValidateAddressForChain` delegates to `clitool/validation.ValidateAddressByChain` for EVM, Bitcoin, Solana, **Morpheum** (full checksum validation); local validation retained for Tron, XRP, Sui, Polkadot (standards does not support these chains).
+
+| Feature | Status |
+| ------- | ------ |
+| Full address checksum (EVM, Bitcoin, Solana, Morpheum) | Done via `clitool/validation.ValidateAddressByChain` |
+| Morpheum (eip155:10900) support | ChainType + validation via standards; `DeriveAddress` pending (requires mnemonic) |
+| Non-EVM `DeriveAddress` (Bitcoin, Tron, XRP, Sui, Polkadot, Morpheum) | Pending — requires mnemonic-based wallet; `MultiChainKeyManager` derives from mnemonic |
+| `types.Address` / `ChainType` alignment | Optional — local `ChainType` maps to standards where overlapping |
+| EIP-712 domain, nonce manager | Optional — `types.Domain`, `auth.NonceManager` available when needed |
+
+### What's Missing (Gap Analysis)
+
+| Gap | Description | Blocker |
+| --- | ----------- | ------- |
+| ~~Morpheum `ChainType` in mormoneyOS~~ | Done: `ChainTypeMorpheum`, `MorpheumTestnetCAIP2`, `eip155:10900` → Morpheum (not EVM) | — |
+| ~~Morpheum address validation~~ | Done: `chainTypeToStandards(ChainTypeMorpheum)` → `ValidateAddressByChain(addr, ChainTypeMorpheum)` | — |
+| Morpheum `DeriveAddress` | Requires mnemonic; standards `MultiChainKeyManager.DeriveKey(..., ChainTypeMorpheum, index)` | Mnemonic wallet |
+| Morpheum config in chains | Add `eip155:10900` to config schema / setup wizard default chains (optional) | Config |
+| Morpheum mainnet chain ID | 10900 is testnet; mainnet ID TBD when available | External |
 
 ---
 
-## 7. Data Flow Diagram
+## 8. Data Flow Diagram
 
 ```
                     +------------------+
@@ -590,7 +691,7 @@ Proposed flow:
 
 ---
 
-## 8. References
+## 9. References
 
 ### mormoneyOS
 
@@ -602,9 +703,17 @@ Proposed flow:
 
 ### Standards Package (morpheumlabs/standards)
 
+**Dependency:** mormoneyOS depends on `github.com/morpheum-labs/standards` for address validation (EVM, Bitcoin, Solana). Local `replace` in `go.mod` points to `../../morpheumlabs/standards` for development; remove for release builds.
+
 - `docs/design/STANDARDS_PACKAGE_DESIGN.md` — Spec-first, language-agnostic design
+- `docs/design/multichain_address_type.md` — Multi-chain Address type; chain-aware validation
+- `docs/design/adding_new_chain_type_workflow.md` — Workflow for adding new chain support
 - `docs/improvements/multichain_multisign_audit_gaps.md` — Multi-chain design gaps and patterns
 - `docs/improvements/multichain_multisign_summary.md` — Implementation roadmap
+- `docs/improvements/multichain_address_validation_design.md` — Address validation matrix
+- `docs/guide/MULTICHAIN_ADDRESS_VALIDATION_GUIDE.md` — Usage guide
+- `types/address.go` — Address, ChainType, NewAddress, ValidateAddressFormat
+- `types/key.go` — ChainPrivateKey, ChainPublicKey
 - `types/message_standard.go` — Domain, SigType, EIP712Tx
 - `auth/nonce.go` — NonceManager (extend for chain-aware)
 - `signer/domain.go` — CreateDefaultDomain, CreateTestnetDomain

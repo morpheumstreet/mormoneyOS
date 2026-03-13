@@ -2,6 +2,8 @@ package heartbeat
 
 import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
+	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
+	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
@@ -16,11 +18,14 @@ type TickContext struct {
 
 // TaskContext holds tick context plus dependencies for task execution (TS HeartbeatLegacyContext-aligned).
 type TaskContext struct {
-	Tick    *TickContext
-	DB      TaskStore
-	Conway  conway.Client // nil when Conway not configured
-	Config  *types.AutomatonConfig
-	Address string // wallet address from identity
+	Tick             *TickContext
+	DB               TaskStore
+	Conway           conway.Client // nil when Conway not configured
+	Channels         map[string]social.SocialChannel // Social channels for check_social_inbox
+	Config           *types.AutomatonConfig
+	Address          string // wallet address from identity
+	HealthMonitor    *replication.ChildHealthMonitor // optional; for check_child_health
+	SandboxCleanup   *replication.SandboxCleanup     // optional; for prune_dead_children
 }
 
 // TaskStore is the minimal DB interface for heartbeat tasks.

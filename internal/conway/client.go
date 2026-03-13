@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+// ExecResult is the result of ExecInSandbox.
+type ExecResult struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
 // Client provides Conway API operations per mormoneyOS design.
 type Client interface {
 	GetCreditsBalance(ctx context.Context) (int64, error)
@@ -15,6 +22,10 @@ type Client interface {
 	TransferCredits(ctx context.Context, toAddress string, amountCents int64, note string) (CreditTransferResult, error)
 	CreateSandbox(ctx context.Context, opts CreateSandboxOptions) (SandboxInfo, error)
 	DeleteSandbox(ctx context.Context, sandboxID string) error
+	// Sandbox-scoped operations for child runtime (deploy, start, message, verify).
+	ExecInSandbox(ctx context.Context, sandboxID, command string, timeoutMs int) (ExecResult, error)
+	WriteFileInSandbox(ctx context.Context, sandboxID, path, content string) error
+	ReadFileInSandbox(ctx context.Context, sandboxID, path string) (string, error)
 }
 
 // CreateSandboxOptions configures sandbox creation (POST /v1/sandboxes).

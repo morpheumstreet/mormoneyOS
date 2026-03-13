@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
@@ -184,12 +185,44 @@ func runHealthCheck(ctx context.Context, tc *TaskContext) (bool, string, error) 
 }
 
 func runCheckSocialInbox(ctx context.Context, tc *TaskContext) (bool, string, error) {
-	// Go: no social client yet; stub
 	if tc == nil {
 		return false, "", nil
 	}
-	_ = tc.DB.SetKV("last_social_check", `{"status":"stub","checkedAt":"`+time.Now().UTC().Format(time.RFC3339)+`"}`)
-	return false, "", nil
+	now := time.Now().UTC().Format(time.RFC3339)
+	if tc.Channels == nil || len(tc.Channels) == 0 {
+		_ = tc.DB.SetKV("last_social_check", `{"status":"no_channels","checkedAt":"`+now+`"}`)
+		return false, "", nil
+	}
+	var all []map[string]any
+	var shouldWake bool
+	var wakeMsg string
+	for name, ch := range tc.Channels {
+		cursor, _, _ := tc.DB.GetKV("social_cursor:" + name)
+		msgs, next, err := ch.Poll(ctx, cursor, 20)
+		if err != nil {
+			_ = tc.DB.SetKV("last_social_check", `{"status":"error","channel":"`+name+`","error":"`+err.Error()+`","checkedAt":"`+now+`"}`)
+			continue
+		}
+		if next != "" {
+			_ = tc.DB.SetKV("social_cursor:"+name, next)
+		}
+		for _, m := range msgs {
+			all = append(all, map[string]any{
+				"id": m.ID, "from": m.Sender, "content": m.Content, "channel": m.Channel,
+			})
+			shouldWake = true
+			if wakeMsg == "" {
+				wakeMsg = fmt.Sprintf("New message from %s on %s", m.Sender, m.Channel)
+			}
+		}
+	}
+	if shouldWake && tc.DB != nil {
+		_ = tc.DB.InsertWakeEvent("social", wakeMsg)
+	}
+	status := map[string]any{"status": "ok", "count": len(all), "checkedAt": now, "messages": all}
+	b, _ := json.Marshal(status)
+	_ = tc.DB.SetKV("last_social_check", string(b))
+	return shouldWake, wakeMsg, nil
 }
 
 func runSoulReflection(ctx context.Context, tc *TaskContext) (bool, string, error) {
@@ -230,6 +263,15 @@ func runCheckChildHealth(ctx context.Context, tc *TaskContext) (bool, string, er
 	if tc == nil {
 		return false, "", nil
 	}
+	// Use ChildHealthMonitor when Conway+Store available (TS-aligned: Conway exec, JSON health).
+	if tc.HealthMonitor != nil {
+		_, needsAttention := tc.HealthMonitor.Check(ctx)
+		if len(needsAttention) > 0 {
+			return true, fmt.Sprintf("Children need attention: %s", strings.Join(needsAttention, ", ")), nil
+		}
+		return false, "", nil
+	}
+	// Fallback: ChildStore-only (no Conway exec)
 	cs, ok := tc.DB.(ChildStore)
 	if !ok {
 		return false, "", nil
@@ -269,27 +311,16 @@ func runPruneDeadChildren(ctx context.Context, tc *TaskContext) (bool, string, e
 	if !ok {
 		return false, "", nil
 	}
-	children, ok := cs.GetAllChildren()
-	if !ok || len(children) == 0 {
-		return false, "", nil
-	}
-	now := time.Now()
-	pruned := 0
-	for _, c := range children {
-		if c.Status == "dead" {
-			continue
-		}
-		if c.LastChecked == "" {
-			continue
-		}
-		t, err := time.Parse(time.RFC3339, c.LastChecked)
+	// 1. Mark stale children dead (last_checked > 7d)
+	pruned := replication.PruneDeadChildren(cs)
+	// 2. When Conway+Store: delete sandboxes and remove dead/failed/cleaned_up from DB
+	if tc.SandboxCleanup != nil {
+		deleted, err := tc.SandboxCleanup.PruneDead(ctx)
 		if err != nil {
-			continue
+			return pruned > 0, "", err
 		}
-		if now.Sub(t) > childStaleThreshold {
-			if err := cs.UpdateChildStatus(c.ID, "dead"); err == nil {
-				pruned++
-			}
+		if deleted > 0 {
+			pruned += deleted
 		}
 	}
 	if pruned > 0 {

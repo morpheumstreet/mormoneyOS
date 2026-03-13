@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
+	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
@@ -34,14 +35,15 @@ type ToolExecutor interface {
 
 // Loop implements the ReAct cycle per mormoneyOS design.
 type Loop struct {
-	policy     *PolicyEngine
-	persister  TurnPersister
-	store      AgentStore
-	inference  inference.Client
-	tools      ToolExecutor
-	config     *LoopConfig
-	creditsFn  func(ctx context.Context) int64
-	log        *slog.Logger
+	policy        *PolicyEngine
+	persister     TurnPersister
+	store         AgentStore
+	inference     inference.Client
+	tools         ToolExecutor
+	config        *LoopConfig
+	creditsFn     func(ctx context.Context) int64
+	lineageStore  replication.LineageStore
+	log           *slog.Logger
 }
 
 // NewLoop creates an agent loop.
@@ -59,13 +61,14 @@ func NewLoopWithPersister(policy *PolicyEngine, persister TurnPersister, log *sl
 
 // LoopOptions configures the full ReAct loop (TS AgentLoopOptions-aligned).
 type LoopOptions struct {
-	Policy    *PolicyEngine
-	Store     AgentStore
-	Inference inference.Client
-	Tools     ToolExecutor
-	Config    *LoopConfig
-	CreditsFn func(ctx context.Context) int64
-	Log       *slog.Logger
+	Policy       *PolicyEngine
+	Store        AgentStore
+	Inference    inference.Client
+	Tools        ToolExecutor
+	Config       *LoopConfig
+	CreditsFn    func(ctx context.Context) int64
+	LineageStore replication.LineageStore // optional; for GetLineageSummary in system prompt
+	Log          *slog.Logger
 }
 
 // NewLoopWithOptions creates a loop with full ReAct support.
@@ -74,14 +77,15 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		opts.Log = slog.Default()
 	}
 	return &Loop{
-		policy:    opts.Policy,
-		persister: opts.Store,
-		store:     opts.Store,
-		inference: opts.Inference,
-		tools:     opts.Tools,
-		config:    opts.Config,
-		creditsFn: opts.CreditsFn,
-		log:       opts.Log,
+		policy:       opts.Policy,
+		persister:    opts.Store,
+		store:        opts.Store,
+		inference:    opts.Inference,
+		tools:        opts.Tools,
+		config:       opts.Config,
+		creditsFn:    opts.CreditsFn,
+		lineageStore: opts.LineageStore,
+		log:          opts.Log,
 	}
 }
 
@@ -145,7 +149,11 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) (types.Agen
 	}
 
 	// Build context
-	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents)
+	lineageSummary := ""
+	if l.lineageStore != nil {
+		lineageSummary = replication.GetLineageSummary(l.lineageStore)
+	}
+	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, lineageSummary)
 	messages := BuildContextMessages(systemPrompt, recentTurns, pendingInput)
 
 	// Inference options with tool definitions (from registry when available)

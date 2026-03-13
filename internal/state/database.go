@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
 
@@ -47,6 +48,18 @@ func (d *Database) migrate() error {
 	if err := d.migrateHeartbeatScheduleLease(); err != nil {
 		return fmt.Errorf("migrate heartbeat_schedule: %w", err)
 	}
+	if err := d.migrateChildrenChain(); err != nil {
+		return fmt.Errorf("migrate children chain: %w", err)
+	}
+	if err := d.migrateOnchainTransactions(); err != nil {
+		return fmt.Errorf("migrate onchain_transactions: %w", err)
+	}
+	if err := d.migrateRegistry(); err != nil {
+		return fmt.Errorf("migrate registry: %w", err)
+	}
+	if err := d.migrateChildLifecycleEvents(); err != nil {
+		return fmt.Errorf("migrate child_lifecycle_events: %w", err)
+	}
 	_, err := d.db.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	return err
 }
@@ -78,6 +91,70 @@ func (d *Database) migrateWakeEventsIfNeeded() error {
 		DROP TABLE wake_events;
 		ALTER TABLE wake_events_new RENAME TO wake_events;
 		CREATE INDEX IF NOT EXISTS idx_wake_events_unconsumed ON wake_events(created_at) WHERE consumed_at IS NULL;
+	`)
+	return err
+}
+
+// migrateChildrenChain adds chain column to children if missing (multi-chain).
+func (d *Database) migrateChildrenChain() error {
+	var has int
+	err := d.db.QueryRow(
+		"SELECT COUNT(*) FROM pragma_table_info('children') WHERE name='chain'",
+	).Scan(&has)
+	if err != nil || has > 0 {
+		return nil
+	}
+	_, err = d.db.Exec("ALTER TABLE children ADD COLUMN chain TEXT NOT NULL DEFAULT 'eip155:8453'")
+	return err
+}
+
+// migrateOnchainTransactions creates onchain_transactions table if missing.
+func (d *Database) migrateOnchainTransactions() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS onchain_transactions (
+			id TEXT PRIMARY KEY,
+			chain TEXT NOT NULL,
+			tx_hash TEXT,
+			from_address TEXT NOT NULL,
+			to_address TEXT,
+			amount_cents INTEGER,
+			status TEXT NOT NULL DEFAULT 'pending',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_onchain_transactions_chain ON onchain_transactions(chain);
+		CREATE INDEX IF NOT EXISTS idx_onchain_transactions_created ON onchain_transactions(created_at);
+	`)
+	return err
+}
+
+// migrateRegistry creates registry table if missing.
+func (d *Database) migrateRegistry() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS registry (
+			id TEXT PRIMARY KEY,
+			chain TEXT NOT NULL DEFAULT 'eip155:8453',
+			address TEXT NOT NULL,
+			sandbox_id TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+	`)
+	return err
+}
+
+// migrateChildLifecycleEvents creates child_lifecycle_events table (TS-aligned, replication audit).
+func (d *Database) migrateChildLifecycleEvents() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS child_lifecycle_events (
+			id TEXT PRIMARY KEY,
+			child_id TEXT NOT NULL,
+			from_state TEXT NOT NULL,
+			to_state TEXT NOT NULL,
+			reason TEXT,
+			metadata TEXT DEFAULT '{}',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_child_events_child_created ON child_lifecycle_events(child_id, created_at);
 	`)
 	return err
 }
@@ -309,6 +386,7 @@ type Child struct {
 	ID                 string
 	Name               string
 	Address            string
+	Chain              string // CAIP-2, e.g. eip155:8453
 	SandboxID          string
 	GenesisPrompt      string
 	CreatorMessage     string
@@ -327,7 +405,7 @@ func (d *Database) GetChildren() ([]map[string]any, bool) {
 	if err := d.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='children'").Scan(&exists); err != nil || exists == 0 {
 		return nil, false
 	}
-	rows, err := d.db.Query("SELECT id, name, address, sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked FROM children WHERE status != 'dead' ORDER BY created_at DESC")
+	rows, err := d.db.Query("SELECT id, name, address, COALESCE(chain,'eip155:8453'), sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked FROM children WHERE status != 'dead' ORDER BY created_at DESC")
 	if err != nil {
 		return nil, false
 	}
@@ -336,7 +414,7 @@ func (d *Database) GetChildren() ([]map[string]any, bool) {
 	for rows.Next() {
 		var c Child
 		var creatorMsg, lastChecked sql.NullString
-		if err := rows.Scan(&c.ID, &c.Name, &c.Address, &c.SandboxID, &c.GenesisPrompt, &creatorMsg, &c.FundedAmountCents, &c.Status, &c.CreatedAt, &lastChecked); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Address, &c.Chain, &c.SandboxID, &c.GenesisPrompt, &creatorMsg, &c.FundedAmountCents, &c.Status, &c.CreatedAt, &lastChecked); err != nil {
 			continue
 		}
 		enabled := c.Status == "healthy" || c.Status == "running"
@@ -359,7 +437,7 @@ func (d *Database) GetAllChildren() ([]Child, bool) {
 	if err := d.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='children'").Scan(&exists); err != nil || exists == 0 {
 		return nil, false
 	}
-	rows, err := d.db.Query("SELECT id, name, address, sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked FROM children ORDER BY created_at DESC")
+	rows, err := d.db.Query("SELECT id, name, address, COALESCE(chain,'eip155:8453'), sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked FROM children ORDER BY created_at DESC")
 	if err != nil {
 		return nil, false
 	}
@@ -368,7 +446,7 @@ func (d *Database) GetAllChildren() ([]Child, bool) {
 	for rows.Next() {
 		var c Child
 		var creatorMsg, lastChecked sql.NullString
-		if err := rows.Scan(&c.ID, &c.Name, &c.Address, &c.SandboxID, &c.GenesisPrompt, &creatorMsg, &c.FundedAmountCents, &c.Status, &c.CreatedAt, &lastChecked); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Address, &c.Chain, &c.SandboxID, &c.GenesisPrompt, &creatorMsg, &c.FundedAmountCents, &c.Status, &c.CreatedAt, &lastChecked); err != nil {
 			continue
 		}
 		if lastChecked.Valid {
@@ -390,6 +468,22 @@ func (d *Database) UpdateChildStatus(id, status string) error {
 	return err
 }
 
+// UpdateChildSandboxID updates a child's sandbox_id (used during spawn).
+func (d *Database) UpdateChildSandboxID(id, sandboxID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("UPDATE children SET sandbox_id = ? WHERE id = ?", sandboxID, id)
+	return err
+}
+
+// UpdateChildAddress updates a child's address (used during spawn after wallet init).
+func (d *Database) UpdateChildAddress(id, address string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("UPDATE children SET address = ? WHERE id = ?", address, id)
+	return err
+}
+
 // GetChildByID returns a child by ID, or nil if not found.
 func (d *Database) GetChildByID(id string) (*Child, bool) {
 	d.mu.RLock()
@@ -401,9 +495,9 @@ func (d *Database) GetChildByID(id string) (*Child, bool) {
 	var c Child
 	var creatorMsg, lastChecked sql.NullString
 	err := d.db.QueryRow(
-		"SELECT id, name, address, sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked FROM children WHERE id = ?",
+		"SELECT id, name, address, COALESCE(chain,'eip155:8453'), sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked FROM children WHERE id = ?",
 		id,
-	).Scan(&c.ID, &c.Name, &c.Address, &c.SandboxID, &c.GenesisPrompt, &creatorMsg, &c.FundedAmountCents, &c.Status, &c.CreatedAt, &lastChecked)
+	).Scan(&c.ID, &c.Name, &c.Address, &c.Chain, &c.SandboxID, &c.GenesisPrompt, &creatorMsg, &c.FundedAmountCents, &c.Status, &c.CreatedAt, &lastChecked)
 	if err != nil {
 		return nil, false
 	}
@@ -464,11 +558,62 @@ func (d *Database) DeleteSkill(name string) error {
 func (d *Database) InsertChild(c Child) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	chain := c.Chain
+	if chain == "" {
+		chain = "eip155:8453"
+	}
 	_, err := d.db.Exec(
-		`INSERT INTO children (id, name, address, sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
-		c.ID, c.Name, c.Address, c.SandboxID, c.GenesisPrompt, nullStr(c.CreatorMessage), c.FundedAmountCents, c.Status, nullStr(c.LastChecked),
+		`INSERT INTO children (id, name, address, chain, sandbox_id, genesis_prompt, creator_message, funded_amount_cents, status, created_at, last_checked)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
+		c.ID, c.Name, c.Address, chain, c.SandboxID, c.GenesisPrompt, nullStr(c.CreatorMessage), c.FundedAmountCents, c.Status, nullStr(c.LastChecked),
 	)
+	return err
+}
+
+// InsertChildLifecycleEvent inserts a lifecycle event (TS-aligned, replication audit).
+func (d *Database) InsertChildLifecycleEvent(childID, fromState, toState, reason, metadata string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	eventID := uuid.New().String()
+	if metadata == "" {
+		metadata = "{}"
+	}
+	_, err := d.db.Exec(
+		`INSERT INTO child_lifecycle_events (id, child_id, from_state, to_state, reason, metadata, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+		eventID, childID, fromState, toState, reason, metadata,
+	)
+	return err
+}
+
+// GetLatestChildState returns the latest lifecycle state for a child (from child_lifecycle_events).
+// Returns empty string if no events exist.
+func (d *Database) GetLatestChildState(childID string) (string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var exists int
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='child_lifecycle_events'").Scan(&exists); err != nil || exists == 0 {
+		return "", nil
+	}
+	var toState string
+	err := d.db.QueryRow(
+		"SELECT to_state FROM child_lifecycle_events WHERE child_id = ? ORDER BY created_at DESC LIMIT 1",
+		childID,
+	).Scan(&toState)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return toState, err
+}
+
+// DeleteChild removes a child from DB (children + child_lifecycle_events). Used by cleanup.
+func (d *Database) DeleteChild(childID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, err := d.db.Exec("DELETE FROM child_lifecycle_events WHERE child_id = ?", childID); err != nil {
+		return err
+	}
+	_, err := d.db.Exec("DELETE FROM children WHERE id = ?", childID)
 	return err
 }
 

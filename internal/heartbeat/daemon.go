@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
+	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
+	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
@@ -18,19 +20,22 @@ type WakeInserter interface {
 
 // Daemon runs background tasks per mormoneyOS design.
 type Daemon struct {
-	tickInterval time.Duration
-	wakeCheck    time.Duration
-	tasks        []Task
-	wakeInserter WakeInserter
-	store        TaskStore
-	creditsFn    func(context.Context) int64
-	config       *types.AutomatonConfig
-	conway       conway.Client
-	address      string
-	scheduler    *Scheduler // when store is *state.Database
-	log          *slog.Logger
-	stop         chan struct{}
-	wg           sync.WaitGroup
+	tickInterval   time.Duration
+	wakeCheck      time.Duration
+	tasks          []Task
+	wakeInserter   WakeInserter
+	store         TaskStore
+	creditsFn     func(context.Context) int64
+	config        *types.AutomatonConfig
+	conway        conway.Client
+	channels      map[string]social.SocialChannel
+	address       string
+	healthMonitor *replication.ChildHealthMonitor
+	sandboxCleanup *replication.SandboxCleanup
+	scheduler      *Scheduler // when store is *state.Database
+	log            *slog.Logger
+	stop           chan struct{}
+	wg             sync.WaitGroup
 }
 
 // Task is a heartbeat task that may emit wake events (TS HeartbeatTaskFn-aligned).
@@ -62,16 +67,19 @@ func NewDaemonWithWakeInserter(tickInterval, wakeCheck time.Duration, tasks []Ta
 
 // DaemonOptions configures the full heartbeat daemon (TS-aligned).
 type DaemonOptions struct {
-	TickInterval time.Duration
-	WakeCheck    time.Duration
-	Tasks        []Task
-	Store        TaskStore
-	WakeInserter WakeInserter
-	CreditsFn    func(context.Context) int64
-	Config       *types.AutomatonConfig
-	Conway       conway.Client
-	Address      string
-	Log          *slog.Logger
+	TickInterval   time.Duration
+	WakeCheck      time.Duration
+	Tasks          []Task
+	Store          TaskStore
+	WakeInserter   WakeInserter
+	CreditsFn      func(context.Context) int64
+	Config         *types.AutomatonConfig
+	Conway         conway.Client
+	Channels       map[string]social.SocialChannel
+	Address        string
+	HealthMonitor  *replication.ChildHealthMonitor // optional; for check_child_health
+	SandboxCleanup *replication.SandboxCleanup     // optional; for prune_dead_children
+	Log            *slog.Logger
 }
 
 // NewDaemonWithOptions creates a daemon with full task context (TS-aligned).
@@ -81,17 +89,20 @@ func NewDaemonWithOptions(opts DaemonOptions) *Daemon {
 		opts.Log = slog.Default()
 	}
 	d := &Daemon{
-		tickInterval: opts.TickInterval,
-		wakeCheck:    opts.WakeCheck,
-		tasks:        opts.Tasks,
-		wakeInserter: opts.WakeInserter,
-		store:        opts.Store,
-		creditsFn:    opts.CreditsFn,
-		config:       opts.Config,
-		conway:       opts.Conway,
-		address:      opts.Address,
-		log:          opts.Log,
-		stop:         make(chan struct{}),
+		tickInterval:   opts.TickInterval,
+		wakeCheck:      opts.WakeCheck,
+		tasks:          opts.Tasks,
+		wakeInserter:   opts.WakeInserter,
+		store:          opts.Store,
+		creditsFn:      opts.CreditsFn,
+		config:         opts.Config,
+		conway:         opts.Conway,
+		channels:       opts.Channels,
+		address:        opts.Address,
+		healthMonitor:  opts.HealthMonitor,
+		sandboxCleanup: opts.SandboxCleanup,
+		log:            opts.Log,
+		stop:           make(chan struct{}),
 	}
 	if db, ok := opts.Store.(*state.Database); ok {
 		seedHeartbeatSchedule(db, opts.Tasks)
@@ -145,15 +156,21 @@ func (d *Daemon) Stop() {
 
 func (d *Daemon) tick(ctx context.Context) {
 	var taskCtx *TaskContext
-	if d.store != nil && d.creditsFn != nil {
-		creditsFn := func() int64 { return d.creditsFn(ctx) }
+	if d.store != nil {
+		creditsFn := func() int64 { return 0 }
+		if d.creditsFn != nil {
+			creditsFn = func() int64 { return d.creditsFn(ctx) }
+		}
 		tick := BuildTickContext(creditsFn)
 		taskCtx = &TaskContext{
-			Tick:    tick,
-			DB:      d.store,
-			Conway:  d.conway,
-			Config:  d.config,
-			Address: d.address,
+			Tick:           tick,
+			DB:             d.store,
+			Conway:         d.conway,
+			Channels:       d.channels,
+			Config:         d.config,
+			Address:        d.address,
+			HealthMonitor:  d.healthMonitor,
+			SandboxCleanup: d.sandboxCleanup,
 		}
 	}
 

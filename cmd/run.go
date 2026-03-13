@@ -14,7 +14,10 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/heartbeat"
+	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
+	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
+	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tunnel"
@@ -56,9 +59,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	// 2b. Identity bootstrap: persist address and default_chain to identity table
+	// 2b. Identity bootstrap: persist address, default_chain, and address_<caip2> for default chain
 	_ = db.SetIdentity("address", cfg.WalletAddress)
 	_ = db.SetIdentity("default_chain", cfg.DefaultChain)
+	if addr, err := identity.DeriveAddress(cfg.DefaultChain); err == nil && addr != "" {
+		_ = db.SetIdentity(identity.AddressKeyForChain(cfg.DefaultChain), addr)
+	}
 
 	// 3. Policy engine (with treasury policy and DB-backed rate limits)
 	policy := agent.NewPolicyEngine(agent.CreateDefaultRulesWithTreasury(cfg.TreasuryPolicy, db))
@@ -82,22 +88,60 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// 5b. Tunnel (expose_port, remove_port, tunnel_status)
 	tunnelReg, tunnelMgr := tunnel.NewFromConfig(cfg.Tunnel)
 
+	// 5c. Social channels (Conway, Telegram, Discord)
+	channels := social.NewChannelsFromConfig(cfg)
+
+	// 5d. Bootstrap topup: buy minimum $5 credits from USDC when balance is low (TS-aligned)
+	if conwayClient != nil && cfg.WalletAddress != "" {
+		bootstrapTopupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		func() {
+			defer cancel()
+			creditsCents, _ := conwayClient.GetCreditsBalance(bootstrapTopupCtx)
+			account, _, err := identity.GetWallet()
+			if err != nil || account == nil {
+				slog.Debug("bootstrap topup skipped: no wallet")
+				return
+			}
+			result, err := conway.BootstrapTopup(bootstrapTopupCtx, conway.BootstrapTopupParams{
+				APIURL:               cfg.ConwayAPIURL,
+				Account:              account.PrivateKey(),
+				Address:              account.Address(),
+				CreditsCents:         creditsCents,
+				CreditThresholdCents: 500,
+				DefaultChain:         cfg.DefaultChain,
+			})
+			if err != nil {
+				slog.Warn("bootstrap topup failed", "err", err)
+				return
+			}
+			if result != nil && result.Success {
+				slog.Info("bootstrap topup: credits added", "amount_usd", result.AmountUSD)
+			} else if result != nil && result.Error != "" {
+				slog.Warn("bootstrap topup skipped", "reason", result.Error)
+			}
+		}()
+	}
+
 	// 6. Agent loop (full ReAct when inference+store configured)
 	reg := tools.NewRegistryWithOptions(&tools.RegistryOptions{
 		Store:          db,
 		Conway:         conwayClient,
 		Name:           cfg.Name,
+		ParentAddress:  cfg.WalletAddress,
+		GenesisPrompt:  cfg.GenesisPrompt,
 		ConfigTools:    cfg.Tools,
 		InstalledDB:    db,
 		PluginPaths:    cfg.PluginPaths,
+		Channels:       channels,
 		TunnelManager:  tunnelMgr,
 		TunnelRegistry: tunnelReg,
 	})
 	loop := agent.NewLoopWithOptions(agent.LoopOptions{
-		Policy:    policy,
-		Store:     db,
-		Inference: infClient,
-		Tools:     reg,
+		Policy:       policy,
+		Store:        db,
+		Inference:    infClient,
+		Tools:        reg,
+		LineageStore: db,
 		Config: &agent.LoopConfig{
 			Name:           cfg.Name,
 			GenesisPrompt:  cfg.GenesisPrompt,
@@ -123,11 +167,30 @@ func runRun(cmd *cobra.Command, args []string) error {
 			CreditsFn:    creditsFn,
 			Config:       cfg,
 			Conway:       conwayClient,
+			Channels:     channels,
+			Address:      cfg.WalletAddress,
+			HealthMonitor: &replication.ChildHealthMonitor{
+				Conway: conwayClient,
+				Store: db,
+			},
+			SandboxCleanup: &replication.SandboxCleanup{
+				Conway: conwayClient,
+				Store:  db,
+			},
+			Log: slog.Default(),
+		})
+	} else {
+		daemon = heartbeat.NewDaemonWithOptions(heartbeat.DaemonOptions{
+			TickInterval: tickInterval,
+			WakeCheck:    wakeCheck,
+			Tasks:        heartbeat.DefaultTasks(),
+			Store:        db,
+			WakeInserter: db,
+			Config:       cfg,
+			Channels:     channels,
 			Address:      cfg.WalletAddress,
 			Log:          slog.Default(),
 		})
-	} else {
-		daemon = heartbeat.NewDaemonWithWakeInserter(tickInterval, wakeCheck, heartbeat.DefaultTasks(), db, slog.Default())
 	}
 
 	// 8. Web dashboard (moneyclaw-py aligned)
@@ -142,6 +205,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		webSrv := web.NewServer(webAddr, webState, db, &web.ServerConfig{
 			Name:          cfg.Name,
 			WalletAddress: cfg.WalletAddress,
+			DefaultChain:  cfg.DefaultChain,
 			Version:       web.Version,
 			CreditsGetter: creditsGetter,
 		}, slog.Default())

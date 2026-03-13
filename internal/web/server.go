@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 )
 
 //go:embed static
@@ -37,10 +39,11 @@ type CreditsGetter interface {
 
 // ServerConfig holds config for status API (TS-aligned).
 type ServerConfig struct {
-	Name           string
-	WalletAddress  string
-	Version        string
-	CreditsGetter  CreditsGetter
+	Name          string
+	WalletAddress string
+	DefaultChain  string // CAIP-2, e.g. eip155:8453
+	Version       string
+	CreditsGetter CreditsGetter
 }
 
 // RuntimeState holds shared runtime state for the web API.
@@ -163,13 +166,32 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	address := "0x0"
+	chainParam := r.URL.Query().Get("chain")
+	if chainParam == "" && s.Cfg != nil && s.Cfg.DefaultChain != "" {
+		chainParam = s.Cfg.DefaultChain
+	}
+	if chainParam == "" {
+		chainParam = identity.DefaultChainBase
+	}
 	if s.DB != nil {
-		if a, ok, _ := s.DB.GetIdentity("address"); ok && a != "" {
-			address = a
+		if chainParam != "" {
+			if a, ok, _ := s.DB.GetIdentity(identity.AddressKeyForChain(chainParam)); ok && a != "" {
+				address = a
+			}
+		}
+		if address == "0x0" {
+			if a, ok, _ := s.DB.GetIdentity("address"); ok && a != "" {
+				address = a
+			}
 		}
 	}
 	if address == "0x0" && s.Cfg != nil && s.Cfg.WalletAddress != "" {
 		address = s.Cfg.WalletAddress
+	}
+	if address == "0x0" && chainParam != "" {
+		if addr, err := identity.DeriveAddress(chainParam); err == nil && addr != "" {
+			address = addr
+		}
 	}
 	name := ""
 	version := Version
@@ -192,6 +214,7 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"today_pnl":     todayPnl,
 		"dry_run":       true,
 		"address":       address,
+		"chain":         chainParam,
 		"name":          name,
 		"version":       version,
 		"running":       running,

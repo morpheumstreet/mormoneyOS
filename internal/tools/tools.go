@@ -5,6 +5,7 @@ import (
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
+	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tunnel"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
@@ -35,10 +36,14 @@ type RegistryOptions struct {
 	Store           ToolStore
 	Conway          conway.Client
 	Name            string
+	ParentAddress   string               // For spawn_child (wallet address)
+	GenesisPrompt   string               // For spawn_child
+	SocialClient    SocialClient          // For message_child; nil = stub. If Channels has conway, used to build this.
+	Channels        map[string]social.SocialChannel // Social channels (conway, telegram, discord); enables send_message
 	ConfigTools     []types.ConfigToolDef // Tools from config (extension point)
 	InstalledDB     InstalledToolDB       // DB installed_tools (extension point); can be same as Store when Store is *state.Database
 	PluginPaths     []string              // Paths to .so plugin dirs (extension point)
-	TunnelManager   *tunnel.TunnelManager // When set, register expose_port, remove_port, tunnel_status
+	TunnelManager   *tunnel.TunnelManager  // When set, register expose_port, remove_port, tunnel_status
 	TunnelRegistry  *tunnel.ProviderRegistry
 }
 
@@ -111,7 +116,31 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 				if db, ok := opts.Store.(FundChildStore); ok {
 					r.Register(&FundChildTool{Conway: opts.Conway, Store: db})
 				}
+				if db, ok := opts.Store.(*state.Database); ok {
+					r.Register(&SpawnChildTool{
+						Conway:        opts.Conway,
+						Store:         db,
+						ParentAddress: opts.ParentAddress,
+						GenesisPrompt: opts.GenesisPrompt,
+						ParentName:    opts.Name,
+						MaxChildren:   3,
+					})
+					r.Register(&StartChildTool{Conway: opts.Conway, Store: db})
+					r.Register(&VerifyChildConstitutionTool{Conway: opts.Conway, Store: db})
+				}
+				if fc, ok := opts.Store.(FundChildStore); ok {
+					socialClient := opts.SocialClient
+					if socialClient == nil && opts.Channels != nil {
+						if conwayCh := opts.Channels["conway"]; conwayCh != nil {
+							socialClient = &SocialChannelAdapter{Channel: conwayCh}
+						}
+					}
+					r.Register(&MessageChildTool{Social: socialClient, Store: fc})
+				}
 			}
+		}
+		if opts.Channels != nil && len(opts.Channels) > 0 {
+			r.Register(&SendMessageTool{Channels: opts.Channels})
 		}
 		if opts.TunnelManager != nil {
 			defaultProv := "bore"
