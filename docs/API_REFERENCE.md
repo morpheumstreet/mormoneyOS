@@ -34,16 +34,16 @@ mormoneyOS integrates with several API surfaces:
 
 ### 2.2 REST API Endpoints
 
-| Method | Path | Description | Response Shape |
-|--------|------|-------------|----------------|
-| GET | `/api/status` | Agent runtime status, credits, identity | `{ is_running, state, tick_count, wallet_value, today_pnl, dry_run, address, chain, name, version, running, paused, agent_state, tick }` |
-| GET | `/api/strategies` | Skills + children from DB (or hardcoded fallback) | `[{ name, description, risk_level, enabled }, ...]` |
-| GET | `/api/history` | Memory/history (placeholder) | `[]` |
-| GET | `/api/cost` | Inference cost summary | `{ today_cost, today_calls, total_cost, over_budget, by_layer, calls_by_layer }` |
-| GET | `/api/risk` | Risk state | `{ paused, daily_loss, risk_level }` |
-| POST | `/api/pause` | Pause agent (set sleeping, sleep_until far future) | `{ status: "paused" }` |
-| POST | `/api/resume` | Resume agent (delete sleep_until, insert wake event) | `{ status: "resumed" }` |
-| POST | `/api/chat` | Simple chat (status/help parsing) | `{ response: string }` |
+| Method | Path | Status | Description | Response Shape |
+|--------|------|--------|-------------|----------------|
+| GET | `/api/status` | ✅ Implemented | Agent runtime status, credits, identity | `{ is_running, state, tick_count, wallet_value, today_pnl, dry_run, address, chain, name, version, running, paused, agent_state, tick }` |
+| GET | `/api/strategies` | ✅ Implemented | Skills + children from DB (or hardcoded fallback) | `[{ name, description, risk_level, enabled }, ...]` |
+| GET | `/api/history` | ⚠️ Placeholder | Memory/history — returns `[]` | `[]` |
+| GET | `/api/cost` | ✅ Implemented | Inference cost summary (when `inference_costs` exists) | `{ today_cost, today_calls, total_cost, over_budget, by_layer, calls_by_layer }` |
+| GET | `/api/risk` | ✅ Implemented | Risk state from RuntimeState | `{ paused, daily_loss, risk_level }` |
+| POST | `/api/pause` | ✅ Implemented | Pause agent (set sleeping, sleep_until far future) | `{ status: "paused" }` |
+| POST | `/api/resume` | ✅ Implemented | Resume agent (delete sleep_until, insert wake event) | `{ status: "resumed" }` |
+| POST | `/api/chat` | ⚠️ Keyword-only | Simple chat (status/help parsing); frontend shows "not yet implemented" | `{ response: string }` |
 
 ### 2.3 Query Parameters
 
@@ -147,7 +147,47 @@ Supported messages: `status`, `help`, `帮助` — others return a generic "I do
 
 ---
 
-## 8. References
+## 8. internal/web Implementation Status & Extensions
+
+### 8.1 Current State
+
+| Endpoint | Status | Notes |
+|---------|--------|-------|
+| `GET /api/status` | ✅ Full | DB + Conway credits, identity, turn count |
+| `GET /api/strategies` | ✅ Full | Skills + children from DB; hardcoded fallback when empty |
+| `GET /api/history` | ⚠️ Placeholder | Returns `[]`; no data wired |
+| `GET /api/cost` | ✅ Full | `state.GetInferenceCostSummary()` when DB has `inference_costs` |
+| `GET /api/risk` | ✅ Full | RuntimeState.Paused + static risk_level |
+| `POST /api/pause` | ✅ Full | DB: SetAgentState + SetKV sleep_until |
+| `POST /api/resume` | ✅ Full | DB: DeleteKV + InsertWakeEvent |
+| `POST /api/chat` | ⚠️ Keyword-only | status/help/帮助; frontend does not call it (shows "not yet implemented") |
+
+**Auth:** None. Dashboard is unauthenticated. Anyone reaching the URL has full access.
+
+### 8.2 Implementable in internal/web
+
+Endpoints that can be added using existing data sources. Requires extending `Server` with optional dependencies (type-assert `WebDB` to `*state.Database`, pass `Tools`, `TunnelManager`, `Config`, etc.).
+
+| Endpoint | Data Source | Effort | Description |
+|----------|-------------|--------|-------------|
+| `GET /api/history` | `state.GetRecentTurns(limit)` | Low | Turn history: id, timestamp, state, input, thinking, tool_calls, cost_cents. Extend WebDB or type-assert to `*state.Database`. |
+| `GET /api/soul` | `DB.GetKV("soul_content")` | Low | Read soul document from KV. Same pattern as `view_soul` tool. |
+| `GET /api/memory` | `state.GetSemanticMemory`, `GetProceduralMemory`, KV goals/facts | Medium | Facts, goals, procedures. Requires schema v13 (5-tier) + KV keys like `goal:`, `procedure:`. |
+| `GET /api/health` | — | Trivial | Liveness: return `200 OK` or `{"ok": true}`. |
+| `GET /api/tools` | `tools.Registry.List()` | Low | List registered tool names. Pass `Tools` (Registry) to Server. |
+| `GET /api/config` | `*types.AutomatonConfig` (sanitized) | Low | Read-only config summary: name, chain, version. **Never expose** API keys, wallet paths. |
+| `GET /api/heartbeat` | `state.GetHeartbeatSchedule`, heartbeat history | Medium | Schedule + recent run history. |
+| `GET /api/tunnels` | `tunnel.TunnelManager.Status()` | Low | Active tunnels (port, provider, public_url). Pass TunnelManager to Server. |
+| `POST /api/chat` (enhance) | Inference client or agent loop | High | Wire to real LLM or forward to agent. Frontend must call `POST /api/chat` with body `{ "message": "..." }`. |
+
+### 8.3 Frontend Gaps
+
+- **Chat:** `static/index.html` `btnSend` handler does **not** call `POST /api/chat`. It appends "(Chat API not yet implemented)". Wire `fetch('/api/chat', { method: 'POST', body: JSON.stringify({ message }) })` to use the existing keyword handler.
+- **History:** No UI for `/api/history`; add a panel when endpoint returns real data.
+
+---
+
+## 9. References
 
 - [ts-go-alignment.md](design/ts-go-alignment.md) — Web API alignment with TypeScript reference
 - [child-runtime-protocol.md](design/child-runtime-protocol.md) — Conway sandbox operations

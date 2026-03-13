@@ -18,9 +18,21 @@ CGO_ENABLED ?= 0
 #   make build-all VERSION=v1.2.3
 TARGETS ?= darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64
 
-.PHONY: all build clean clean-all install build-all test test-coverage
+WEBUI_DIR   := dashos
+WEBUI_DIST  := $(WEBUI_DIR)/dist
+WEBUI_STATIC := internal/web/static
+
+.PHONY: all build build-webui clean clean-all install build-all test test-coverage build-webui
 
 all: build install
+
+# Build dashos UI and replace embedded static files.
+# Uses base /static/ so asset URLs work with the Go server's /static/ route.
+build-webui:
+	cd $(WEBUI_DIR) && bun run build -- --base /static/
+	@find $(WEBUI_STATIC) -mindepth 1 -delete 2>/dev/null || true
+	@mkdir -p $(WEBUI_STATIC)
+	@cp -r $(WEBUI_DIST)/* $(WEBUI_STATIC)/
 
 build:
 	@mkdir -p bin
