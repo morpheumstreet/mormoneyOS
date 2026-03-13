@@ -269,7 +269,36 @@ func Load() (*types.AutomatonConfig, error) {
 		cfg.DiscordMentionOnly = v
 	}
 
+	// Skills config (trusted roots for install_skill, token budget for prompt)
+	if sc, ok := raw["skills"].(map[string]any); ok {
+		cfg.Skills = &types.SkillsConfig{TokenBudgetMax: 2000}
+		if arr, ok := sc["trustedRoots"].([]any); ok {
+			for _, a := range arr {
+				if s, ok := a.(string); ok && s != "" {
+					cfg.Skills.TrustedRoots = append(cfg.Skills.TrustedRoots, ResolvePath(s))
+				}
+			}
+		}
+		if v, ok := sc["tokenBudgetMax"].(float64); ok && v > 0 {
+			cfg.Skills.TokenBudgetMax = int(v)
+		}
+	}
+	ensureSkillsConfig(cfg)
+
 	return cfg, nil
+}
+
+func ensureSkillsConfig(cfg *types.AutomatonConfig) {
+	if cfg != nil && cfg.Skills == nil {
+		cfg.Skills = defaultSkillsConfig()
+	}
+}
+
+func defaultSkillsConfig() *types.SkillsConfig {
+	return &types.SkillsConfig{
+		TrustedRoots:   []string{ResolvePath("~/.automaton/skills")},
+		TokenBudgetMax: 2000,
+	}
 }
 
 func mergeTunnelConfig(base *types.TunnelConfig, over map[string]any) *types.TunnelConfig {

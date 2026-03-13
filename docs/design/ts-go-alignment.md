@@ -129,7 +129,7 @@ Go applies migration for existing DBs with the old schema (`id TEXT`, `consumed 
 | ------------------- | --- | --- | ------------------------------- | ----------------------------------------------------------- |
 | GET /api/status     | ✅   | ✅   | DB + Conway credits, turn count | DB + kv/identity, TS-aligned shape                          |
 | GET /api/strategies | ✅   | ✅   | Skills + children from DB       | Skills + children from DB when tables exist; else hardcoded |
-| GET /api/history    | ❌   | ✅   | —                               | Returns []                                                  |
+| GET /api/history    | ❌   | ✅   | —                               | Placeholder: returns `[]` (memory/history not yet implemented) |
 | GET /api/cost       | ✅   | ✅   | inference_costs table           | Queries inference_costs when exists                         |
 | GET /api/risk       | ✅   | ✅   | DB agent_state                  | RuntimeState.Paused                                         |
 | POST /api/pause     | ✅   | ✅   | DB: set sleeping, sleep_until   | DB: SetAgentState + SetKV (persisted)                       |
@@ -239,7 +239,7 @@ Step-by-step alignment against TS reference flow (§7.1):
 
 **Loop wiring (`cmd/run.go`):** `NewLoopWithOptions` with `Store` (db), `Inference` (OpenAIClient when keys set), `Tools` (Registry), `Config`, `CreditsFn` (Conway when configured), `LineageStore` (db for GetLineageSummary).
 
-**Summary:** Core ReAct path (steps 1–13) is aligned. Inbox claim (2) implemented: ClaimInboxMessages, MarkInboxProcessed, InsertInboxMessage; check_social_inbox persists to inbox_messages. Survival tier (4): conway.TierFromCreditsCents, tierToAgentState, TierStateStore.SetAgentState, inference.SetLowComputeMode, LowComputeModel selection. Memory retrieval (6): KVMemoryRetriever pre-turn retrieval from facts/goals/procedures; inject at index 1 (TS-aligned). 5-tier tables deferred to Phase 2.
+**Summary:** Core ReAct path (steps 1–13) is aligned. Step 13 (loop/idle/sleep): TurnResult, IsMutatingTool, sleep tool immediate transition, finishReason stop — see [loop-step13-implementation.md](./loop-step13-implementation.md). Inbox claim (2) implemented: ClaimInboxMessages, MarkInboxProcessed, InsertInboxMessage; check_social_inbox persists to inbox_messages. Survival tier (4): conway.TierFromCreditsCents, tierToAgentState, TierStateStore.SetAgentState, inference.SetLowComputeMode, LowComputeModel selection. Memory retrieval (6): KVMemoryRetriever pre-turn retrieval from facts/goals/procedures; inject at index 1 (TS-aligned). 5-tier tables deferred to Phase 2.
 
 ---
 
@@ -295,7 +295,7 @@ Step-by-step alignment against TS reference flow (§7.1):
 
 ### 8.1 Tool Parity (2026-03-13)
 
-**Go real tools (base):** shell, exec (alias), file_read, file_write, git_status, git_diff, git_log, git_commit, git_push, git_branch, git_clone, edit_own_file, install_npm_package, review_upstream_changes, pull_upstream, sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model, check_usdc_balance (when Config; uses chainProviders/DefaultChainProviders).
+**Go real tools (base):** shell, exec (alias), file_read, write_file, git_status, git_diff, git_log, git_commit, git_push, git_branch, git_clone, edit_own_file, install_npm_package, review_upstream_changes, pull_upstream, sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model, check_usdc_balance (when Config; uses chainProviders/DefaultChainProviders).
 
 **Go real tools (Conway):** check_credits, list_sandboxes, list_models, transfer_credits, create_sandbox, delete_sandbox, heartbeat_ping, fund_child, spawn_child, start_child, message_child, verify_child_constitution (when Conway + Store configured; message_child uses SocialChannelAdapter when conway channel in Channels).
 
@@ -392,9 +392,9 @@ Step-by-step alignment against TS reference flow (§7.1):
 ### 9.2 High Priority (Remaining)
 
 1. ~~**Inference client:** Add real OpenAI/Anthropic/Conway proxy client~~ ✅ **Done:** OpenAI + Conway via `OpenAIClient`; Anthropic optional.
-2. ~~**Tool execution:** Wire real tool implementations (shell, file, etc.) when policy allows~~ ✅ **Done:** shell, file_read via `internal/tools`; policy-gated.
+2. ~~**Tool execution:** Wire real tool implementations (shell, file, etc.) when policy allows~~ ✅ **Done:** shell, file_read, write_file via `internal/tools`; policy-gated.
 3. ~~**Conway client:** Extend with GetCreditsPricing, ListSandboxes, ListModels~~ ✅ **Done:** HTTP implementation in `internal/conway/http.go`; graceful fallback on 404.
-4. **Heartbeat:** ~~USDC balance~~ ✅, ~~Conway exec for health_check~~ ✅, ~~report_metrics~~ ✅. health_check uses ExecInSandbox("echo alive"); report_metrics saves to metric_snapshots, critical alert wake.
+4. ~~**Heartbeat:** USDC balance, Conway exec for health_check, report_metrics~~ ✅ **Done:** All 11 tasks real; health_check uses ExecInSandbox("echo alive"); report_metrics saves to metric_snapshots, critical alert wake.
 
 ### 9.3 Lower Priority (Full Parity)
 
@@ -411,6 +411,8 @@ Step-by-step alignment against TS reference flow (§7.1):
 ## 10. Design Doc References
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — TS system design (source of truth). Key sections: [Runtime Lifecycle](../../ARCHITECTURE.md#runtime-lifecycle), [Security Model](../../ARCHITECTURE.md#security-model), [Heartbeat Daemon](../../ARCHITECTURE.md#heartbeat-daemon), [Module Dependency Graph](../../ARCHITECTURE.md#module-dependency-graph).
+- [skills-design.md](./skills-design.md) — Skills system design: layered model, SKILL.md/SKILL.toml format, prompt injection, alignment with mormclaw and OpenClaw.
+- [loop-step13-implementation.md](./loop-step13-implementation.md) — Go agent loop step 13: TurnResult, sleep tool immediate transition, idle-only turn counting, finishReason stop, IsMutatingTool.
 - [tool-system.md](./tool-system.md) — Go tool design: flat, extensible registry with `Register`/`RegisterMany`.
 - [child-runtime-protocol.md](./child-runtime-protocol.md) — Child spawn/fund/start/message/verify flow; Conway sandbox + social relay.
 - [social-channel-design.md](./social-channel-design.md) — Social channels (Conway, Telegram, Discord); Poll/Send; check_social_inbox, send_message.
@@ -420,7 +422,7 @@ Step-by-step alignment against TS reference flow (§7.1):
 
 ## 11. Conclusion
 
-The **TypeScript implementation** is the reference design: full ReAct loop, 75 built-in tools, 5-tier memory, 11 heartbeat tasks, Conway/x402, and DB-backed state. The **Go implementation** has core alignment: full ReAct agent loop (prompt → inference → tools → persist), DB-backed heartbeat scheduler (cron, leases, history), 8 heartbeat tasks with real logic (check_usdc_balance, check_social_inbox when channels), aligned CLI, config, web API, **wake_events schema**, **pause/resume**, **6 policy rules**, Conway GetCreditsBalance, social channels (Conway/Telegram/Discord), child runtime (spawn/fund/start/message/verify), and Conway extended API (transfer_credits, create/delete_sandbox).
+The **TypeScript implementation** is the reference design: full ReAct loop, 75 built-in tools, 5-tier memory, 11 heartbeat tasks, Conway/x402, and DB-backed state. The **Go implementation** has core alignment: full ReAct agent loop (prompt → inference → tools → persist), DB-backed heartbeat scheduler (cron, leases, history), **all 11 heartbeat tasks with real logic**, aligned CLI, config, web API, **wake_events schema**, **pause/resume**, **6 policy rules**, Conway GetCreditsBalance, social channels (Conway/Telegram/Discord), child runtime (spawn/fund/start/message/verify), and Conway extended API (transfer_credits, create/delete_sandbox).
 
 **Alignment status:** Strong. Go now matches TS on:
 
@@ -431,7 +433,7 @@ The **TypeScript implementation** is the reference design: full ReAct loop, 75 b
 - Heartbeat wake insertion
 - Conway GetCreditsBalance/GetCreditsPricing/ListSandboxes/ListModels
 - Cost API (inference_costs)
-- Full ReAct agent loop (prompt → inference → tools → persist)
+- Full ReAct agent loop (prompt → inference → tools → persist); TurnResult, step 13 (sleep/idle) aligned
 - Inference Client (OpenAI/Conway when keys set)
 - Heartbeat DB-backed scheduler (cron, leases, heartbeat_history)
 - TickContext + real task logic (all 11 tasks: ping, credits, usdc, social_inbox, updates, soul_reflection, refresh_models, child_health, prune_dead_children, health_check, report_metrics)

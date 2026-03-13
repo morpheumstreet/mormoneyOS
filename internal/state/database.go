@@ -874,6 +874,52 @@ func (d *Database) DeleteChild(childID string) error {
 	return err
 }
 
+// SkillRow is a full row from the skills table (for subconscious loader).
+type SkillRow struct {
+	Name         string
+	Description  string
+	Instructions string
+	Source       string
+	Path         string
+	Enabled      bool
+	AutoActivate int
+}
+
+// GetSkillRows returns full skill rows for enabled skills (for subconscious prompt injection).
+// Used by SkillLoader; list_skills and /api/strategies use GetSkills() instead (metadata only).
+func (d *Database) GetSkillRows() ([]SkillRow, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var exists int
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'").Scan(&exists); err != nil || exists == 0 {
+		return nil, nil
+	}
+	rows, err := d.db.Query("SELECT name, description, instructions, source, path, enabled, auto_activate FROM skills WHERE enabled = 1 ORDER BY auto_activate DESC, name ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SkillRow
+	for rows.Next() {
+		var r SkillRow
+		var enabled int
+		if err := rows.Scan(&r.Name, &r.Description, &r.Instructions, &r.Source, &r.Path, &enabled, &r.AutoActivate); err != nil {
+			continue
+		}
+		r.Enabled = enabled == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// UpdateSkillDescription updates description for a skill (one-time sync when file loads richer desc).
+func (d *Database) UpdateSkillDescription(name, description string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("UPDATE skills SET description = ? WHERE name = ?", description, name)
+	return err
+}
+
 // GetSkills returns enabled skills from skills table if it exists.
 func (d *Database) GetSkills() ([]map[string]any, bool) {
 	d.mu.RLock()

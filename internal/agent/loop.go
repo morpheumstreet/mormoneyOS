@@ -12,6 +12,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
+	"github.com/morpheumlabs/mormoneyos-go/internal/skills"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
@@ -207,7 +208,13 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	if l.lineageStore != nil {
 		lineageSummary = replication.GetLineageSummary(l.lineageStore)
 	}
-	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary)
+	skillList := []*skills.Skill{}
+	if l.config != nil && l.config.SkillsConfig != nil {
+		if store, ok := l.store.(skills.SkillRowStore); ok {
+			skillList = skills.LoadAllFromStore(store, l.config.SkillsConfig)
+		}
+	}
+	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary, skillList)
 	messages := BuildContextMessages(systemPrompt, recentTurns, pendingInput)
 
 	// Step 6: memory retrieval — inject block at index 1 (after system) when non-empty

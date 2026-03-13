@@ -148,10 +148,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Config: &agent.LoopConfig{
 			Name:             cfg.Name,
 			GenesisPrompt:    cfg.GenesisPrompt,
-			CreatorMsg:      cfg.CreatorAddress,
+			CreatorMsg:       cfg.CreatorAddress,
 			InferenceModel:   cfg.InferenceModel,
 			LowComputeModel:  cfg.LowComputeModel,
-			WalletAddress:   primaryAddr,
+			WalletAddress:    primaryAddr,
+			SkillsConfig:     cfg.Skills,
 		},
 		CreditsFn: creditsFn,
 		Log:       slog.Default(),

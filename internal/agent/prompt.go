@@ -3,6 +3,9 @@ package agent
 import (
 	"fmt"
 	"strings"
+
+	"github.com/morpheumlabs/mormoneyos-go/internal/skills"
+	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
 // LoopConfig holds config for prompt building (TS-aligned subset).
@@ -13,12 +16,14 @@ type LoopConfig struct {
 	InferenceModel   string
 	LowComputeModel  string // Optional; used when tier is critical/low_compute
 	WalletAddress    string
+	SkillsConfig     *types.SkillsConfig // Optional; for skill injection
 }
 
 // BuildSystemPrompt builds the system prompt (TS buildSystemPrompt-aligned, simplified).
 // lineageSummary is optional; when non-empty, appended to status block (TS getLineageSummary-aligned).
 // tierStr is the survival tier from conway.TierFromCreditsCents (high, normal, low_compute, critical, dead).
-func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCents int64, tierStr string, lineageSummary string) string {
+// skillList is optional; when non-empty, injects enabled skills block via FormatForPrompt.
+func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCents int64, tierStr string, lineageSummary string, skillList []*skills.Skill) string {
 	if cfg == nil {
 		cfg = &LoopConfig{Name: "automaton", InferenceModel: "stub"}
 	}
@@ -49,6 +54,9 @@ func BuildSystemPrompt(cfg *LoopConfig, state string, turnCount int64, creditsCe
 		b.WriteString("\n")
 	}
 	b.WriteString("--- END STATUS ---\n")
+	if len(skillList) > 0 && cfg != nil && cfg.SkillsConfig != nil {
+		b.WriteString(skills.FormatForPrompt(skillList, cfg.SkillsConfig.TokenBudgetMax))
+	}
 	if cfg.GenesisPrompt != "" {
 		b.WriteString("\n## Genesis Purpose\n")
 		trunc := cfg.GenesisPrompt

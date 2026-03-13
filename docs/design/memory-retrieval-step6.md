@@ -1,7 +1,7 @@
 # Memory Retrieval (Step 6) — Design
 
 **Date:** 2026-03-13  
-**Purpose:** Clean, DRY, SOLID design for 5-tier memory retrieval aligned with TS `MemoryRetriever.retrieve` + `formatMemoryBlock`.
+**Purpose:** 5-tier memory retrieval aligned with TS `MemoryRetriever.retrieve` + `formatMemoryBlock`.
 
 ---
 

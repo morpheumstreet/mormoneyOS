@@ -1,7 +1,7 @@
 # Social Channel Design — Multi-Provider Architecture
 
 **Date:** 2026-03-13  
-**Purpose:** Design a CLEAN, DRY, SOLID social channel layer (Conway, Telegram, Discord, etc.) for mormoneyOS. Unblocks `send_message` and `check_social_inbox`. All channels share one interface; Conway is a first-class channel. Borrows patterns from mormclaw channels and mormoneyOS provider design.
+**Purpose:** Design a social channel layer (Conway, Telegram, Discord, etc.) for mormoneyOS. Unblocks `send_message` and `check_social_inbox`. All channels share one interface; Conway is a first-class channel. Borrows patterns from mormclaw channels and mormoneyOS provider design.
 
 ---
 

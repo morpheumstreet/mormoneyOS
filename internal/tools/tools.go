@@ -84,7 +84,7 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 			r.Register(&SwitchModelTool{Store: opts.Store})
 			if db, ok := opts.Store.(*state.Database); ok {
 				r.Register(&ModifyHeartbeatTool{Store: db})
-				r.Register(&InstallSkillTool{Store: db})
+				r.Register(&InstallSkillTool{Store: db, Config: opts.Config})
 				r.Register(&CreateSkillTool{Store: db})
 				r.Register(&RemoveSkillTool{Store: db})
 				r.Register(&ListChildrenTool{Store: db})

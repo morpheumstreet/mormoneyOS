@@ -68,6 +68,7 @@ type AutomatonConfig struct {
 	DefaultChain       string         `json:"defaultChain,omitempty"` // CAIP-2, e.g. "eip155:8453"
 	ChainProviders     map[string]ChainProviderConfig `json:"chainProviders,omitempty"` // Override RPC+USDC per chain
 	SkillsDir          string         `json:"skillsDir"`
+	Skills             *SkillsConfig  `json:"skills,omitempty"` // Trusted roots, token budget for prompt injection
 	MaxChildren        int            `json:"maxChildren"`
 	ParentAddress      string         `json:"parentAddress,omitempty"`
 	TreasuryPolicy     *TreasuryPolicy `json:"treasuryPolicy,omitempty"`
@@ -106,6 +107,12 @@ type TunnelProviderConfig struct {
 	StartCommand string `json:"startCommand,omitempty"` // for custom: "bore local {port} --to bore.pub"
 	URLPattern   string `json:"urlPattern,omitempty"`
 	Token        string `json:"token,omitempty"` // for cloudflare, ngrok (from env)
+}
+
+// SkillsConfig configures skill loading (trusted roots, token budget).
+type SkillsConfig struct {
+	TrustedRoots   []string `json:"trustedRoots,omitempty"`   // Paths under which skill dirs are allowed (~/.automaton/skills, workspace/skills)
+	TokenBudgetMax int      `json:"tokenBudgetMax,omitempty"` // Max chars for skills block in prompt (default 2000)
 }
 
 // ConfigToolDef defines a tool loaded from config (extension point).
