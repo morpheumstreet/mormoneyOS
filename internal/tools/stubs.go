@@ -35,7 +35,7 @@ func DefaultUnimplementedTools() []Tool {
 		&UnimplementedTool{"remove_port", "Remove port exposure.", `{"type":"object","properties":{"port":{"type":"number"}}}`, notImpl},
 		&UnimplementedTool{"create_sandbox", "Create Conway sandbox.", `{"type":"object","properties":{"name":{"type":"string"},"vcpu":{"type":"number"},"memory_mb":{"type":"number"}}}`, notImpl},
 		&UnimplementedTool{"delete_sandbox", "Delete Conway sandbox.", `{"type":"object","properties":{"sandbox_id":{"type":"string"}}}`, notImpl},
-		&UnimplementedTool{"check_usdc_balance", "Check USDC balance on Base.", `{"type":"object","properties":{}}`, notImpl},
+		&UnimplementedTool{"check_usdc_balance", "Check USDC balance across chains.", `{"type":"object","properties":{"chain":{"type":"string"}}}`, notImpl},
 		&UnimplementedTool{"topup_credits", "Top up credits via USDC.", `{"type":"object","properties":{"amount_usd":{"type":"number"}}}`, notImpl},
 		&UnimplementedTool{"register_erc8004", "Register ERC-8004.", `{"type":"object","properties":{}}`, notImpl},
 		&UnimplementedTool{"update_agent_card", "Update agent card.", `{"type":"object","properties":{}}`, notImpl},

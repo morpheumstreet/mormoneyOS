@@ -38,6 +38,7 @@ type RegistryOptions struct {
 	Name            string
 	ParentAddress   string               // For spawn_child (wallet address)
 	GenesisPrompt   string               // For spawn_child
+	Config          *types.AutomatonConfig // Optional; for check_usdc_balance (chainProviders, defaultChain)
 	SocialClient    SocialClient          // For message_child; nil = stub. If Channels has conway, used to build this.
 	Channels        map[string]social.SocialChannel // Social channels (conway, telegram, discord); enables send_message
 	ConfigTools     []types.ConfigToolDef // Tools from config (extension point)
@@ -107,6 +108,9 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 			r.Register(&NoteAboutAgentTool{Store: opts.Store})
 			r.Register(&ReviewMemoryTool{Store: opts.Store})
 			r.Register(&DistressSignalTool{Conway: opts.Conway, Store: opts.Store})
+		}
+		if opts.Config != nil && opts.Config.WalletAddress != "" {
+			r.Register(&CheckUSDCBalanceTool{Config: opts.Config})
 		}
 		if opts.Conway != nil {
 			r.RegisterMany(NewConwayTools(opts.Conway))

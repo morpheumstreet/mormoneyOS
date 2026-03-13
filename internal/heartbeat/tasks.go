@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
@@ -125,18 +126,46 @@ func runCheckCredits(ctx context.Context, tc *TaskContext) (bool, string, error)
 }
 
 func runCheckUSDCBalance(ctx context.Context, tc *TaskContext) (bool, string, error) {
-	// Go: no USDC balance API yet; stub
 	if tc == nil {
 		return false, "", nil
 	}
-	credits := tc.Tick.CreditBalance
-	tier := tc.Tick.SurvivalTier
+	address := tc.Address
+	if address == "" {
+		return false, "", nil
+	}
+	chains := []string{"eip155:8453"}
+	if tc.Config != nil && tc.Config.DefaultChain != "" {
+		chains = []string{tc.Config.DefaultChain}
+	}
+	var providers map[string]conway.USDCChainProvider
+	if tc.Config != nil && len(tc.Config.ChainProviders) > 0 {
+		providers = make(map[string]conway.USDCChainProvider)
+		chains = make([]string, 0, len(tc.Config.ChainProviders))
+		for chain, cfg := range tc.Config.ChainProviders {
+			providers[chain] = conway.USDCChainProvider{RPCURL: cfg.RPCURL, USDCAddress: cfg.USDCAddress}
+			chains = append(chains, chain)
+		}
+	}
+	results, err := conway.GetUSDCBalanceMulti(ctx, address, chains, providers)
+	if err != nil {
+		_ = tc.DB.SetKV("last_usdc_check", `{"error":"`+err.Error()+`","timestamp":"`+time.Now().UTC().Format(time.RFC3339)+`"}`)
+		return false, "", nil
+	}
+	var total float64
+	byChain := make(map[string]float64)
+	for _, r := range results {
+		total += r.Balance
+		byChain[r.Chain] = r.Balance
+	}
 	check := map[string]any{
-		"balance": 0, "credits": credits, "timestamp": time.Now().UTC().Format(time.RFC3339),
+		"balance": total, "byChain": byChain, "credits": tc.Tick.CreditBalance,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 	b, _ := json.Marshal(check)
 	_ = tc.DB.SetKV("last_usdc_check", string(b))
-	_ = tier
+	if total > 0 && tc.Tick.CreditBalance < 500 {
+		return true, fmt.Sprintf("USDC available: $%.2f across %d chain(s); consider topup_credits", total, len(results)), nil
+	}
 	return false, "", nil
 }
 

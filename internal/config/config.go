@@ -130,6 +130,25 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["defaultChain"].(string); ok && v != "" {
 		cfg.DefaultChain = v
 	}
+	if prov, ok := raw["chainProviders"].(map[string]any); ok {
+		cfg.ChainProviders = make(map[string]types.ChainProviderConfig)
+		for chain, pv := range prov {
+			pm, ok := pv.(map[string]any)
+			if !ok {
+				continue
+			}
+			pc := types.ChainProviderConfig{}
+			if v, ok := pm["rpcUrl"].(string); ok {
+				pc.RPCURL = v
+			}
+			if v, ok := pm["usdcAddress"].(string); ok {
+				pc.USDCAddress = v
+			}
+			if pc.RPCURL != "" && pc.USDCAddress != "" {
+				cfg.ChainProviders[chain] = pc
+			}
+		}
+	}
 	if v, ok := raw["maxChildren"].(float64); ok && v > 0 {
 		cfg.MaxChildren = int(v)
 	}

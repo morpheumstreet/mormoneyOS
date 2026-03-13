@@ -11,13 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // TopupTiers are valid topup amounts in USD (TS-aligned).
@@ -63,8 +60,7 @@ func BootstrapTopup(ctx context.Context, params BootstrapTopupParams) (*TopupRes
 	}
 
 	// USDC balance check: skip if below minimum tier.
-	// Go does not yet have check_usdc_balance; we attempt topup and let it fail if no USDC.
-	usdcBalance, err := getUSDCBalance(ctx, params.Address, params.DefaultChain)
+	usdcBalance, err := GetUSDCBalance(ctx, params.Address, params.DefaultChain, nil)
 	if err != nil {
 		slog.Warn("bootstrap topup: USDC balance check failed, attempting anyway", "err", err)
 		// Continue - topup will fail if insufficient USDC
@@ -132,79 +128,6 @@ func TopupCredits(ctx context.Context, params TopupCreditsParams) (*TopupResult,
 		AmountUSD:         float64(params.AmountUSD),
 		CreditsCentsAdded: creditsCents,
 	}, nil
-}
-
-// getUSDCBalance returns USDC balance for address on the given chain (e.g. eip155:8453 for Base).
-// Returns balance in USD (6 decimals -> float). Uses public Base RPC when chain is Base.
-func getUSDCBalance(ctx context.Context, address string, chain string) (float64, error) {
-	// Default to Base mainnet
-	if chain == "" {
-		chain = "eip155:8453"
-	}
-	if chain != "eip155:8453" && chain != "eip155:84532" {
-		return 0, fmt.Errorf("unsupported USDC chain: %s", chain)
-	}
-	return getUSDCBalanceBase(ctx, address, chain == "eip155:84532")
-}
-
-func getUSDCBalanceBase(ctx context.Context, address string, isSepolia bool) (float64, error) {
-	rpcURL := "https://mainnet.base.org"
-	if isSepolia {
-		rpcURL = "https://sepolia.base.org"
-	}
-	balance, err := callUSDCBalanceOf(ctx, rpcURL, address, isSepolia)
-	if err != nil {
-		return 0, err
-	}
-	// USDC has 6 decimals
-	return float64(balance) / 1_000_000, nil
-}
-
-func callUSDCBalanceOf(ctx context.Context, rpcURL, account string, isSepolia bool) (int64, error) {
-	// USDC contract addresses
-	usdcAddr := "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" // Base mainnet
-	if isSepolia {
-		usdcAddr = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" // Base Sepolia
-	}
-	// balanceOf(address) selector: 0x70a08231
-	data := "0x70a08231" + strings.Repeat("0", 24) + strings.TrimPrefix(common.HexToAddress(account).Hex(), "0x")
-	payload := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "eth_call",
-		"params": []interface{}{
-			map[string]string{
-				"to":   usdcAddr,
-				"data": data,
-			},
-			"latest",
-		},
-	}
-	var rpcResp struct {
-		Result string `json:"result"`
-		Error  *struct {
-			Message string `json:"message"`
-		} `json:"error,omitempty"`
-	}
-	if err := ethCall(ctx, rpcURL, payload, &rpcResp); err != nil {
-		return 0, err
-	}
-	if rpcResp.Error != nil {
-		return 0, fmt.Errorf("rpc error: %s", rpcResp.Error.Message)
-	}
-	hexVal := strings.TrimPrefix(rpcResp.Result, "0x")
-	if hexVal == "" {
-		return 0, nil
-	}
-	balance := new(big.Int)
-	if _, ok := balance.SetString(hexVal, 16); !ok {
-		return 0, fmt.Errorf("invalid hex balance: %s", rpcResp.Result)
-	}
-	// USDC 6 decimals; cap at int64 for typical balances
-	if !balance.IsInt64() {
-		return balance.Int64(), nil // overflow: return max int64
-	}
-	return balance.Int64(), nil
 }
 
 func ethCall(ctx context.Context, rpcURL string, payload interface{}, out *struct {

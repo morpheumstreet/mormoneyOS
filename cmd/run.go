@@ -129,6 +129,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Name:           cfg.Name,
 		ParentAddress:  cfg.WalletAddress,
 		GenesisPrompt:  cfg.GenesisPrompt,
+		Config:         cfg,
 		ConfigTools:    cfg.Tools,
 		InstalledDB:    db,
 		PluginPaths:    cfg.PluginPaths,

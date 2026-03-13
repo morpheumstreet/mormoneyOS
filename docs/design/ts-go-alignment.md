@@ -10,7 +10,7 @@
 
 | Aspect                | TypeScript (src/)                                                                                    | Go (cmd/ + internal/)                                         | Alignment           |
 | --------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------- |
-| **Maturity**          | Full implementation (75 built-in tools, 5-tier memory, 11 heartbeat tasks)                           | Core aligned (ReAct loop, DB-backed heartbeat, 11 tasks); 55–64 real tools (when Conway+Channels+Tunnel configured), 12 stubs | TS is reference     |
+| **Maturity**          | Full implementation (75 built-in tools, 5-tier memory, 11 heartbeat tasks)                           | Core aligned (ReAct loop, DB-backed heartbeat, 11 tasks); 56–65 real tools (when Conway+Channels+Tunnel configured), 11 stubs | TS is reference     |
 | **CLI**               | `automaton --run`, `--setup`, `--status`, etc.                                                       | `moneyclaw run`, `setup`, `status`, etc.                      | ✅ Aligned           |
 | **Runtime lifecycle** | waking → running → sleeping → waking                                                                 | Same                                                          | ✅ Aligned           |
 | **Web API**           | `/api/status`, `/api/strategies`, `/api/cost`, `/api/risk`, `/api/pause`, `/api/resume`, `/api/chat` | Same routes including `/api/chat`                             | ✅ Aligned           |
@@ -220,7 +220,7 @@ Both implement: `waking → running → sleeping → waking`.
 | Wakeup prompt | `buildWakeupPrompt` | `BuildWakeupPrompt` | First-turn vs resume |
 | Context messages | `buildContextMessages` | `BuildContextMessages` | system + recent turns + pending input |
 | Inference | router (OpenAI/Anthropic/Conway) | `inference.Client` (OpenAIClient when keys set, else StubClient) | ✅ Real client wired |
-| Tool calls | `executeTool` | Policy evaluate + Registry.Execute | 46 real tools, 25 stubs |
+| Tool calls | `executeTool` | Policy evaluate + Registry.Execute | 56–65 real, 11 stubs |
 | Persist | turn + tool_calls | `InsertTurn` + `InsertToolCall` | DB-backed |
 
 **Loop wiring (`cmd/run.go`):** `NewLoopWithOptions` with `Store` (db), `Inference` (StubClient), `Config`, `CreditsFn` (Conway when configured).
@@ -243,7 +243,7 @@ Both implement: `waking → running → sleeping → waking`.
 |------|----|----|-------|
 | heartbeat_ping | ✅ | ✅ | Distress on critical/dead; last_heartbeat_ping, last_distress KV |
 | check_credits | ✅ | ✅ | Tier drop wake; zero-credits grace → dead |
-| check_usdc_balance | ✅ | ⚠️ | Stub; no USDC API yet |
+| check_usdc_balance | ✅ | ✅ | Real: Base RPC eth_call; chainProviders config for multi-chain |
 | check_social_inbox | ✅ | ✅ | Real when social channels (Conway/Telegram/Discord) configured; Poll + InsertWakeEvent |
 | check_for_updates | ✅ | ✅ | Git fetch + rev-list; wake when behind origin/main |
 | soul_reflection | ✅ | ⚠️ | Stub; records last_soul_reflection; TS LLM reflection not wired |
@@ -253,7 +253,7 @@ Both implement: `waking → running → sleeping → waking`.
 | health_check | ✅ | ⚠️ | Stub; no Conway exec yet |
 | report_metrics | ✅ | ⚠️ | Stub; no external metrics endpoint |
 
-**Remaining stubs:** check_usdc_balance (USDC API), soul_reflection (LLM), health_check (Conway exec), report_metrics (metrics endpoint). check_social_inbox is real when social channels configured.
+**Remaining stubs:** soul_reflection (LLM), health_check (Conway exec), report_metrics (metrics endpoint). check_usdc_balance and check_social_inbox are real.
 
 ### 7.3.3 DB-Backed Scheduler (Aligned)
 
@@ -275,7 +275,7 @@ Both implement: `waking → running → sleeping → waking`.
 
 ### 8.1 Tool Parity (2026-03-13)
 
-**Go real tools (base):** shell, exec (alias), file_read, file_write, git_status, git_diff, git_log, git_commit, git_push, git_branch, git_clone, edit_own_file, install_npm_package, review_upstream_changes, pull_upstream, sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model.
+**Go real tools (base):** shell, exec (alias), file_read, file_write, git_status, git_diff, git_log, git_commit, git_push, git_branch, git_clone, edit_own_file, install_npm_package, review_upstream_changes, pull_upstream, sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model, check_usdc_balance (when Config; uses chainProviders/DefaultChainProviders).
 
 **Go real tools (Conway):** check_credits, list_sandboxes, list_models, transfer_credits, create_sandbox, delete_sandbox, heartbeat_ping, fund_child, spawn_child, start_child, message_child, verify_child_constitution (when Conway + Store configured; message_child uses SocialChannelAdapter when conway channel in Channels).
 
@@ -283,7 +283,7 @@ Both implement: `waking → running → sleeping → waking`.
 
 **Go real tools (Tunnel):** expose_port, remove_port, tunnel_status (when TunnelManager configured).
 
-**Go stubs (12):** install_mcp_server, check_usdc_balance, topup_credits, register_erc8004, update_agent_card, discover_agents, give_feedback, check_reputation, search_domains, register_domain, manage_dns, x402_fetch.
+**Go stubs (11):** install_mcp_server, topup_credits, register_erc8004, update_agent_card, discover_agents, give_feedback, check_reputation, search_domains, register_domain, manage_dns, x402_fetch.
 
 ### 8.2 Outstanding Tools (Need Work)
 
@@ -291,7 +291,7 @@ Both implement: `waking → running → sleeping → waking`.
 |------|---------|----------|
 | **Conway / USDC** | | |
 | topup_credits | Conway/USDC API | Conway |
-| check_usdc_balance | USDC/Base RPC | Financial |
+| check_usdc_balance | — | ✅ **Done:** `internal/conway/usdc.go`; DefaultChainProviders (Base, Eth, Polygon, Arbitrum); chainProviders config |
 | **MCP** | | |
 | install_mcp_server | MCP client/runtime | Extensibility |
 | **Registry** | | |
@@ -307,7 +307,7 @@ Both implement: `waking → running → sleeping → waking`.
 | update_agent_card | Agent card/registry | Identity |
 | x402_fetch | x402 payment protocol | Payments |
 
-**Implemented (removed from Outstanding):** transfer_credits, create_sandbox, delete_sandbox (Conway HTTP); send_message (social channels: Conway, Telegram, Discord); spawn_child, fund_child, start_child, message_child, verify_child_constitution (Conway + child runtime; see `internal/social/`, `internal/tools/child_runtime.go`, `docs/design/child-runtime-protocol.md`).
+**Implemented (removed from Outstanding):** transfer_credits, create_sandbox, delete_sandbox (Conway HTTP); check_usdc_balance (USDC via Base RPC, `internal/conway/usdc.go`); send_message (social channels: Conway, Telegram, Discord); spawn_child, fund_child, start_child, message_child, verify_child_constitution (Conway + child runtime; see `internal/social/`, `internal/tools/child_runtime.go`, `docs/design/child-runtime-protocol.md`).
 
 ### 8.3 Readiness Table
 
@@ -318,12 +318,12 @@ Both implement: `waking → running → sleeping → waking`.
 | Conway client    | ✅                      | ✅               | GetCreditsBalance, GetCreditsPricing, ListSandboxes, ListModels, TransferCredits, CreateSandbox, DeleteSandbox, ExecInSandbox, ReadFileInSandbox, WriteFileInSandbox (HTTP) |
 | Inference client | ✅                      | ✅               | OpenAI + Conway when keys set; StubClient fallback |
 | Agent ReAct loop | ✅                      | ✅               | Full ReAct: prompt, inference, tools (policy), persist |
-| Tool system      | 75 built-in tools      | ⚠️ 55–64 real + 12 stubs. Real: shell, file, git×7, edit, install, review, pull; Store: sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model; Conway: check_credits, list_sandboxes, list_models, transfer_credits, create_sandbox, delete_sandbox, heartbeat_ping, fund_child, spawn_child, start_child, message_child, verify_child_constitution; Channels: send_message; Tunnel (when TunnelManager set): expose_port, remove_port, tunnel_status | Policy-gated; Store/Conway/Channels/Tunnel tools when configured |
+| Tool system      | 75 built-in tools      | ⚠️ 56–65 real + 11 stubs. Real: shell, file, git×7, edit, install, review, pull; Store: sleep, system_synopsis, list_skills, check_inference_spending, enter_low_compute, update_genesis_prompt, view_soul, update_soul, reflect_on_soul, view_soul_history, remember_fact, recall_facts, forget, set_goal, complete_goal, save_procedure, recall_procedure, note_about_agent, review_memory, distress_signal, modify_heartbeat, install_skill, create_skill, remove_skill, list_children, check_child_status, prune_dead_children, switch_model; Conway: check_credits, list_sandboxes, list_models, transfer_credits, create_sandbox, delete_sandbox, heartbeat_ping, fund_child, spawn_child, start_child, message_child, verify_child_constitution; Config: check_usdc_balance; Channels: send_message; Tunnel (when TunnelManager set): expose_port, remove_port, tunnel_status | Policy-gated; Store/Conway/Channels/Tunnel tools when configured |
 | Policy engine    | 6 categories           | 6 rules         | validation, path, financial, command-safety, rate-limit, authority |
 | Memory (5-tier)  | ✅                      | ⚠️               | Go: KV-backed facts, goals, procedures, soul; no 5-tier |
 | Soul system      | ✅                      | ✅               | view_soul, update_soul, reflect_on_soul, view_soul_history |
 | Skills           | ✅                      | ⚠️               | skills table + GetSkills; strategies from DB     |
-| Heartbeat tasks  | 11, DB-backed          | 11, DB-backed   | Cron scheduler, leases, heartbeat_history; 7 real (check_social_inbox when channels), 4 stubs |
+| Heartbeat tasks  | 11, DB-backed          | 11, DB-backed   | Cron scheduler, leases, heartbeat_history; 8 real (check_usdc_balance, check_social_inbox when channels), 3 stubs |
 | Heartbeat → wake | ✅                      | ✅               | InsertWakeEvent wired via WakeInserter            |
 | Pause/Resume     | ✅ DB-backed           | ✅ DB-backed    | SetAgentState, sleep_until, load on startup       |
 | Web dashboard    | ✅ + @mormoneyOS/dashui | Embedded static |                                                   |
@@ -368,7 +368,7 @@ Both implement: `waking → running → sleeping → waking`.
 1. ~~**Inference client:** Add real OpenAI/Anthropic/Conway proxy client~~ ✅ **Done:** OpenAI + Conway via `OpenAIClient`; Anthropic optional.
 2. ~~**Tool execution:** Wire real tool implementations (shell, file, etc.) when policy allows~~ ✅ **Done:** shell, file_read via `internal/tools`; policy-gated.
 3. ~~**Conway client:** Extend with GetCreditsPricing, ListSandboxes, ListModels~~ ✅ **Done:** HTTP implementation in `internal/conway/http.go`; graceful fallback on 404.
-4. **Heartbeat:** USDC balance, Conway exec for health_check. check_social_inbox is done (social channels).
+4. **Heartbeat:** ~~USDC balance~~ ✅, Conway exec for health_check. check_social_inbox is done (social channels). check_usdc_balance uses GetUSDCBalanceMulti with chainProviders.
 
 ### 9.3 Lower Priority (Full Parity)
 
@@ -394,7 +394,7 @@ Both implement: `waking → running → sleeping → waking`.
 
 ## 11. Conclusion
 
-The **TypeScript implementation** is the reference design: full ReAct loop, 75 built-in tools, 5-tier memory, 11 heartbeat tasks, Conway/x402, and DB-backed state. The **Go implementation** has core alignment: full ReAct agent loop (prompt → inference → tools → persist), DB-backed heartbeat scheduler (cron, leases, history), 7 heartbeat tasks with real logic (check_social_inbox when channels configured), aligned CLI, config, web API, **wake_events schema**, **pause/resume**, **6 policy rules**, Conway GetCreditsBalance, social channels (Conway/Telegram/Discord), child runtime (spawn/fund/start/message/verify), and Conway extended API (transfer_credits, create/delete_sandbox).
+The **TypeScript implementation** is the reference design: full ReAct loop, 75 built-in tools, 5-tier memory, 11 heartbeat tasks, Conway/x402, and DB-backed state. The **Go implementation** has core alignment: full ReAct agent loop (prompt → inference → tools → persist), DB-backed heartbeat scheduler (cron, leases, history), 8 heartbeat tasks with real logic (check_usdc_balance, check_social_inbox when channels), aligned CLI, config, web API, **wake_events schema**, **pause/resume**, **6 policy rules**, Conway GetCreditsBalance, social channels (Conway/Telegram/Discord), child runtime (spawn/fund/start/message/verify), and Conway extended API (transfer_credits, create/delete_sandbox).
 
 **Alignment status:** Strong. Go now matches TS on:
 
@@ -408,7 +408,7 @@ The **TypeScript implementation** is the reference design: full ReAct loop, 75 b
 - Full ReAct agent loop (prompt → inference → tools → persist)
 - Inference Client (OpenAI/Conway when keys set)
 - Heartbeat DB-backed scheduler (cron, leases, heartbeat_history)
-- TickContext + real task logic (5 tasks)
+- TickContext + real task logic (8 tasks: ping, credits, usdc, social_inbox, updates, refresh_models, child_health, prune_dead_children)
 - Strategies from skills table + children when table exists
 - Soul system (view/update/reflect/history)
 - KV-backed memory (facts, goals, procedures, agent notes)
@@ -421,4 +421,4 @@ The **TypeScript implementation** is the reference design: full ReAct loop, 75 b
 - Replication (child_lifecycle_events, ChildHealthMonitor, SandboxCleanup, GetLineageSummary in prompt)
 - Bootstrap topup (credits check, USDC balance via Base RPC, x402 payment on startup)
 
-**Remaining gaps:** topup_credits (agent tool; bootstrap topup implemented), Conway exec for health_check, 12 stubbed tools (see §8.2 Outstanding Tools). Bootstrap topup: credits check, USDC balance (Base RPC), x402 payment on startup. Social (Conway/Telegram/Discord), transfer_credits, create/delete_sandbox, spawn_child, fund_child, start_child, message_child, verify_child_constitution, send_message, check_social_inbox are implemented. Tunnel tools are real when TunnelManager is configured.
+**Remaining gaps:** topup_credits (agent tool; bootstrap topup implemented), Conway exec for health_check, 11 stubbed tools (see §8.2 Outstanding Tools). check_usdc_balance, bootstrap topup (credits + USDC + x402), social channels, child runtime, Conway extended API, tunnel tools are implemented.

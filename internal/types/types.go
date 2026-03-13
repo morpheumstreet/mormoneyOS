@@ -65,6 +65,7 @@ type AutomatonConfig struct {
 	LogLevel           string         `json:"logLevel"`
 	WalletAddress      string         `json:"walletAddress"`
 	DefaultChain       string         `json:"defaultChain,omitempty"` // CAIP-2, e.g. "eip155:8453"
+	ChainProviders     map[string]ChainProviderConfig `json:"chainProviders,omitempty"` // Override RPC+USDC per chain
 	SkillsDir          string         `json:"skillsDir"`
 	MaxChildren        int            `json:"maxChildren"`
 	ParentAddress      string         `json:"parentAddress,omitempty"`
@@ -84,6 +85,12 @@ type AutomatonConfig struct {
 	TelegramAllowedUsers []string `json:"telegramAllowedUsers,omitempty"`
 	DiscordAllowedUsers  []string `json:"discordAllowedUsers,omitempty"`
 	DiscordMentionOnly   bool     `json:"discordMentionOnly,omitempty"`
+}
+
+// ChainProviderConfig configures RPC and USDC contract for a chain (USDC balance check).
+type ChainProviderConfig struct {
+	RPCURL      string `json:"rpcUrl"`
+	USDCAddress string `json:"usdcAddress"`
 }
 
 // TunnelConfig configures tunnel providers (expose_port tool).
