@@ -210,7 +210,7 @@ func TestSchemaTablesExist(t *testing.T) {
 	}
 	defer db.Close()
 
-	tables := []string{"turns", "kv", "wake_events", "policy_decisions", "schema_version", "installed_tools", "transactions", "inbox_messages", "metric_snapshots"}
+	tables := []string{"turns", "kv", "wake_events", "policy_decisions", "schema_version", "installed_tools", "transactions", "inbox_messages", "metric_snapshots", "working_memory", "episodic_memory", "semantic_memory", "procedural_memory", "relationship_memory"}
 	for _, tbl := range tables {
 		var n int
 		err := db.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tbl).Scan(&n)

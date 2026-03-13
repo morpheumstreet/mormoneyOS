@@ -144,7 +144,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Inference:       infClient,
 		Tools:           reg,
 		LineageStore:    db,
-		MemoryRetriever: memory.NewKVMemoryRetriever(db),
+		MemoryRetriever: memory.NewDBMemoryRetriever(db, memory.NewBudgetAllocator(memory.DefaultTokenBudget)),
 		Config: &agent.LoopConfig{
 			Name:             cfg.Name,
 			GenesisPrompt:    cfg.GenesisPrompt,

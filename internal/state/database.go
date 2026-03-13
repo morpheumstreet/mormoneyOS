@@ -69,6 +69,9 @@ func (d *Database) migrate() error {
 	if err := d.migrateMetricSnapshots(); err != nil {
 		return fmt.Errorf("migrate metric_snapshots: %w", err)
 	}
+	if err := d.migrateMemory5Tier(); err != nil {
+		return fmt.Errorf("migrate memory_5tier: %w", err)
+	}
 	_, err := d.db.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	return err
 }
@@ -214,6 +217,79 @@ func (d *Database) migrateMetricSnapshots() error {
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE INDEX IF NOT EXISTS idx_metric_snapshots_at ON metric_snapshots(snapshot_at);
+	`)
+	return err
+}
+
+// migrateMemory5Tier creates 5-tier memory tables (TS-aligned, memory-system-5-tier.md).
+func (d *Database) migrateMemory5Tier() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS working_memory (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			content TEXT NOT NULL,
+			content_type TEXT NOT NULL DEFAULT 'note',
+			priority INTEGER NOT NULL DEFAULT 0,
+			token_count INTEGER NOT NULL DEFAULT 0,
+			expires_at TEXT,
+			source_turn TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_working_memory_session ON working_memory(session_id);
+		CREATE INDEX IF NOT EXISTS idx_working_memory_expires ON working_memory(expires_at) WHERE expires_at IS NOT NULL;
+
+		CREATE TABLE IF NOT EXISTS episodic_memory (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			event_type TEXT NOT NULL DEFAULT 'event',
+			summary TEXT NOT NULL,
+			detail TEXT,
+			outcome TEXT,
+			importance REAL NOT NULL DEFAULT 0,
+			embedding_key TEXT,
+			classification TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_episodic_memory_session ON episodic_memory(session_id);
+		CREATE INDEX IF NOT EXISTS idx_episodic_memory_importance ON episodic_memory(importance DESC);
+
+		CREATE TABLE IF NOT EXISTS semantic_memory (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			category TEXT NOT NULL,
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			confidence REAL NOT NULL DEFAULT 1,
+			source TEXT,
+			embedding_key TEXT,
+			last_verified_at TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(category, key)
+		);
+		CREATE INDEX IF NOT EXISTS idx_semantic_memory_category ON semantic_memory(category);
+
+		CREATE TABLE IF NOT EXISTS procedural_memory (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT,
+			steps TEXT NOT NULL,
+			success_count INTEGER NOT NULL DEFAULT 0,
+			failure_count INTEGER NOT NULL DEFAULT 0,
+			last_used_at TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+
+		CREATE TABLE IF NOT EXISTS relationship_memory (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entity_address TEXT NOT NULL UNIQUE,
+			entity_name TEXT,
+			relationship_type TEXT,
+			trust_score REAL NOT NULL DEFAULT 0.5,
+			interaction_count INTEGER NOT NULL DEFAULT 0,
+			last_interaction_at TEXT,
+			notes TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_relationship_trust ON relationship_memory(trust_score DESC);
 	`)
 	return err
 }
@@ -1008,6 +1084,259 @@ func (d *Database) RemoveTool(id string) error {
 	defer d.mu.Unlock()
 	_, err := d.db.Exec("UPDATE installed_tools SET enabled = 0 WHERE id = ?", id)
 	return err
+}
+
+// Memory5TierRow types for 5-tier memory retrieval (memory-system-5-tier.md).
+type WorkingMemoryRow struct {
+	ID          int64
+	SessionID   string
+	Content     string
+	ContentType string
+	Priority    int
+	TokenCount  int
+	ExpiresAt   string
+	SourceTurn  string
+}
+
+type EpisodicMemoryRow struct {
+	ID            int64
+	SessionID     string
+	EventType     string
+	Summary       string
+	Detail        string
+	Outcome       string
+	Importance    float64
+	EmbeddingKey  string
+	Classification string
+}
+
+type SemanticMemoryRow struct {
+	ID             int64
+	Category       string
+	Key            string
+	Value          string
+	Confidence     float64
+	Source         string
+	EmbeddingKey   string
+	LastVerifiedAt string
+}
+
+type ProceduralMemoryRow struct {
+	ID            int64
+	Name          string
+	Description   string
+	Steps         string
+	SuccessCount  int
+	FailureCount  int
+	LastUsedAt    string
+}
+
+type RelationshipMemoryRow struct {
+	ID                 int64
+	EntityAddress      string
+	EntityName         string
+	RelationshipType   string
+	TrustScore         float64
+	InteractionCount   int
+	LastInteractionAt  string
+	Notes              string
+}
+
+// GetWorkingMemory returns working memory entries for session, ordered by priority desc, limit.
+func (d *Database) GetWorkingMemory(sessionID string, limit int) ([]WorkingMemoryRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, session_id, content, content_type, priority, token_count, expires_at, source_turn
+		 FROM working_memory WHERE session_id = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
+		 ORDER BY priority DESC, id DESC LIMIT ?`,
+		sessionID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WorkingMemoryRow
+	for rows.Next() {
+		var r WorkingMemoryRow
+		var expiresAt, sourceTurn sql.NullString
+		if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.ContentType, &r.Priority, &r.TokenCount, &expiresAt, &sourceTurn); err != nil {
+			return nil, err
+		}
+		if expiresAt.Valid {
+			r.ExpiresAt = expiresAt.String
+		}
+		if sourceTurn.Valid {
+			r.SourceTurn = sourceTurn.String
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetEpisodicMemory returns episodic memory entries for session, ordered by importance desc, limit.
+func (d *Database) GetEpisodicMemory(sessionID string, limit int) ([]EpisodicMemoryRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, session_id, event_type, summary, detail, outcome, importance, embedding_key, classification
+		 FROM episodic_memory WHERE session_id = ? ORDER BY importance DESC, id DESC LIMIT ?`,
+		sessionID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EpisodicMemoryRow
+	for rows.Next() {
+		var r EpisodicMemoryRow
+		var detail, outcome, emb, class sql.NullString
+		if err := rows.Scan(&r.ID, &r.SessionID, &r.EventType, &r.Summary, &detail, &outcome, &r.Importance, &emb, &class); err != nil {
+			return nil, err
+		}
+		if detail.Valid {
+			r.Detail = detail.String
+		}
+		if outcome.Valid {
+			r.Outcome = outcome.String
+		}
+		if emb.Valid {
+			r.EmbeddingKey = emb.String
+		}
+		if class.Valid {
+			r.Classification = class.String
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetSemanticMemory returns semantic memory entries, limit.
+func (d *Database) GetSemanticMemory(limit int) ([]SemanticMemoryRow, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, category, key, value, confidence, source, embedding_key, last_verified_at
+		 FROM semantic_memory ORDER BY id DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SemanticMemoryRow
+	for rows.Next() {
+		var r SemanticMemoryRow
+		var source, emb, lastVer sql.NullString
+		if err := rows.Scan(&r.ID, &r.Category, &r.Key, &r.Value, &r.Confidence, &source, &emb, &lastVer); err != nil {
+			return nil, err
+		}
+		if source.Valid {
+			r.Source = source.String
+		}
+		if emb.Valid {
+			r.EmbeddingKey = emb.String
+		}
+		if lastVer.Valid {
+			r.LastVerifiedAt = lastVer.String
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetProceduralMemory returns procedural memory entries, limit.
+func (d *Database) GetProceduralMemory(limit int) ([]ProceduralMemoryRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, name, description, steps, success_count, failure_count, last_used_at
+		 FROM procedural_memory ORDER BY last_used_at DESC, id DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProceduralMemoryRow
+	for rows.Next() {
+		var r ProceduralMemoryRow
+		var desc, lastUsed sql.NullString
+		if err := rows.Scan(&r.ID, &r.Name, &desc, &r.Steps, &r.SuccessCount, &r.FailureCount, &lastUsed); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			r.Description = desc.String
+		}
+		if lastUsed.Valid {
+			r.LastUsedAt = lastUsed.String
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetRelationshipMemory returns relationship memory entries, limit.
+func (d *Database) GetRelationshipMemory(limit int) ([]RelationshipMemoryRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, entity_address, entity_name, relationship_type, trust_score, interaction_count, last_interaction_at, notes
+		 FROM relationship_memory ORDER BY trust_score DESC, interaction_count DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RelationshipMemoryRow
+	for rows.Next() {
+		var r RelationshipMemoryRow
+		var name, relType, lastInt, notes sql.NullString
+		if err := rows.Scan(&r.ID, &r.EntityAddress, &name, &relType, &r.TrustScore, &r.InteractionCount, &lastInt, &notes); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			r.EntityName = name.String
+		}
+		if relType.Valid {
+			r.RelationshipType = relType.String
+		}
+		if lastInt.Valid {
+			r.LastInteractionAt = lastInt.String
+		}
+		if notes.Valid {
+			r.Notes = notes.String
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Has5TierMemoryTables returns true if all 5-tier memory tables exist.
+func (d *Database) Has5TierMemoryTables() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var n int
+	err := d.db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('working_memory','episodic_memory','semantic_memory','procedural_memory','relationship_memory')`,
+	).Scan(&n)
+	return err == nil && n == 5
 }
 
 // GetInferenceCostSummary returns today_cost, today_calls, total_cost from inference_costs if table exists.

@@ -51,3 +51,35 @@ func TestFormatMemoryBlock_GoalsAndProcedures(t *testing.T) {
 		t.Error("missing procedure")
 	}
 }
+
+func TestFormatMemoryBlock_FiveTier(t *testing.T) {
+	block := &MemoryBlock{
+		Working:  []string{"Current focus: deploy to prod"},
+		Episodic: []string{"Last deploy failed [failure]"},
+		Facts:    []string{"Prod URL: https://app.example.com"},
+		Goals:    []string{"Fix CI pipeline"},
+		Procedures: []ProcedureEntry{
+			{Name: "deploy", Steps: 3},
+		},
+		Relationships: []RelationshipEntry{
+			{Address: "0xabc", Name: "Alice", Type: "creator", TrustScore: 0.9, Count: 5},
+		},
+	}
+	got := FormatMemoryBlock(block)
+	order := []string{"Working Memory", "Episodic Memory", "Known Facts", "Active Goals", "Known Procedures", "Relationships"}
+	for _, section := range order {
+		if !strings.Contains(got, "### "+section) {
+			t.Errorf("missing section %q", section)
+		}
+	}
+	if !strings.Contains(got, "Current focus: deploy to prod") {
+		t.Error("missing working memory content")
+	}
+	if !strings.Contains(got, "Last deploy failed") {
+		t.Error("missing episodic content")
+	}
+	if !strings.Contains(got, "Alice (0xabc)") {
+		t.Error("missing relationship content")
+	}
+}
+
