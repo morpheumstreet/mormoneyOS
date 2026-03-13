@@ -52,6 +52,7 @@ Sovereign AI Agent Runtime
 
 Usage:
   automaton --run          Start the automaton (first run triggers setup wizard)
+  automaton --run --no-web  Start without web dashboard
   automaton --setup        Re-run the interactive setup wizard
   automaton --configure    Edit configuration (providers, model, treasury, general)
   automaton --pick-model   Interactively pick the active inference model
@@ -118,7 +119,8 @@ Environment:
   }
 
   if (args.includes("--run")) {
-    await run();
+    const noWeb = args.includes("--no-web");
+    await run({ noWeb });
     return;
   }
 
@@ -170,7 +172,7 @@ Version:    ${config.version}
 
 // ─── Main Run ──────────────────────────────────────────────────
 
-async function run(): Promise<void> {
+async function run(opts?: { noWeb?: boolean }): Promise<void> {
   logger.info(`[${new Date().toISOString()}] MoneyClaw v${VERSION} starting...`);
 
   // Load config — first run triggers interactive setup wizard
@@ -355,9 +357,20 @@ async function run(): Promise<void> {
   heartbeat.start();
   logger.info(`[${new Date().toISOString()}] Heartbeat daemon started.`);
 
+  // Start web dashboard (moneyclaw-py aligned)
+  let webServer: import("http").Server | undefined;
+  if (!opts?.noWeb) {
+    const { startWebServer } = await import("./web/server.js");
+    webServer = startWebServer(
+      { db, conway, config: { name: config.name, version: config.version } },
+      8080,
+    );
+  }
+
   // Handle graceful shutdown
   const shutdown = () => {
     logger.info(`[${new Date().toISOString()}] Shutting down...`);
+    webServer?.close();
     heartbeat.stop();
     db.setAgentState("sleeping");
     db.close();

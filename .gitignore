@@ -1,13 +1,39 @@
-node_modules
-dist
-.env
-*.log
-.DS_Store
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-*.tgz
-.automaton/wallet.json
-.automaton/state.db
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
+# Go workspace and build
+*.test
+*.out
+coverage.out
+coverage.html
+vendor/
+
+# Go module cache (optional; often kept local-only)
+# /vendor/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp and local overrides
+*.tmp
+*.log
+.env
+.env.local
+
+# Node / build
+node_modules/
+dist/
+packages/*/dist/

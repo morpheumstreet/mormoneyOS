@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoneyClaw Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0e14;
+      --bg-panel: #0d1117;
+      --cyan-400: #22d3ee;
+      --cyan-500: #06b6d4;
+      --cyan-600: #0891b2;
+      --cyan-900: #164e63;
+      --cyan-950: #083344;
+      --border: #1e293b;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Rajdhani', sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .header {
+      font-family: 'Orbitron', sans-serif;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .header h1 { font-size: 1.25rem; font-weight: 600; color: var(--cyan-400); }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      border-radius: 4px;
+      background: var(--cyan-950);
+      color: var(--cyan-400);
+    }
+    .status-badge.online { border-left: 3px solid var(--success); }
+    .status-badge.paused { border-left: 3px solid #f59e0b; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+    }
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .card h3 { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+    .card .value { font-family: 'Orbitron', sans-serif; font-size: 1.25rem; color: var(--cyan-400); }
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin: 0 1.5rem 1rem;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.85rem;
+      color: var(--cyan-500);
+    }
+    .panel-body { padding: 1rem; }
+    .strategies-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .strategy-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem;
+      padding-left: 0.75rem;
+      border-left: 3px solid var(--cyan-600);
+      background: rgba(6, 182, 212, 0.05);
+      border-radius: 4px;
+    }
+    .strategy-item .name { font-weight: 500; }
+    .strategy-item .risk { font-size: 0.75rem; color: var(--text-muted); }
+    .chat-area {
+      padding: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .chat-messages { min-height: 80px; margin-bottom: 1rem; }
+    .chat-messages .msg { font-size: 0.9rem; color: var(--text-muted); }
+    .chat-input-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .chat-input-row input {
+      flex: 1;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+    }
+    .chat-input-row input:focus { outline: none; border-color: var(--cyan-500); }
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-primary { background: var(--cyan-600); color: white; }
+    .btn-secondary { background: var(--border); color: var(--text); }
+    .btn-group { display: flex; gap: 0.5rem; }
+    .empty { color: var(--text-muted); font-style: italic; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>MONEYCLAW Command Center</h1>
+    <div class="status-badge" id="statusBadge">
+      <span id="statusText">LOADING...</span>
+      <span id="tickInfo">| Tick #0</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Agent State</h3>
+      <div class="value" id="agentState">—</div>
+    </div>
+    <div class="card">
+      <h3>P&L Today</h3>
+      <div class="value" id="pnlToday">$0.00</div>
+    </div>
+    <div class="card">
+      <h3>Risk Level</h3>
+      <div class="value" id="riskLevel">LOW</div>
+    </div>
+    <div class="card">
+      <h3>LLM Cost Today</h3>
+      <div class="value" id="llmCost">$0.00</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">ACTIVE STRATEGIES</div>
+    <div class="panel-body">
+      <div class="strategies-list" id="strategiesList">
+        <div class="empty">Loading strategies...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">CONTROL</div>
+    <div class="panel-body btn-group">
+      <button class="btn btn-primary" id="btnPause">Pause</button>
+      <button class="btn btn-secondary" id="btnResume">Resume</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">AGENT COMM LINK</div>
+    <div class="chat-area">
+      <div class="chat-messages">
+        <div class="msg">System is online. Web dashboard active.</div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="Ask the agent..." />
+        <button class="btn btn-primary" id="btnSend">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api';
+    async function fetchJSON(path) {
+      const r = await fetch(API + path);
+      if (!r.ok) throw new Error(r.statusText);
+      return r.json();
+    }
+    async function postJSON(path) {
+      const r = await fetch(API + path, { method: 'POST' });
+      if (!r.ok) throw new Error(r.statusText);
+      return r.json();
+    }
+
+    async function refresh() {
+      try {
+        const [status, strategies, cost, risk] = await Promise.all([
+          fetchJSON('/status'),
+          fetchJSON('/strategies'),
+          fetchJSON('/cost'),
+          fetchJSON('/risk'),
+        ]);
+
+        document.getElementById('agentState').textContent = status.agent_state || '—';
+        document.getElementById('pnlToday').textContent = '$' + (status.today_pnl || 0).toFixed(2);
+        document.getElementById('riskLevel').textContent = risk.risk_level || 'LOW';
+        document.getElementById('llmCost').textContent = '$' + (cost.today_cost || 0).toFixed(2);
+        document.getElementById('tickInfo').textContent = '| Tick #' + (status.tick || 0);
+
+        const badge = document.getElementById('statusBadge');
+        badge.classList.remove('online', 'paused');
+        status.paused ? badge.classList.add('paused') : badge.classList.add('online');
+        document.getElementById('statusText').textContent = status.paused ? 'PAUSED' : 'SYSTEM ONLINE';
+
+        const list = document.getElementById('strategiesList');
+        if (strategies.length === 0) {
+          list.innerHTML = '<div class="empty">No strategies configured.</div>';
+        } else {
+          list.innerHTML = strategies.map(s => `
+            <div class="strategy-item">
+              <span class="name">${s.name}</span>
+              <span class="risk">${s.risk_level || '—'}</span>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        console.error('Refresh failed:', e);
+        document.getElementById('statusText').textContent = 'OFFLINE';
+      }
+    }
+
+    document.getElementById('btnPause').onclick = async () => {
+      await postJSON('/pause');
+      refresh();
+    };
+    document.getElementById('btnResume').onclick = async () => {
+      await postJSON('/resume');
+      refresh();
+    };
+    document.getElementById('btnSend').onclick = () => {
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg) return;
+      input.value = '';
+      const msgs = document.querySelector('.chat-messages');
+      msgs.innerHTML += '<div class="msg">You: ' + msg + '</div>';
+      msgs.innerHTML += '<div class="msg">(Chat API not yet implemented)</div>';
+    };
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
