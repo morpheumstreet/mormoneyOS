@@ -281,11 +281,16 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	}
 
 	// finishReason stop + no tool calls: natural pause, sleep (TS step 13)
+	// Do NOT sleep when we have claimed inbox messages that weren't processed — stay running to handle them.
 	if len(resp.ToolCalls) == 0 && resp.FinishReason == "stop" {
 		turnID := uuid.New().String()
 		ts := time.Now().UTC().Format(time.RFC3339)
 		tokenUsage := jsonObject("prompt_tokens", resp.InputTokens, "completion_tokens", resp.OutputTokens)
 		_ = l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, resp.Content, "[]", tokenUsage, resp.CostCents)
+		if len(claimedIds) > 0 {
+			// Inbox messages claimed but model stopped without acting; stay running to process them next turn
+			return TurnResult{State: types.AgentStateRunning, WasIdle: false}
+		}
 		return TurnResult{State: types.AgentStateSleeping, WasIdle: false}
 	}
 

@@ -403,7 +403,7 @@ Every tick (default 60s):
 | `check_usdc_balance` | `*/5 * * * *` | Wake agent if USDC available for topup |
 | `check_for_updates` | `0 */4 * * *` | Git upstream monitoring (dedup: only new commits) |
 | `health_check` | `*/30 * * * *` | Sandbox liveness (dedup: only first failure) |
-| `check_social_inbox` | `*/15 * * * *` | Poll social relay (5min backoff on error) |
+| `check_social_inbox` | `*/10 * * * * *` | Poll social relay every 10s (requires tick-interval 10s) |
 | `soul_reflection` | configurable | Soul alignment check |
 | `refresh_models` | configurable | Model registry refresh from API |
 | `check_child_health` | configurable | Child sandbox health monitoring |

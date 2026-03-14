@@ -230,9 +230,41 @@ Single tool with `channel` and `recipient` — same params for all channels:
 - `recipient`: `0x...` for Conway; chat/channel ID for Telegram/Discord
 - Omit `channel` → use first enabled channel as default
 
-### 4.2 check_social_inbox Heartbeat Task
+### 4.2 Two Reply Types
 
-Poll all enabled channels uniformly:
+Social channels have two reply types. Both are handled in `check_social_inbox` (cron-polled). The task **skips survival tier** and is **not affected by agent sleep** — it always runs when due.
+
+| Type | Description | When | Agent | LLM | Delay |
+|------|-------------|------|-------|-----|-------|
+| **Type 2 (programmatic)** | Slash commands + aliases: `/status`, `ping`, `status`, `credits?`, `!cmd balance`, etc. | Immediate in poll loop | No wake | No | Poll interval only |
+| **Type 1 (LLM)** | Non-commands | Queued to inbox; agent processes when awake | Wake + claim | Yes | Until agent wakes + processes |
+
+- **Type 2**: Always on time. Reply sent via `ch.Send` in `HandleSocialCommand`. No inbox, no wake event.
+- **Type 1**: Message → `inbox_messages` + wake event. When agent is sleeping: message goes to pending; we send acknowledgment "Message received. Agent will respond when it wakes." Agent replies with LLM when it awakens.
+
+### 4.3 Chat Commands and Fast-Reply Classification (OpenClaw-aligned)
+
+Type 2 replies use `ClassifyFastReply` (`internal/social/fast_reply.go`) — zero LLM, rule-based. Matches are handled immediately and **never saved to inbox_messages**.
+
+| Command / Pattern | Description |
+|-------------------|-------------|
+| `/ping`, `ping`, `!ping` | Instant pong |
+| `/status`, `status`, `uptime` | Agent state, turn count, credits, tier |
+| `/balance`, `credits`, `credits?`, `usdc` | Economic status, USDC by wallet, list all wallets |
+| `/skill` | List all skills (markdown table) |
+| `/help`, `help`, `?` | List available commands |
+| `/pause` | Pause agent (dashboard-style) |
+| `/resume` | Resume agent |
+| `/reset` | Request context reset (inserts wake event) |
+| `/compact`, `/think`, `/verbose`, `/usage`, `/activation`, `/restart` | Acknowledged; set via dashboard/config |
+
+Additional patterns: `!cmd <subcommand>` (e.g. `!cmd balance`), `@bot status` (strip mention, re-classify). Unknown commands (e.g. `/foo`) flow through to inbox for the agent.
+
+### 4.4 check_social_inbox Heartbeat Task
+
+**Scope:** Social channel responsiveness is in scope. The agent should poll frequently enough to respond to messages within ~10 seconds under normal conditions.
+
+Poll all enabled channels uniformly. Default schedule: **every 10 seconds** (`*/10 * * * * *` cron with seconds). Requires `--tick-interval=10s` (default) so the heartbeat evaluates tasks every 10s.
 
 ```go
 func runCheckSocialInbox(tc *TickContext) {
@@ -243,6 +275,8 @@ func runCheckSocialInbox(tc *TickContext) {
 }
 ```
 
+**Instruction:** Configure `check_social_inbox` schedule via the heartbeat API or `heartbeat_schedule` DB. For sub-minute response, use 6-field cron (e.g. `*/10 * * * * *` = every 10 seconds). The tick interval must be ≤ schedule interval for effective polling.
+
 ---
 
 ## 5. File Layout
@@ -250,6 +284,8 @@ func runCheckSocialInbox(tc *TickContext) {
 ```
 internal/social/
   channel.go      # SocialChannel interface, OutboundMessage, InboxMessage
+  commands.go     # IsCommand, ParseCommand (slash command detection)
+  fast_reply.go   # ClassifyFastReply (rule-based, no LLM)
   types.go        # Validation, constants
   registry.go     # ChannelSpec, registry, LookupChannel
   factory.go      # NewChannelsFromConfig

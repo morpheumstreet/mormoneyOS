@@ -75,7 +75,7 @@ Mutating tools are defined in `internal/tools/mutating.go`; read-only tools (e.g
 
 ### Heartbeat During Sleep
 
-The heartbeat daemon continues ticking while the agent sleeps. Tasks such as `check_social_inbox` (every 15 min) poll channels; new messages are persisted to `inbox_messages` and a wake event is inserted. The main loop wakes within the next `wakeCheck` (30s), claims inbox messages, and the agent can reply via `send_message`.
+The heartbeat daemon continues ticking while the agent sleeps. Tasks such as `check_social_inbox` (every 10s by default) poll channels; new messages are persisted to `inbox_messages` and a wake event is inserted. The main loop wakes within the next `wakeCheck` (30s), claims inbox messages, and the agent can reply via `send_message`.
 
 ### References
 

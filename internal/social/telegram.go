@@ -416,5 +416,52 @@ func (c *TelegramChannel) HealthCheck(ctx context.Context) error {
 	}
 	// Cache bot username for mention detection
 	_, _ = c.ensureBotUsername(ctx)
+	// Register commands so they appear in the chat box when user types "/"
+	if err := c.setMyCommands(ctx); err != nil {
+		slog.Default().Warn("telegram setMyCommands failed", "err", err)
+		// Non-fatal: bot still works, commands just won't show in UI
+	}
+	return nil
+}
+
+// telegramBotCommand matches Telegram Bot API BotCommand.
+type telegramBotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// setMyCommands registers bot commands with Telegram so they appear in the chat input menu.
+func (c *TelegramChannel) setMyCommands(ctx context.Context) error {
+	commands := []telegramBotCommand{
+		{Command: "ping", Description: "instant pong"},
+		{Command: "status", Description: "agent state, turns, credits, tier"},
+		{Command: "help", Description: "list commands"},
+		{Command: "balance", Description: "economic status, USDC by wallet"},
+		{Command: "skill", Description: "list all skills"},
+		{Command: "pause", Description: "pause agent"},
+		{Command: "resume", Description: "resume agent"},
+		{Command: "reset", Description: "request context reset (wake agent)"},
+	}
+	payload := map[string]any{"commands": commands}
+	body, _ := json.Marshal(payload)
+	resp, err := c.doRequest(ctx, http.MethodPost, "/setMyCommands", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("parse setMyCommands response: %w", err)
+	}
+	if !result.OK {
+		if result.Description != "" {
+			return fmt.Errorf("setMyCommands: %s", result.Description)
+		}
+		return fmt.Errorf("setMyCommands: %s", string(respBody))
+	}
 	return nil
 }

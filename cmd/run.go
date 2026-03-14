@@ -36,8 +36,9 @@ var runCmd = &cobra.Command{
 }
 
 func init() {
-	runCmd.Flags().Duration("tick-interval", 60*time.Second, "Heartbeat tick interval")
+	runCmd.Flags().Duration("tick-interval", 10*time.Second, "Heartbeat tick interval (10s enables ~10s social inbox polling)")
 	runCmd.Flags().Duration("wake-check", 30*time.Second, "Wake event check interval during sleep")
+	runCmd.Flags().Duration("inference-failure-backoff", 60*time.Second, "Sleep before retry when LLM/inference fails (avoids tight loop when service is down)")
 	runCmd.Flags().Bool("no-telegram", false, "Disable Telegram bot")
 	runCmd.Flags().Bool("no-web", false, "Disable web dashboard")
 	runCmd.Flags().String("web-addr", ":8080", "Web dashboard listen address")
@@ -92,6 +93,16 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// 5c. Social channels (Conway, Telegram, Discord)
 	channels := social.NewChannelsFromConfig(cfg)
+	// Run HealthCheck on each channel at startup (registers Telegram commands, validates tokens)
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		for name, ch := range channels {
+			if err := ch.HealthCheck(ctx); err != nil {
+				slog.Warn("social channel health check at startup", "channel", name, "err", err)
+			}
+		}
+	}()
 
 	// 5d. Bootstrap topup: buy minimum $5 credits from USDC when balance is low (TS-aligned)
 	if conwayClient != nil && primaryAddr != "" {
@@ -269,6 +280,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 	agentState := types.AgentStateWaking
 	idleTurns := 0
 	tickNum := int64(0)
+	inferenceFailureBackoff, _ := cmd.Flags().GetDuration("inference-failure-backoff")
+	if inferenceFailureBackoff <= 0 {
+		inferenceFailureBackoff = 60 * time.Second
+	}
 
 	for {
 		select {
@@ -287,6 +302,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 			res := loop.RunOneTurn(ctx, agentState)
 			if res.Err != nil {
 				slog.Error("agent turn failed", "err", res.Err)
+				slog.Info("backing off before retry (LLM may be down)", "retry_in", inferenceFailureBackoff)
+				time.Sleep(inferenceFailureBackoff)
 				continue
 			}
 			tickNum++
@@ -306,10 +323,17 @@ func runRun(cmd *cobra.Command, args []string) error {
 					idleTurns = 0
 				}
 				if agentState == types.AgentStateRunning && loop.ShouldSleep(idleTurns) {
-					agentState = types.AgentStateSleeping
-					idleTurns = 0
-					_ = db.SetKV("sleep_until", time.Now().Add(60*time.Second).UTC().Format(time.RFC3339))
-					slog.Info("agent sleeping")
+					// Don't sleep if unprocessed inbox messages exist
+					canSleep := true
+					if hasInbox, err := db.HasUnprocessedInboxMessages(); err == nil && hasInbox {
+						canSleep = false
+					}
+					if canSleep {
+						agentState = types.AgentStateSleeping
+						idleTurns = 0
+						_ = db.SetKV("sleep_until", time.Now().Add(60*time.Second).UTC().Format(time.RFC3339))
+						slog.Info("agent sleeping")
+					}
 				}
 			}
 
@@ -324,6 +348,13 @@ func runRun(cmd *cobra.Command, args []string) error {
 				_ = db.DeleteKV("sleep_until")
 				agentState = types.AgentStateWaking
 				slog.Info("wake event consumed, waking")
+				continue
+			}
+			// Wake when unprocessed inbox messages exist (e.g. model returned stop without acting)
+			if hasInbox, err := db.HasUnprocessedInboxMessages(); err == nil && hasInbox {
+				_ = db.DeleteKV("sleep_until")
+				agentState = types.AgentStateWaking
+				slog.Info("unprocessed inbox messages, waking")
 				continue
 			}
 			// Check sleep_until expiry (TS-aligned: wake when timer expires)

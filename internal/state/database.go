@@ -413,6 +413,15 @@ func (d *Database) ConsumeWakeEvents() (count int, err error) {
 	return int(n), nil
 }
 
+// HasUnprocessedInboxMessages returns true if any inbox messages have processed_at IS NULL.
+func (d *Database) HasUnprocessedInboxMessages() (bool, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var n int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM inbox_messages WHERE processed_at IS NULL").Scan(&n)
+	return n > 0, err
+}
+
 // HasUnconsumedWakeEvents returns true if any unconsumed wake events exist.
 func (d *Database) HasUnconsumedWakeEvents() (bool, error) {
 	d.mu.RLock()

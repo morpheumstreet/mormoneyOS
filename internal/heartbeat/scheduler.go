@@ -14,6 +14,10 @@ import (
 
 const defaultLeaseTTLMs = 60_000
 
+// checkSocialInboxTaskName is the task that polls social channels. It always runs when due,
+// regardless of survival tier, so the agent can wake on new messages even when sleeping.
+const checkSocialInboxTaskName = "check_social_inbox"
+
 var tierOrder = map[string]int{
 	"dead": 0, "critical": 1, "low_compute": 2, "normal": 3, "high": 4,
 }
@@ -81,7 +85,8 @@ func (s *Scheduler) getDueTasks(schedule []state.HeartbeatScheduleRow, tc *TaskC
 		if row.Enabled == 0 {
 			continue
 		}
-		if tc != nil && tc.Tick != nil {
+		// check_social_inbox always runs when due (regardless of tier) so agent can wake on new messages when sleeping
+		if row.Name != checkSocialInboxTaskName && tc != nil && tc.Tick != nil {
 			if !tierMeetsMinimum(tc.Tick.SurvivalTier, row.TierMinimum) {
 				continue
 			}
@@ -107,7 +112,8 @@ func (s *Scheduler) getDueTasks(schedule []state.HeartbeatScheduleRow, tc *TaskC
 }
 
 func (s *Scheduler) isCronDue(cronExpr, lastRun string) bool {
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	// SecondOptional: 5-field = standard (min hour dom month dow); 6-field = second first (sec min hour dom month dow)
+	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	sched, err := parser.Parse(cronExpr)
 	if err != nil {
 		return false
