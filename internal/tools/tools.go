@@ -148,13 +148,22 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 				}
 			}
 		}
-		if opts.Channels != nil && len(opts.Channels) > 0 {
+		if len(opts.Channels) > 0 {
 			r.Register(&SendMessageTool{Channels: opts.Channels})
 		}
 		if opts.TunnelManager != nil {
 			defaultProv := "bore"
-			if opts.TunnelRegistry != nil && len(opts.TunnelRegistry.List()) > 0 {
-				defaultProv = opts.TunnelRegistry.List()[0]
+			if opts.Config != nil && opts.Config.Tunnel != nil && opts.Config.Tunnel.DefaultProvider != "" {
+				if opts.TunnelRegistry != nil {
+					if _, ok := opts.TunnelRegistry.Get(opts.Config.Tunnel.DefaultProvider); ok {
+						defaultProv = opts.Config.Tunnel.DefaultProvider
+					}
+				}
+			}
+			if defaultProv == "bore" && opts.TunnelRegistry != nil && len(opts.TunnelRegistry.List()) > 0 {
+				if _, ok := opts.TunnelRegistry.Get(defaultProv); !ok {
+					defaultProv = opts.TunnelRegistry.List()[0]
+				}
 			}
 			r.Register(&ExposePortTool{Manager: opts.TunnelManager, Registry: opts.TunnelRegistry, Default: defaultProv})
 			r.Register(&RemovePortTool{Manager: opts.TunnelManager})

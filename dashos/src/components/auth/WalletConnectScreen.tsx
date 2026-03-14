@@ -2,12 +2,26 @@ import { useState } from "react";
 import { getBestWallet } from "@/sdk/utils/extdetection";
 import { useWalletAuth } from "@/contexts/WalletAuthContext";
 
+const isDev = import.meta.env.DEV;
+
 export function WalletConnectScreen() {
-  const { connectAndSign, error, isConnecting, isSigning } = useWalletAuth();
+  const { connectAndSign, bypassDev, error, isConnecting, isSigning } =
+    useWalletAuth();
   const [submitting, setSubmitting] = useState(false);
 
   const walletAvailable = !!getBestWallet("ethereum");
   const loading = isConnecting || isSigning || submitting;
+
+  const handleBypass = async () => {
+    setSubmitting(true);
+    try {
+      await bypassDev();
+    } catch {
+      // Error shown via context
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleConnect = async () => {
     setSubmitting(true);
@@ -49,12 +63,34 @@ export function WalletConnectScreen() {
                   : "Connecting..."
                 : "Connect Wallet & Sign"}
             </button>
+            {isDev && (
+              <button
+                type="button"
+                onClick={handleBypass}
+                disabled={loading}
+                className="w-full rounded-xl border border-amber-500/60 bg-amber-500/10 py-2.5 text-sm font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                Dev bypass (no wallet)
+              </button>
+            )}
           </div>
         ) : (
-          <div className="rounded-xl border border-[#2956a8] bg-[#071228]/90 px-4 py-4 text-center">
-            <p className="text-sm text-[#a7c4f3]">
-              No Ethereum wallet detected. Install MetaMask, Phantom, or another supported wallet extension.
-            </p>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-[#2956a8] bg-[#071228]/90 px-4 py-4 text-center">
+              <p className="text-sm text-[#a7c4f3]">
+                No Ethereum wallet detected. Install MetaMask, Phantom, or another supported wallet extension.
+              </p>
+            </div>
+            {isDev && (
+              <button
+                type="button"
+                onClick={handleBypass}
+                disabled={loading}
+                className="w-full rounded-xl border border-amber-500/60 bg-amber-500/10 py-2.5 text-sm font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                Dev bypass (no wallet)
+              </button>
+            )}
           </div>
         )}
 

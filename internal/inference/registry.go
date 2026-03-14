@@ -33,6 +33,7 @@ var registry = []ProviderSpec{
 	{Key: "cohere", DisplayName: "Cohere", BaseURL: "https://api.cohere.com/compatibility", AuthStyle: AuthBearer, APIKeyConfigKey: "CohereAPIKey", Local: false},
 	{Key: "qwen", DisplayName: "Qwen (DashScope)", BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", AuthStyle: AuthBearer, APIKeyConfigKey: "QwenAPIKey", Local: false},
 	{Key: "moonshot", DisplayName: "Moonshot (Kimi)", BaseURL: "https://api.moonshot.ai/v1", AuthStyle: AuthBearer, APIKeyConfigKey: "MoonshotAPIKey", Local: false},
+	{Key: "chatjimmy", DisplayName: "ChatJimmy", BaseURL: "https://chatjimmy.ai", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: false}, // No auth
 }
 
 // LookupProvider returns the spec for the given provider key, or nil if unknown.
@@ -43,6 +44,13 @@ func LookupProvider(key string) *ProviderSpec {
 		}
 	}
 	return nil
+}
+
+// ListProviders returns all registered provider specs for the config UI.
+func ListProviders() []ProviderSpec {
+	out := make([]ProviderSpec, len(registry))
+	copy(out, registry)
+	return out
 }
 
 // getConfigValue returns the API key for the given config key name.

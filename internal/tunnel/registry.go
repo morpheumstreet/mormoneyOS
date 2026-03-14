@@ -38,3 +38,10 @@ func (r *ProviderRegistry) List() []string {
 	}
 	return names
 }
+
+// Clear removes all providers. Used when reloading config.
+func (r *ProviderRegistry) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.providers = make(map[string]TunnelProvider)
+}

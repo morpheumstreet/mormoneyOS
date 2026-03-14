@@ -77,6 +77,9 @@ type AutomatonConfig struct {
 	PluginPaths       []string       `json:"pluginPaths,omitempty"`     // Paths to .so plugin dirs
 	Tunnel            *TunnelConfig  `json:"tunnel,omitempty"`           // Tunnel providers for expose_port
 
+	// Model list: add, remove, prioritize LLM providers
+	Models []LLMModelEntry `json:"models,omitempty"`
+
 	// Social channels (Conway, Telegram, Discord, etc.)
 	SocialChannels    []string `json:"socialChannels,omitempty"`    // e.g. ["conway", "telegram"]
 	SocialRelayURL    string   `json:"socialRelayUrl,omitempty"`    // For conway channel
@@ -87,6 +90,22 @@ type AutomatonConfig struct {
 	TelegramAllowedUsers []string `json:"telegramAllowedUsers,omitempty"`
 	DiscordAllowedUsers  []string `json:"discordAllowedUsers,omitempty"`
 	DiscordMentionOnly   bool     `json:"discordMentionOnly,omitempty"`
+
+	// Soul config: personality, system prompt, tone, behavioral constraints
+	Soul *SoulConfig `json:"soul,omitempty"`
+}
+
+// SoulConfig defines the agent's personality, system prompt, tone, and behavioral constraints.
+// Shapes how the agent presents itself and responds.
+type SoulConfig struct {
+	// SystemPrompt is the base instruction for the agent (used with or instead of genesisPrompt).
+	SystemPrompt string `json:"systemPrompt,omitempty"`
+	// Personality describes agent traits (e.g. "helpful, analytical, curious").
+	Personality string `json:"personality,omitempty"`
+	// Tone describes communication style (e.g. "formal", "casual", "professional").
+	Tone string `json:"tone,omitempty"`
+	// BehavioralConstraints are rules the agent must follow (e.g. "Never disclose private keys").
+	BehavioralConstraints []string `json:"behavioralConstraints,omitempty"`
 }
 
 // ChainProviderConfig configures RPC and USDC contract for a chain (USDC balance check).
@@ -106,7 +125,12 @@ type TunnelProviderConfig struct {
 	Enabled      bool   `json:"enabled"`
 	StartCommand string `json:"startCommand,omitempty"` // for custom: "bore local {port} --to bore.pub"
 	URLPattern   string `json:"urlPattern,omitempty"`
-	Token        string `json:"token,omitempty"` // for cloudflare, ngrok (from env)
+	Token        string `json:"token,omitempty"`     // Cloudflare tunnel token/credential
+	AuthToken    string `json:"authToken,omitempty"` // ngrok authtoken (API key for agent)
+	AuthKey      string `json:"authKey,omitempty"`   // Tailscale auth key (tskey-auth...)
+	Domain       string `json:"domain,omitempty"`    // ngrok custom domain
+	Hostname     string `json:"hostname,omitempty"`  // Tailscale hostname
+	Funnel       bool   `json:"funnel,omitempty"`    // Tailscale funnel (public HTTPS)
 }
 
 // SkillsConfig configures skill loading (trusted roots, token budget).
@@ -122,6 +146,19 @@ type ConfigToolDef struct {
 	Parameters  string `json:"parameters"` // JSON schema string
 	Type        string `json:"type"`       // "config", "shell"
 	Command     string `json:"command,omitempty"` // Optional shell command template
+}
+
+// LLMModelEntry configures a single LLM provider/model for the model list.
+// Used for add, remove, prioritize, and per-model settings.
+type LLMModelEntry struct {
+	ID           string `json:"id"`                     // Unique id; generated on add
+	Provider     string `json:"provider"`               // openai, conway, groq, chatjimmy, etc.
+	ModelID      string `json:"modelId"`                // API model ID (e.g. gpt-4o, llama-3.3-70b-versatile)
+	APIKey       string `json:"apiKey,omitempty"`       // Stored; masked in API responses
+	ContextLimit int    `json:"contextLimit,omitempty"` // Max context tokens; 0 = use default
+	CostCapCents int    `json:"costCapCents,omitempty"` // Daily cost cap per model; 0 = no cap
+	Priority     int    `json:"priority"`              // Lower = higher priority; 0 = first
+	Enabled      bool   `json:"enabled"`                // When false, skipped in selection
 }
 
 // TreasuryPolicy defines financial limits.

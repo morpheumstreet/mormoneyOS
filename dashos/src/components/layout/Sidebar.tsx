@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   ChevronsLeftRightEllipsis,
+  FileText,
   LayoutDashboard,
   Settings,
   X,
@@ -9,6 +10,7 @@ import {
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/reports', icon: FileText, label: 'Reports' },
   { to: '/config', icon: Settings, label: 'Config' },
 ];
 

@@ -71,7 +71,7 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["conwayApiKey"].(string); ok {
 		cfg.ConwayAPIKey = v
 	}
-	if v, ok := raw["provider"].(string); ok {
+	if v, ok := raw["provider"].(string); ok && v != "" {
 		cfg.Provider = v
 	}
 	if v, ok := raw["openaiApiKey"].(string); ok {
@@ -228,6 +228,45 @@ func Load() (*types.AutomatonConfig, error) {
 		cfg.Tunnel = mergeTunnelConfig(cfg.Tunnel, tc)
 	}
 
+	// Model list
+	if arr, ok := raw["models"].([]any); ok {
+		for _, a := range arr {
+			if m, ok := a.(map[string]any); ok {
+				ent := types.LLMModelEntry{Enabled: true}
+				if v, ok := m["id"].(string); ok {
+					ent.ID = v
+				}
+				if v, ok := m["provider"].(string); ok {
+					ent.Provider = v
+				}
+				if v, ok := m["modelId"].(string); ok {
+					ent.ModelID = v
+				}
+				if v, ok := m["apiKey"].(string); ok {
+					ent.APIKey = v
+				}
+				if v, ok := m["contextLimit"].(float64); ok && v > 0 {
+					ent.ContextLimit = int(v)
+				}
+				if v, ok := m["costCapCents"].(float64); ok && v >= 0 {
+					ent.CostCapCents = int(v)
+				}
+				if v, ok := m["priority"].(float64); ok {
+					ent.Priority = int(v)
+				}
+				if v, ok := m["enabled"].(bool); ok {
+					ent.Enabled = v
+				}
+				if ent.Provider != "" && ent.ModelID != "" {
+					if ent.ID == "" {
+						ent.ID = ent.Provider + "_" + ent.ModelID
+					}
+					cfg.Models = append(cfg.Models, ent)
+				}
+			}
+		}
+	}
+
 	// Social channels
 	if arr, ok := raw["socialChannels"].([]any); ok {
 		for _, a := range arr {
@@ -269,6 +308,11 @@ func Load() (*types.AutomatonConfig, error) {
 		cfg.DiscordMentionOnly = v
 	}
 
+	// Soul config (personality, system prompt, tone, behavioral constraints)
+	if sc, ok := raw["soul"].(map[string]any); ok {
+		cfg.Soul = mergeSoulConfig(cfg.Soul, sc)
+	}
+
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
 		cfg.Skills = &types.SkillsConfig{TokenBudgetMax: 2000}
@@ -299,6 +343,36 @@ func defaultSkillsConfig() *types.SkillsConfig {
 		TrustedRoots:   []string{ResolvePath("~/.automaton/skills")},
 		TokenBudgetMax: 2000,
 	}
+}
+
+func mergeSoulConfig(base *types.SoulConfig, over map[string]any) *types.SoulConfig {
+	out := &types.SoulConfig{}
+	if base != nil {
+		out.SystemPrompt = base.SystemPrompt
+		out.Personality = base.Personality
+		out.Tone = base.Tone
+		if len(base.BehavioralConstraints) > 0 {
+			out.BehavioralConstraints = append([]string{}, base.BehavioralConstraints...)
+		}
+	}
+	if v, ok := over["systemPrompt"].(string); ok {
+		out.SystemPrompt = v
+	}
+	if v, ok := over["personality"].(string); ok {
+		out.Personality = v
+	}
+	if v, ok := over["tone"].(string); ok {
+		out.Tone = v
+	}
+	if arr, ok := over["behavioralConstraints"].([]any); ok {
+		out.BehavioralConstraints = make([]string, 0, len(arr))
+		for _, a := range arr {
+			if s, ok := a.(string); ok && s != "" {
+				out.BehavioralConstraints = append(out.BehavioralConstraints, s)
+			}
+		}
+	}
+	return out
 }
 
 func mergeTunnelConfig(base *types.TunnelConfig, over map[string]any) *types.TunnelConfig {
@@ -332,6 +406,21 @@ func mergeTunnelConfig(base *types.TunnelConfig, over map[string]any) *types.Tun
 			}
 			if v, ok := pm["token"].(string); ok {
 				pc.Token = os.ExpandEnv(v)
+			}
+			if v, ok := pm["authToken"].(string); ok {
+				pc.AuthToken = os.ExpandEnv(v)
+			}
+			if v, ok := pm["authKey"].(string); ok {
+				pc.AuthKey = os.ExpandEnv(v)
+			}
+			if v, ok := pm["domain"].(string); ok {
+				pc.Domain = v
+			}
+			if v, ok := pm["hostname"].(string); ok {
+				pc.Hostname = v
+			}
+			if v, ok := pm["funnel"].(bool); ok {
+				pc.Funnel = v
 			}
 			out.Providers[name] = pc
 		}
@@ -393,7 +482,8 @@ func defaultConfig() *types.AutomatonConfig {
 	tp := types.DefaultTreasuryPolicy()
 	return &types.AutomatonConfig{
 		ConwayAPIURL:        "https://api.conway.tech",
-		InferenceModel:      "gpt-5.2",
+		Provider:            "chatjimmy",
+		InferenceModel:      "llama3.1-8B",
 		MaxTokensPerTurn:    4096,
 		HeartbeatConfigPath: ResolvePath("~/.automaton/heartbeat.yml"),
 		DBPath:              filepath.Join(GetAutomatonDir(), "state.db"),

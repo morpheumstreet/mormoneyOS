@@ -22,7 +22,7 @@ WEBUI_DIR   := dashos
 WEBUI_DIST  := $(WEBUI_DIR)/dist
 WEBUI_STATIC := internal/web/static
 
-.PHONY: all build build-webui clean clean-all install build-all test test-coverage build-webui
+.PHONY: all build build-webui run clean clean-all install build-all test test-coverage build-webui
 
 all: build install
 
@@ -37,6 +37,9 @@ build-webui:
 build:
 	@mkdir -p bin
 	GOWORK=off go build $(LDFLAGS) -o $(BINARY) $(MAIN)
+
+run: build
+	MONEYCLAW_DEV_BYPASS=1 $(BINARY) run
 
 install: build
 	@mkdir -p $(GOBIN)

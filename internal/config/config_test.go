@@ -106,8 +106,11 @@ func TestLoad_MergesWithDefaults(t *testing.T) {
 	if cfg.ConwayAPIURL != "https://api.conway.tech" {
 		t.Errorf("ConwayAPIURL = %q, want default", cfg.ConwayAPIURL)
 	}
-	if cfg.InferenceModel != "gpt-5.2" {
-		t.Errorf("InferenceModel = %q, want gpt-5.2", cfg.InferenceModel)
+	if cfg.InferenceModel != "llama3.1-8B" {
+		t.Errorf("InferenceModel = %q, want llama3.1-8B (chatjimmy default)", cfg.InferenceModel)
+	}
+	if cfg.Provider != "chatjimmy" {
+		t.Errorf("Provider = %q, want chatjimmy", cfg.Provider)
 	}
 }
 
@@ -216,6 +219,45 @@ func TestLoadToolsFromFile_YAML(t *testing.T) {
 	}
 	if tools[0].Name != "greet" {
 		t.Errorf("tools[0].Name = %q, want greet", tools[0].Name)
+	}
+}
+
+func TestLoad_SoulMerge(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("AUTOMATON_DIR", dir)
+	defer os.Unsetenv("AUTOMATON_DIR")
+	path := GetConfigPath()
+	raw := map[string]any{
+		"name": "soul-test",
+		"soul": map[string]any{
+			"systemPrompt":         "You are a helpful assistant.",
+			"personality":          "curious, analytical",
+			"tone":                 "professional",
+			"behavioralConstraints": []any{"Never lie", "Verify before acting"},
+		},
+	}
+	data, _ := json.Marshal(raw)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+	if cfg.Soul == nil {
+		t.Fatal("Load() cfg.Soul = nil")
+	}
+	if cfg.Soul.SystemPrompt != "You are a helpful assistant." {
+		t.Errorf("Soul.SystemPrompt = %q", cfg.Soul.SystemPrompt)
+	}
+	if cfg.Soul.Personality != "curious, analytical" {
+		t.Errorf("Soul.Personality = %q", cfg.Soul.Personality)
+	}
+	if cfg.Soul.Tone != "professional" {
+		t.Errorf("Soul.Tone = %q", cfg.Soul.Tone)
+	}
+	if len(cfg.Soul.BehavioralConstraints) != 2 {
+		t.Errorf("Soul.BehavioralConstraints = %v, want 2 items", cfg.Soul.BehavioralConstraints)
 	}
 }
 

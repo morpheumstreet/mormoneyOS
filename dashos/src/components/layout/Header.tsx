@@ -21,7 +21,9 @@ export default function Header({
 }: HeaderProps) {
   const location = useLocation();
   const { address, isAuthenticated, disconnect } = useWalletAuth();
-  const pageTitle = routeTitles[location.pathname] ?? 'Dashboard';
+  const pageTitle =
+    routeTitles[location.pathname] ??
+    (location.pathname.startsWith('/config') ? 'Config' : 'Dashboard');
 
   const shortAddress = address
     ? address.length > 12
@@ -30,7 +32,7 @@ export default function Header({
     : '—';
 
   return (
-    <header className="glass-header relative flex min-h-[4.5rem] flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#1a3670] px-4 py-3 sm:px-5 sm:py-3.5 md:flex-nowrap md:px-8 md:py-4">
+    <header className="glass-header relative flex min-h-[4.5rem] flex-wrap items-center justify-between gap-2 border border-[#1a3670] px-4 py-3 sm:px-5 sm:py-3.5 md:flex-nowrap md:px-8 md:py-4">
       <div className="absolute inset-0 pointer-events-none opacity-70 bg-[radial-gradient(circle_at_15%_30%,rgba(41,148,255,0.22),transparent_45%),radial-gradient(circle_at_85%_75%,rgba(0,209,255,0.14),transparent_40%)]" />
 
       <div className="relative flex min-w-0 items-center gap-2.5 sm:gap-3">
@@ -60,7 +62,7 @@ export default function Header({
           className="hidden items-center gap-1 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff] transition hover:border-[#4f83ff] hover:text-white md:flex md:text-sm"
           title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           <span>{isSidebarCollapsed ? 'Expand' : 'Collapse'}</span>
         </button>
 

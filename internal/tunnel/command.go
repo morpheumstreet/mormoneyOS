@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -12,14 +13,16 @@ import (
 
 // CommandTunnelProvider is the base for providers that run a CLI command.
 // Subclasses supply: CommandTemplate, URLPattern, Binary.
+// Replacements: optional map for {key} placeholders (e.g. {"token": "xxx"}).
 type CommandTunnelProvider struct {
-	ProviderName     string
-	CommandTemplate  string   // "bore local {port} --to bore.pub"
-	URLPattern       string   // "https://" or substring to find URL in stdout
-	Binary           string   // "bore" — for IsAvailable() check
-	Env              []string // optional env vars
-	mu               sync.Mutex
-	portToCancel     map[int]context.CancelFunc
+	ProviderName    string
+	CommandTemplate string            // "bore local {port} --to bore.pub"
+	URLPattern      string            // "https://" or substring to find URL in stdout
+	Binary          string            // "bore" — for IsAvailable() check
+	Env             []string          // optional env vars (merged with os.Environ())
+	Replacements    map[string]string // optional {key} → value for command template
+	mu              sync.Mutex
+	portToCancel    map[int]context.CancelFunc
 }
 
 // NewCommandTunnelProvider creates a command-based provider.
@@ -32,6 +35,13 @@ func NewCommandTunnelProvider(name, cmdTemplate, urlPattern, binary string, env 
 		Env:             env,
 		portToCancel:    make(map[int]context.CancelFunc),
 	}
+}
+
+// NewCommandTunnelProviderWithReplacements creates a provider with {key} replacements in the command.
+func NewCommandTunnelProviderWithReplacements(name, cmdTemplate, urlPattern, binary string, env []string, replacements map[string]string) *CommandTunnelProvider {
+	c := NewCommandTunnelProvider(name, cmdTemplate, urlPattern, binary, env)
+	c.Replacements = replacements
+	return c
 }
 
 // Name returns the provider name.
@@ -49,6 +59,9 @@ func (c *CommandTunnelProvider) IsAvailable() bool {
 func (c *CommandTunnelProvider) Start(ctx context.Context, host string, port int) (string, error) {
 	cmdStr := strings.ReplaceAll(c.CommandTemplate, "{port}", fmt.Sprintf("%d", port))
 	cmdStr = strings.ReplaceAll(cmdStr, "{host}", host)
+	for k, v := range c.Replacements {
+		cmdStr = strings.ReplaceAll(cmdStr, "{"+k+"}", v)
+	}
 	parts := strings.Fields(cmdStr)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("empty command for provider %s", c.ProviderName)
@@ -62,7 +75,9 @@ func (c *CommandTunnelProvider) Start(ctx context.Context, host string, port int
 	c.mu.Unlock()
 
 	cmd := exec.CommandContext(bgCtx, parts[0], parts[1:]...)
-	cmd.Env = c.Env
+	if len(c.Env) > 0 {
+		cmd.Env = append(os.Environ(), c.Env...)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()

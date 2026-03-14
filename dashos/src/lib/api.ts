@@ -137,10 +137,333 @@ export function getConfig(): Promise<string> {
     });
 }
 
-export function putConfig(toml: string): Promise<void> {
+export function putConfig(config: string): Promise<void> {
   return apiFetch("/config", {
     method: "PUT",
-    headers: { "Content-Type": "application/toml" },
-    body: toml,
+    headers: { "Content-Type": "application/json" },
+    body: config,
   });
+}
+
+/** Verify a signed message (Ethereum, Solana, Bitcoin, Morpheum) */
+export interface VerifyRequest {
+  chain: "ethereum" | "solana" | "bitcoin" | "morpheum";
+  message: string;
+  signature: string;
+  address?: string;
+  ecPubBytes?: string;
+  mldsaPubBytes?: string;
+}
+
+export interface VerifyResponse {
+  valid: boolean;
+  address?: string;
+  token?: string;
+  error?: string;
+}
+
+export function postAuthVerify(req: VerifyRequest): Promise<VerifyResponse> {
+  return apiFetch<VerifyResponse>("/auth/verify", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+/** Dev bypass: POST /api/auth/dev-bypass (requires MONEYCLAW_DEV_BYPASS=1). Returns token for agent browser testing. */
+export function postAuthDevBypass(): Promise<VerifyResponse> {
+  return fetch(API + "/auth/dev-bypass", { method: "POST" }).then((r) => {
+    if (!r.ok) throw new Error(r.statusText);
+    return r.json();
+  });
+}
+
+/** Reports (metric snapshots, last_metrics_report) */
+export interface ReportSnapshot {
+  id: string;
+  snapshot_at: string;
+  metrics: Record<string, unknown>;
+  alerts: unknown[];
+}
+
+export interface ReportsResponse {
+  last_report?: { status?: string; checkedAt?: string; alerts?: number; error?: string };
+  snapshots: ReportSnapshot[];
+}
+
+export function getReports(): Promise<ReportsResponse> {
+  return fetch(API + "/reports").then((r) => {
+    if (!r.ok) throw new Error(r.statusText);
+    return r.json();
+  });
+}
+
+/** Tools (when backend implements GET /api/tools) */
+export interface ToolItem {
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface ToolsResponse {
+  tools: ToolItem[];
+}
+
+export function getTools(): Promise<ToolsResponse> {
+  return fetch(API + "/tools").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Tools API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function patchToolEnabled(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> {
+  return apiFetch<{ name: string; enabled: boolean }>("/tools/" + encodeURIComponent(name), {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+/** Social channels (when backend implements GET /api/social) */
+export interface SocialConfigField {
+  key: string;
+  label: string;
+  type: "password" | "text" | "array" | "boolean";
+  required: boolean;
+  description?: string;
+}
+
+export interface SocialChannelItem {
+  name: string;
+  displayName: string;
+  enabled: boolean;
+  ready: boolean;
+  configFields?: SocialConfigField[];
+  config?: Record<string, unknown>;
+}
+
+export interface SocialResponse {
+  channels: SocialChannelItem[];
+}
+
+export function getSocial(): Promise<SocialResponse> {
+  return fetch(API + "/social").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Social API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function patchSocialEnabled(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> {
+  return apiFetch<{ name: string; enabled: boolean }>("/social/" + encodeURIComponent(name), {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export interface PutSocialConfigResponse {
+  ok: boolean;
+  validated?: boolean;
+  enabled?: boolean;
+  error?: string;
+}
+
+/** Models (LLM providers, model IDs, context limits, cost caps) */
+export interface ModelItem {
+  id: string;
+  provider: string;
+  modelId: string;
+  apiKeyMasked?: string;
+  contextLimit?: number;
+  costCapCents?: number;
+  priority?: number;
+  enabled?: boolean;
+}
+
+export interface ModelProvider {
+  key: string;
+  displayName: string;
+  local?: boolean;
+}
+
+export interface ModelsResponse {
+  models: ModelItem[];
+  providers: ModelProvider[];
+}
+
+export function getModels(): Promise<ModelsResponse> {
+  return fetch(API + "/models").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Models API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function postModel(body: {
+  provider: string;
+  modelId: string;
+  apiKey?: string;
+  contextLimit?: number;
+  costCapCents?: number;
+  enabled?: boolean;
+}): Promise<ModelItem> {
+  return apiFetch<ModelItem>("/models", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function patchModel(
+  id: string,
+  body: Partial<{
+    apiKey: string;
+    modelId: string;
+    contextLimit: number;
+    costCapCents: number;
+    enabled: boolean;
+  }>
+): Promise<ModelItem> {
+  return apiFetch<ModelItem>("/models/" + encodeURIComponent(id), {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteModel(id: string): Promise<void> {
+  return apiFetch<void>("/models/" + encodeURIComponent(id), {
+    method: "DELETE",
+  });
+}
+
+export function putModelsOrder(ids: string[]): Promise<void> {
+  return apiFetch<void>("/models/order", {
+    method: "PUT",
+    body: JSON.stringify({ ids }),
+  });
+}
+
+/** Soul config (personality, system prompt, tone, behavioral constraints) */
+export interface SoulConfig {
+  systemPrompt?: string;
+  personality?: string;
+  tone?: string;
+  behavioralConstraints?: string[];
+}
+
+export function getSoulConfig(): Promise<SoulConfig> {
+  return fetch(API + "/soul/config").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Soul config API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function putSoulConfig(config: Partial<SoulConfig>): Promise<void> {
+  return apiFetch<void>("/soul/config", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+/** Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) */
+export interface TunnelProviderField {
+  name: string;
+  type: "password" | "string" | "boolean";
+  required: boolean;
+  label?: string;
+  help?: string;
+}
+
+export interface TunnelProviderSchema {
+  fields: TunnelProviderField[];
+}
+
+export interface TunnelProvidersResponse {
+  providers: string[];
+  schemas: Record<string, TunnelProviderSchema>;
+  config: {
+    defaultProvider: string;
+    providers: Record<
+      string,
+      {
+        enabled?: boolean;
+        token?: string;
+        authToken?: string;
+        authKey?: string;
+        domain?: string;
+        hostname?: string;
+        funnel?: boolean;
+        startCommand?: string;
+        urlPattern?: string;
+      }
+    >;
+  };
+}
+
+export interface TunnelItem {
+  port: number;
+  provider: string;
+  public_url: string;
+}
+
+export interface TunnelsResponse {
+  tunnels: TunnelItem[];
+}
+
+export function getTunnelProviders(): Promise<TunnelProvidersResponse> {
+  return fetch(API + "/tunnels/providers").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Tunnel API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getTunnels(): Promise<TunnelsResponse> {
+  return fetch(API + "/tunnels").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Tunnel API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function putTunnelProvider(
+  name: string,
+  body: Record<string, unknown>
+): Promise<{ ok: boolean; provider: string }> {
+  return apiFetch<{ ok: boolean; provider: string }>(
+    "/tunnels/providers/" + encodeURIComponent(name),
+    {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }
+  );
+}
+
+export function postTunnelProviderRestart(
+  name: string
+): Promise<{ ok: boolean; provider: string; restarted: boolean }> {
+  return apiFetch<{ ok: boolean; provider: string; restarted: boolean }>(
+    "/tunnels/providers/" + encodeURIComponent(name) + "/restart",
+    { method: "POST" }
+  );
+}
+
+export async function putSocialConfig(
+  name: string,
+  config: Record<string, unknown>
+): Promise<PutSocialConfigResponse> {
+  const token = getToken();
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(API + "/social/" + encodeURIComponent(name) + "/config", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(config),
+  });
+
+  const data = (await res.json().catch(() => ({}))) as PutSocialConfigResponse;
+  if (res.status === 401) {
+    window.dispatchEvent(new Event("dashos-unauthorized"));
+    throw new UnauthorizedError();
+  }
+  if (!res.ok) {
+    data.ok = false;
+    data.validated = false;
+    data.error = data.error || `Request failed: ${res.status}`;
+  }
+  return data;
 }

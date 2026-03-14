@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -145,6 +146,15 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Tools:           reg,
 		LineageStore:    db,
 		MemoryRetriever: memory.NewDBMemoryRetriever(db, memory.NewBudgetAllocator(memory.DefaultTokenBudget)),
+		DisabledToolsGetter: func() []string {
+			raw, ok, _ := db.GetKV("disabled_tools")
+			if !ok || raw == "" {
+				return nil
+			}
+			var list []string
+			_ = json.Unmarshal([]byte(raw), &list)
+			return list
+		},
 		Config: &agent.LoopConfig{
 			Name:             cfg.Name,
 			GenesisPrompt:    cfg.GenesisPrompt,
@@ -206,13 +216,18 @@ func runRun(cmd *cobra.Command, args []string) error {
 	if conwayClient != nil {
 		creditsGetter = conwayClient
 	}
+	var webSrv *web.Server
 	if !noWeb {
-		webSrv := web.NewServer(webAddr, webState, db, &web.ServerConfig{
-			Name:          cfg.Name,
-			WalletAddress: primaryAddr,
-			DefaultChain:  cfg.DefaultChain,
-			Version:       web.Version,
-			CreditsGetter: creditsGetter,
+		webSrv = web.NewServer(webAddr, webState, db, &web.ServerConfig{
+			Name:            cfg.Name,
+			WalletAddress:   primaryAddr,
+			DefaultChain:    cfg.DefaultChain,
+			Version:         web.Version,
+			CreditsGetter:   creditsGetter,
+			ChatClient:      infClient,
+			ToolsLister:     reg,
+			TunnelManager:   tunnelMgr,
+			TunnelReloader:  func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
 		}, slog.Default())
 		go func() {
 			if err := webSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -234,6 +249,18 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	daemon.Start(ctx)
 	defer daemon.Stop()
+
+	// Shutdown web server and all background threads when backend closes
+	defer func() {
+		webState.UpdateState(false, "shutting_down", 0)
+		if webSrv != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer shutdownCancel()
+			if err := webSrv.Shutdown(shutdownCtx); err != nil {
+				slog.Warn("web server shutdown", "err", err)
+			}
+		}
+	}()
 
 	// 9. Main loop: waking -> running -> sleeping -> waking
 	agentState := types.AgentStateWaking

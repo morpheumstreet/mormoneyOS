@@ -1,6 +1,6 @@
 # mormoneyOS API Reference
 
-**Date:** 2026-03-13  
+**Date:** 2026-03-14  
 **Purpose:** Complete documentation of all supported API paths across the mormoneyOS system.
 
 ---
@@ -43,7 +43,27 @@ mormoneyOS integrates with several API surfaces:
 | GET | `/api/risk` | ✅ Implemented | Risk state from RuntimeState | `{ paused, daily_loss, risk_level }` |
 | POST | `/api/pause` | ✅ Implemented | Pause agent (set sleeping, sleep_until far future) | `{ status: "paused" }` |
 | POST | `/api/resume` | ✅ Implemented | Resume agent (delete sleep_until, insert wake event) | `{ status: "resumed" }` |
-| POST | `/api/chat` | ⚠️ Keyword-only | Simple chat (status/help parsing); frontend shows "not yet implemented" | `{ response: string }` |
+| POST | `/api/chat` | ⚠️ Keyword-only | Simple chat (status/help parsing) | `{ response: string }` |
+| GET | `/api/config` | ✅ Implemented | Read automaton.json config (raw content) | `{ content: string }` |
+| PUT | `/api/config` | ✅ Implemented | Write automaton.json config (full JSON body) | `204 No Content` |
+| GET | `/api/soul/config` | ✅ Implemented | Read soul config (personality, system prompt, tone, constraints) | `{ systemPrompt, personality, tone, behavioralConstraints }` |
+| PUT | `/api/soul/config` | ✅ Implemented | Update soul config (partial merge) | `204 No Content` |
+| GET | `/api/tools` | ✅ Implemented | List registered tools with enabled state (requires ToolsLister) | `{ tools: [{ name, description, enabled }] }` |
+| PATCH | `/api/tools/{name}` | ✅ Implemented | Toggle tool enabled/disabled | `{ name, enabled }` |
+| GET | `/api/social` | ✅ Implemented | List social channels with status and config schema | `{ channels: [{ name, displayName, enabled, ready, configFields, config }] }` |
+| PATCH | `/api/social/{name}` | ✅ Implemented | Toggle channel enabled/disabled | `{ name, enabled }` |
+| PUT | `/api/social/{name}/config` | ✅ Implemented | Update channel config (validates before save) | `{ ok, validated?, enabled?, error? }` |
+| POST | `/api/auth/verify` | ✅ Implemented | Verify message signature (Ethereum, Solana, Bitcoin, Morpheum) | `{ valid: bool, address?: string, error?: string }` |
+| GET | `/api/reports` | ✅ Implemented | Metric reports (last_metrics_report + metric_snapshots) | `{ last_report?, snapshots: [{ id, snapshot_at, metrics, alerts }] }` |
+| GET | `/api/tunnels` | ✅ Implemented | Active tunnels (port, provider, public_url) | `{ tunnels: [{ port, provider, public_url }] }` |
+| GET | `/api/tunnels/providers` | ✅ Implemented | Provider schemas + config (secrets masked) | `{ providers, schemas, config }` |
+| PUT | `/api/tunnels/providers/{name}` | ✅ Implemented | Update provider config (token, authToken, authKey, etc.) in automaton.json | `{ ok, provider }` |
+| POST | `/api/tunnels/providers/{name}/restart` | ✅ Implemented | Reload provider (requires API key in automaton.json for cloudflare/ngrok/tailscale) | `{ ok, provider, restarted }` |
+| GET | `/api/models` | ✅ Implemented | List configured LLM models (API keys masked) + providers | `{ models: [{ id, provider, modelId, apiKeyMasked, contextLimit, costCapCents, priority, enabled }], providers: [{ key, displayName, local }] }` |
+| POST | `/api/models` | ✅ Implemented | Add a model | `201` + model object |
+| PATCH | `/api/models/{id}` | ✅ Implemented | Update model (apiKey, modelId, contextLimit, costCapCents, enabled) | Model object |
+| DELETE | `/api/models/{id}` | ✅ Implemented | Remove a model | `204 No Content` |
+| PUT | `/api/models/order` | ✅ Implemented | Reorder models by priority | `204 No Content` |
 
 ### 2.3 Query Parameters
 
@@ -56,6 +76,174 @@ mormoneyOS integrates with several API surfaces:
 ```
 
 Supported messages: `status`, `help`, `帮助` — others return a generic "I don't understand" response.
+
+### 2.5 PUT /api/config Request
+
+- **Content-Type:** `application/json`
+- **Body:** Full `automaton.json` content (JSON object matching `AutomatonConfig` schema).
+- **Note:** Sends full config; partial updates overwrite missing fields with defaults. Restart required to apply changes.
+
+### 2.6 GET /api/soul/config
+
+Returns soul configuration: personality, system prompt, tone, and behavioral constraints. Shapes how the agent presents itself and responds.
+
+**Response:**
+```json
+{
+  "systemPrompt": "string",
+  "personality": "string",
+  "tone": "string",
+  "behavioralConstraints": ["string", "..."]
+}
+```
+
+### 2.7 PUT /api/soul/config
+
+Updates soul configuration. Accepts partial JSON; only provided fields are updated.
+
+- **Content-Type:** `application/json`
+- **Body (partial):**
+```json
+{
+  "systemPrompt": "You are a helpful financial assistant...",
+  "personality": "helpful, analytical, curious",
+  "tone": "professional",
+  "behavioralConstraints": ["Never disclose private keys", "Always verify before executing"]
+}
+```
+- **Response:** `204 No Content`
+
+### 2.8 POST /api/auth/verify Request
+
+Verifies a signed message across multiple chains using `github.com/morpheum-labs/standards` components.
+
+- **Content-Type:** `application/json`
+- **Body:**
+```json
+{
+  "chain": "ethereum|solana|bitcoin|morpheum",
+  "message": "string",
+  "signature": "string",
+  "address": "string (optional for ethereum; required for solana/bitcoin)",
+  "ecPubBytes": "base64 (required for morpheum)",
+  "mldsaPubBytes": "base64 (required for morpheum)"
+}
+```
+
+| Chain | Message format | Signature format |
+|-------|----------------|-------------------|
+| **ethereum** | Raw (EIP-191 personal_sign) | 0x-prefixed hex, 65 bytes |
+| **solana** | Raw bytes | Base64 or base58, 64 bytes Ed25519 |
+| **bitcoin** | Bitcoin Signed Message | Base64 |
+| **morpheum** | Raw (SHA-256 hashed) | Base64, hybrid ECDSA+ML-DSA-44 |
+
+**Response:** On success: `{ "valid": true, "address": "0x...", "token": "<JWT>" }` — the JWT is issued for user operations (pause, resume, chat, config) and should be sent as `Authorization: Bearer <token>` on write endpoints. On failure: `{ "valid": false, "error": "..." }`. JWT secret: `MONEYCLAW_JWT_SECRET` env var, or auto-generated at startup (tokens invalid on restart).
+
+### 2.9 POST /api/auth/dev-bypass (dev only)
+
+When `MONEYCLAW_DEV_BYPASS=1`, returns a JWT for address `0xdev` without wallet signing. For agent browser / automated testing.
+
+- **Method:** POST
+- **Body:** Optional JSON (ignored)
+- **Response:** `{ "valid": true, "address": "0xdev", "token": "<JWT>" }`
+
+To trigger from agent browser: `fetch("/api/auth/dev-bypass", { method: "POST" })` then store `response.token` in `localStorage.setItem("dashos:bearer", token)` and reload.
+
+### 2.10 GET /api/reports
+
+Returns metric reports from the `report_metrics` heartbeat task:
+
+- **last_report**: JSON from KV `last_metrics_report` — `{ status, checkedAt, alerts?, error? }`
+- **snapshots**: Recent rows from `metric_snapshots` — `[{ id, snapshot_at, metrics, alerts }]`
+
+Metrics include `balance_cents`, `survival_tier`. Alerts indicate critical conditions (e.g. survival tier dead/critical).
+
+### 2.11 Model List API
+
+Model list configuration: add, remove, prioritize LLM providers; set API keys, model IDs, context limits, and cost caps.
+
+**GET /api/models** — List configured models (API keys masked) and available providers.
+
+**Response:**
+```json
+{
+  "models": [
+    {
+      "id": "groq_llama-3.3-70b-versatile",
+      "provider": "groq",
+      "modelId": "llama-3.3-70b-versatile",
+      "apiKeyMasked": "sk••••••••xyz",
+      "contextLimit": 8192,
+      "costCapCents": 500,
+      "priority": 0,
+      "enabled": true
+    }
+  ],
+  "providers": [
+    { "key": "openai", "displayName": "OpenAI", "local": false },
+    { "key": "groq", "displayName": "Groq", "local": false }
+  ]
+}
+```
+
+**POST /api/models** — Add a model.
+
+- **Body:** `{ "provider": "groq", "modelId": "llama-3.3-70b-versatile", "apiKey": "sk-...", "contextLimit": 8192, "costCapCents": 500, "enabled": true }`
+- **Response:** `201 Created` + model object (apiKey masked)
+
+**PATCH /api/models/{id}** — Update a model (partial). Fields: `apiKey`, `modelId`, `contextLimit`, `costCapCents`, `enabled`.
+
+**DELETE /api/models/{id}** — Remove a model. Response: `204 No Content`.
+
+**PUT /api/models/order** — Reorder models by priority.
+
+- **Body:** `{ "ids": ["id1", "id2", "id3"] }` — order defines priority (first = highest)
+- **Response:** `204 No Content`
+
+### 2.12 Tools API
+
+**GET /api/tools** — List registered tools. Requires `ToolsLister` in ServerConfig. Returns `{ tools: [{ name, description, enabled }] }`. Enabled state stored in KV `disabled_tools`.
+
+**PATCH /api/tools/{name}** — Toggle tool enabled. Body: `{ "enabled": true|false }`. Response: `{ name, enabled }`.
+
+### 2.13 Social Channels API
+
+**GET /api/social** — List channels (Conway, Telegram, Discord, etc.) with status, config schema, and current values. Returns `{ channels: [{ name, displayName, enabled, ready, configFields, config }] }`.
+
+**PATCH /api/social/{name}** — Toggle channel enabled. Body: `{ "enabled": true|false }`. Updates `socialChannels` in config.
+
+**PUT /api/social/{name}/config** — Update channel config. Body: partial config object. Validates via `HealthCheck` before save; auto-enables on success. Response: `{ ok, validated?, enabled?, error? }`.
+
+### 2.14 Tunnel API
+
+Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expose local ports to the internet. Providers that require API keys: cloudflare (token), ngrok (authToken), tailscale (authKey).
+
+**GET /api/tunnels** — List active tunnels. Response: `{ tunnels: [{ port, provider, public_url }] }`. Requires `TunnelManager` in ServerConfig.
+
+**GET /api/tunnels/providers** — List provider names, schemas (fields per provider), and current config (secrets masked as `***`). Response:
+```json
+{
+  "providers": ["bore", "localtunnel", "cloudflare", "ngrok", "tailscale", "custom"],
+  "schemas": {
+    "cloudflare": { "fields": [{ "name": "token", "type": "password", "required": true, "label": "Tunnel Token" }] },
+    "ngrok": { "fields": [{ "name": "authToken", "type": "password", "required": true }, { "name": "domain", "type": "string", "required": false }] },
+    "tailscale": { "fields": [{ "name": "authKey", "type": "password", "required": true }, { "name": "hostname", "type": "string", "required": false }, { "name": "funnel", "type": "boolean", "required": false }] }
+  },
+  "config": { "defaultProvider": "bore", "providers": { "cloudflare": { "enabled": true, "token": "***" } } }
+}
+```
+
+**PUT /api/tunnels/providers/{name}** — Update provider config in automaton.json. Partial update; only provided fields are changed.
+
+- **Content-Type:** `application/json`
+- **Body (partial):** `{ "enabled"?, "token"?, "authToken"?, "authKey"?, "domain"?, "hostname"?, "funnel"?, "startCommand"?, "urlPattern"? }`
+- **Response:** `{ "ok": true, "provider": "cloudflare" }`
+- **Example:** `curl -X PUT .../api/tunnels/providers/cloudflare -d '{"token": "${CLOUDFLARE_TUNNEL_TOKEN}", "enabled": true}'`
+
+**POST /api/tunnels/providers/{name}/restart** — Reload the provider from automaton.json. Stops all active tunnels, re-registers providers. For cloudflare/ngrok/tailscale, the required API key must be present in config; returns `400` otherwise. Requires `TunnelReloader` in ServerConfig.
+
+- **Response:** `{ "ok": true, "provider": "cloudflare", "restarted": true }`
+- **Errors:** `400` if provider requires API key but it is missing; `404` if TunnelReloader not configured.
 
 ---
 
@@ -139,7 +327,7 @@ Supported messages: `status`, `help`, `帮助` — others return a generic "I do
 
 | Category | Paths |
 |----------|-------|
-| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat` |
+| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `POST /api/auth/verify`, `GET /api/reports` |
 | **Conway** | `GET/POST /v1/credits/*`, `GET/POST /v1/sandboxes`, `POST /v1/sandboxes/{id}/exec`, `POST /v1/sandboxes/{id}/files/upload/json`, `GET /v1/sandboxes/{id}/files/read`, `GET /v1/models` |
 | **Conway Auth** | `POST /v1/auth/nonce`, `POST /v1/auth/verify`, `POST /v1/auth/api-keys`, `POST /v1/automaton/register-parent` |
 | **Conway x402** | `GET /pay/{amountUsd}/{address}` |
@@ -160,9 +348,29 @@ Supported messages: `status`, `help`, `帮助` — others return a generic "I do
 | `GET /api/risk` | ✅ Full | RuntimeState.Paused + static risk_level |
 | `POST /api/pause` | ✅ Full | DB: SetAgentState + SetKV sleep_until |
 | `POST /api/resume` | ✅ Full | DB: DeleteKV + InsertWakeEvent |
-| `POST /api/chat` | ⚠️ Keyword-only | status/help/帮助; frontend does not call it (shows "not yet implemented") |
+| `POST /api/chat` | ⚠️ Keyword-only | status/help/帮助 |
+| `GET /api/config` | ✅ Full | Reads automaton.json; returns `{ content: string }` |
+| `PUT /api/config` | ✅ Full | Accepts full JSON config; writes to automaton.json |
+| `GET /api/soul/config` | ✅ Full | Soul config (personality, system prompt, tone, behavioral constraints) from config |
+| `PUT /api/soul/config` | ✅ Full | Partial merge; writes to automaton.json `soul` section |
+| `GET /api/tools` | ✅ Full | Lists tools from ToolsLister; enabled state from KV `disabled_tools` |
+| `PATCH /api/tools/{name}` | ✅ Full | Toggle enabled; persists to KV |
+| `GET /api/social` | ✅ Full | Lists channels via social factory; status, config schema, values |
+| `PATCH /api/social/{name}` | ✅ Full | Toggle enabled; updates socialChannels in config |
+| `PUT /api/social/{name}/config` | ✅ Full | Channel config; validates via HealthCheck before save |
+| `GET /api/models` | ✅ Full | Model list from config; API keys masked |
+| `POST /api/models` | ✅ Full | Add model; generates id |
+| `PATCH /api/models/{id}` | ✅ Full | Update model fields |
+| `DELETE /api/models/{id}` | ✅ Full | Remove model |
+| `PUT /api/models/order` | ✅ Full | Reorder by priority |
+| `POST /api/auth/verify` | ✅ Full | Verifies message signatures (Ethereum, Solana, Bitcoin, Morpheum) via standards package |
+| `GET /api/reports` | ✅ Full | Last metrics report (KV) + recent metric_snapshots from report_metrics task |
+| `GET /api/tunnels` | ✅ Full | Active tunnels from TunnelManager.Status() |
+| `GET /api/tunnels/providers` | ✅ Full | Provider schemas + config (secrets masked); loads from config |
+| `PUT /api/tunnels/providers/{name}` | ✅ Full | Update provider config in automaton.json; partial merge |
+| `POST /api/tunnels/providers/{name}/restart` | ✅ Full | Reload providers via TunnelReloader; validates API key for cloudflare/ngrok/tailscale |
 
-**Auth:** None. Dashboard is unauthenticated. Anyone reaching the URL has full access.
+**Auth:** None. Dashboard is unauthenticated. Anyone reaching the URL has full access. Write endpoints can optionally require auth via `POST /api/auth/verify` flow.
 
 ### 8.2 Implementable in internal/web
 
@@ -171,18 +379,15 @@ Endpoints that can be added using existing data sources. Requires extending `Ser
 | Endpoint | Data Source | Effort | Description |
 |----------|-------------|--------|-------------|
 | `GET /api/history` | `state.GetRecentTurns(limit)` | Low | Turn history: id, timestamp, state, input, thinking, tool_calls, cost_cents. Extend WebDB or type-assert to `*state.Database`. |
-| `GET /api/soul` | `DB.GetKV("soul_content")` | Low | Read soul document from KV. Same pattern as `view_soul` tool. |
+| `GET /api/soul` | `DB.GetKV("soul_content")` | Low | Read soul *document* from KV (self-authored identity). Distinct from `GET /api/soul/config` which returns soul *configuration* (personality, tone, constraints). Same pattern as `view_soul` tool. |
 | `GET /api/memory` | `state.GetSemanticMemory`, `GetProceduralMemory`, KV goals/facts | Medium | Facts, goals, procedures. Requires schema v13 (5-tier) + KV keys like `goal:`, `procedure:`. |
 | `GET /api/health` | — | Trivial | Liveness: return `200 OK` or `{"ok": true}`. |
-| `GET /api/tools` | `tools.Registry.List()` | Low | List registered tool names. Pass `Tools` (Registry) to Server. |
-| `GET /api/config` | `*types.AutomatonConfig` (sanitized) | Low | Read-only config summary: name, chain, version. **Never expose** API keys, wallet paths. |
 | `GET /api/heartbeat` | `state.GetHeartbeatSchedule`, heartbeat history | Medium | Schedule + recent run history. |
-| `GET /api/tunnels` | `tunnel.TunnelManager.Status()` | Low | Active tunnels (port, provider, public_url). Pass TunnelManager to Server. |
+| `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart` | — | — | ✅ Implemented. See §2.14. |
 | `POST /api/chat` (enhance) | Inference client or agent loop | High | Wire to real LLM or forward to agent. Frontend must call `POST /api/chat` with body `{ "message": "..." }`. |
 
 ### 8.3 Frontend Gaps
 
-- **Chat:** `static/index.html` `btnSend` handler does **not** call `POST /api/chat`. It appends "(Chat API not yet implemented)". Wire `fetch('/api/chat', { method: 'POST', body: JSON.stringify({ message }) })` to use the existing keyword handler.
 - **History:** No UI for `/api/history`; add a panel when endpoint returns real data.
 
 ---

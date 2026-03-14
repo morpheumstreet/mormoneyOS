@@ -312,6 +312,47 @@ func (d *Database) MetricsInsertSnapshot(id, snapshotAt, metricsJSON, alertsJSON
 	return err
 }
 
+// MetricsGetRecent returns the most recent metric snapshots (for reports).
+func (d *Database) MetricsGetRecent(limit int) ([]struct {
+	ID          string
+	SnapshotAt  string
+	MetricsJSON string
+	AlertsJSON  string
+}, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rows, err := d.db.Query(
+		"SELECT id, snapshot_at, metrics_json, alerts_json FROM metric_snapshots ORDER BY snapshot_at DESC LIMIT ?",
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []struct {
+		ID          string
+		SnapshotAt  string
+		MetricsJSON string
+		AlertsJSON  string
+	}
+	for rows.Next() {
+		var r struct {
+			ID          string
+			SnapshotAt  string
+			MetricsJSON string
+			AlertsJSON  string
+		}
+		if err := rows.Scan(&r.ID, &r.SnapshotAt, &r.MetricsJSON, &r.AlertsJSON); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // MetricsPruneOld deletes metric_snapshots older than n days (TS metricsPruneOld-aligned).
 func (d *Database) MetricsPruneOld(days int) (int64, error) {
 	if days <= 0 {

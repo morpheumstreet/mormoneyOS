@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   Cpu,
   DollarSign,
@@ -359,9 +360,11 @@ export default function Dashboard() {
           }`}
         >
           <div className="min-h-0 border-t border-[#18356f] px-4 pb-4 pt-4 md:px-5 space-y-3">
-            <div className="min-h-[80px] max-h-48 overflow-y-auto space-y-1 text-sm text-[#94a3b8]">
+            <div className="min-h-[80px] max-h-48 overflow-y-auto space-y-1 text-sm text-[#94a3b8] prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
               {chatMessages.map((m, i) => (
-                <div key={i}>{m}</div>
+                <div key={i} className="[&>*:last-child]:mb-0">
+                  <ReactMarkdown>{m}</ReactMarkdown>
+                </div>
               ))}
             </div>
             <div className="flex gap-2">

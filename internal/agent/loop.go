@@ -52,16 +52,17 @@ type ToolExecutor interface {
 
 // Loop implements the ReAct cycle per mormoneyOS design.
 type Loop struct {
-	policy        *PolicyEngine
-	persister     TurnPersister
-	store         AgentStore
-	inference     inference.Client
-	tools         ToolExecutor
-	config        *LoopConfig
-	creditsFn     func(ctx context.Context) int64
-	lineageStore  replication.LineageStore
-	memoryRetriever memory.MemoryRetriever
-	log           *slog.Logger
+	policy               *PolicyEngine
+	persister            TurnPersister
+	store                AgentStore
+	inference            inference.Client
+	tools                ToolExecutor
+	config               *LoopConfig
+	creditsFn            func(ctx context.Context) int64
+	lineageStore         replication.LineageStore
+	memoryRetriever      memory.MemoryRetriever
+	disabledToolsGetter  func() []string
+	log                  *slog.Logger
 }
 
 // NewLoop creates an agent loop.
@@ -79,15 +80,16 @@ func NewLoopWithPersister(policy *PolicyEngine, persister TurnPersister, log *sl
 
 // LoopOptions configures the full ReAct loop (TS AgentLoopOptions-aligned).
 type LoopOptions struct {
-	Policy          *PolicyEngine
-	Store           AgentStore
-	Inference       inference.Client
-	Tools           ToolExecutor
-	Config          *LoopConfig
-	CreditsFn       func(ctx context.Context) int64
-	LineageStore    replication.LineageStore   // optional; for GetLineageSummary in system prompt
-	MemoryRetriever memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
-	Log             *slog.Logger
+	Policy               *PolicyEngine
+	Store                AgentStore
+	Inference            inference.Client
+	Tools                ToolExecutor
+	Config               *LoopConfig
+	CreditsFn            func(ctx context.Context) int64
+	LineageStore         replication.LineageStore   // optional; for GetLineageSummary in system prompt
+	MemoryRetriever      memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
+	DisabledToolsGetter  func() []string           // optional; when set, filters tool schemas (tools disabled via dashboard)
+	Log                  *slog.Logger
 }
 
 // NewLoopWithOptions creates a loop with full ReAct support.
@@ -96,16 +98,17 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		opts.Log = slog.Default()
 	}
 	return &Loop{
-		policy:          opts.Policy,
-		persister:       opts.Store,
-		store:           opts.Store,
-		inference:       opts.Inference,
-		tools:           opts.Tools,
-		config:          opts.Config,
-		creditsFn:       opts.CreditsFn,
-		lineageStore:    opts.LineageStore,
-		memoryRetriever: opts.MemoryRetriever,
-		log:             opts.Log,
+		policy:              opts.Policy,
+		persister:           opts.Store,
+		store:               opts.Store,
+		inference:           opts.Inference,
+		tools:               opts.Tools,
+		config:              opts.Config,
+		creditsFn:           opts.CreditsFn,
+		lineageStore:        opts.LineageStore,
+		memoryRetriever:     opts.MemoryRetriever,
+		disabledToolsGetter: opts.DisabledToolsGetter,
+		log:                 opts.Log,
 	}
 }
 
@@ -232,6 +235,19 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 
 	// Inference options with tool definitions (from registry when available)
 	toolDefs := getToolSchemas(l.tools)
+	if l.disabledToolsGetter != nil {
+		disabled := make(map[string]bool)
+		for _, n := range l.disabledToolsGetter() {
+			disabled[n] = true
+		}
+		filtered := make([]inference.ToolDefinition, 0, len(toolDefs))
+		for _, t := range toolDefs {
+			if !disabled[t.Function.Name] {
+				filtered = append(filtered, t)
+			}
+		}
+		toolDefs = filtered
+	}
 	model := l.inference.GetDefaultModel()
 	if (tier == types.SurvivalTierCritical || tier == types.SurvivalTierLowCompute) && l.config != nil && l.config.LowComputeModel != "" {
 		model = l.config.LowComputeModel

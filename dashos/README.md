@@ -17,7 +17,7 @@ bun install
 bun run dev
 ```
 
-Dashboard runs at `http://localhost:5173` (or next available port). It proxies `/api` to the MoneyClaw web server (default `http://localhost:8080`).
+Dashboard runs at `http://localhost:5173` (or next available port). It proxies `/api` to `http://localhost:8080` (moneyclaw).
 
 ### Auth
 
@@ -40,8 +40,14 @@ Output in `dist/`. Serve with any static host or copy into mormoneyOS `internal/
 
 ## API Proxy
 
-Set `VITE_API_PROXY` to change the API proxy target:
+Dev server proxies `/api` to `http://localhost:8080` (moneyclaw). Run `moneyclaw run` in another terminal.
+
+### Dev bypass (agent browser / no wallet)
+
+When `MONEYCLAW_DEV_BYPASS=1`, start moneyclaw and use the "Dev bypass (no wallet)" button on the connect screen, or trigger via JSON:
 
 ```bash
-VITE_API_PROXY=http://localhost:8080 bun run dev
+MONEYCLAW_DEV_BYPASS=1 moneyclaw run
 ```
+
+Then from agent browser: `POST /api/auth/dev-bypass` → store `token` in `localStorage.setItem("dashos:bearer", token)` → reload.

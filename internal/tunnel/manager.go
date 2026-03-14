@@ -3,6 +3,8 @@ package tunnel
 import (
 	"context"
 	"fmt"
+
+	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
 // TunnelManager starts/stops tunnels and queries status. Uses ProviderRegistry and ActiveTunnelStore.
@@ -56,4 +58,18 @@ func (m *TunnelManager) Stop(port int) error {
 // Status returns all active tunnels.
 func (m *TunnelManager) Status() []ActiveTunnel {
 	return m.store.All()
+}
+
+// Reload re-registers providers from config. Stops all active tunnels first
+// (provider instances are replaced). Call after config has been updated.
+func (m *TunnelManager) Reload(cfg *types.TunnelConfig) {
+	active := m.store.All()
+	for _, t := range active {
+		if p, ok := m.registry.Get(t.Provider); ok {
+			_ = p.Stop(t.Port)
+		}
+		m.store.Delete(t.Port)
+	}
+	m.registry.Clear()
+	PopulateRegistry(m.registry, cfg)
 }
