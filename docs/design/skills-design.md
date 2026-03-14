@@ -11,7 +11,7 @@ mormoneyOS currently has a **DB-only skills model**: `skills` table, `install_sk
 
 - Keeps DB as the source of truth for **enabled** skills (strategy selection)
 - Adds **file-based skill packages** (SKILL.md / SKILL.toml) for rich content
-- Introduces the **subconscious** — the runtime merge layer where SkillLoader synthesizes file + DB into a unified skill representation
+- Introduces the **subconscious** — the runtime merge layer where Subconscious synthesizes file + DB into a unified skill representation
 - Unifies **skills** and **strategies** under one contract
 - Aligns with mormclaw (ZeroClaw) and OpenClaw patterns without over-engineering
 
@@ -96,7 +96,7 @@ CREATE TABLE skills (
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Layer 2: Subconscious (SkillLoader — file + DB merge)         │
+│  Layer 2: Subconscious (file + DB merge)                       │
 │  Runtime merge: file content + DB row → unified Skill            │
 │  - If path set: load SKILL.md/SKILL.toml from path, merge with DB│
 │  - Else: use DB instructions only                               │
@@ -112,14 +112,14 @@ CREATE TABLE skills (
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Subconscious:** The merge layer where SkillLoader runs at runtime. It reads from both the filesystem (when `path` is set) and the DB, synthesizing them into a single `Skill` before the agent consumes it. File content can evolve independently; the subconscious always serves the freshest merged result.
+**Subconscious:** The merge layer that runs at runtime. It reads from both the filesystem (when `path` is set) and the DB, synthesizing them into a single `Skill` before the agent consumes it. File content can evolve independently; the subconscious always serves the freshest merged result.
 
 ### 4.2 Single Responsibility
 
 | Component | Responsibility |
 |-----------|----------------|
 | **SkillStore** | CRUD for skills table (Insert, Delete, GetSkills) |
-| **SkillLoader (Subconscious)** | Runtime merge: load from path + DB; synthesize into `Skill` |
+| **Subconscious** | Runtime merge: load from path + DB; synthesize into `Skill` |
 | **SkillFormatter** | Format skills for prompt injection |
 | **SkillTools** | Agent tools (install, create, remove, list) |
 
@@ -151,8 +151,8 @@ type Skill struct {
     Enabled      bool
 }
 
-// SkillLoader — single place for loading logic
-type SkillLoader interface {
+// Subconscious — single place for loading logic
+type Subconscious interface {
     Load(s SkillRow) (*Skill, error)
 }
 ```
@@ -163,7 +163,7 @@ type SkillLoader interface {
 - **create_skill** → DB-only; no path (use for builtin skills)
 - **GetSkills** → metadata only (list_skills, /api/strategies) — no file I/O
 - **GetSkillRows** → full rows for subconscious
-- **Subconscious (SkillLoader)** — invoked **only by prompt builder**; for each row, if path set → load from file and merge with DB; else use DB. Single merge point.
+- **Subconscious** — invoked **only by prompt builder**; for each row, if path set → load from file and merge with DB; else use DB. Single merge point.
 
 No duplicate "load from path" logic; the subconscious is the only place file + DB are merged. list_skills and /api/strategies use raw `GetSkills()` — no file I/O on hot paths.
 
@@ -172,7 +172,7 @@ No duplicate "load from path" logic; the subconscious is the only place file + D
 ```
 internal/
   skills/
-    loader.go      # SkillLoader, Load(s) → *Skill
+    loader.go      # Subconscious, Load(s) → *Skill
     format.go      # FormatForPrompt(skills []*Skill) string
     store.go       # SkillStore adapter over *state.Database
   tools/
@@ -252,7 +252,7 @@ for _, f := range candidates {
 
 ### 6.1 When to Inject
 
-- **BuildSystemPrompt** receives `skills []*Skill` from `SkillLoader.LoadAll(store.GetSkillRows())`
+- **BuildSystemPrompt** receives `skills []*Skill` from `Subconscious.LoadAll(store.GetSkillRows())`
 - Append block after genesis prompt:
 
 ```
@@ -282,7 +282,7 @@ Use `requires` JSON column:
 {"bins": ["python3"], "env": ["COINBASE_API_KEY"]}
 ```
 
-- **SkillLoader** parses `requires` **early** in `Load()` — before any file reads. If gating fails, return skip immediately (no I/O).
+- **Subconscious** parses `requires` **early** in `Load()` — before any file reads. If gating fails, return skip immediately (no I/O).
 - If not satisfied: exclude from prompt, mark "unavailable" in list_skills
 - Aligns with OpenClaw `metadata.openclaw.requires`
 
@@ -343,7 +343,7 @@ list_skills and /api/strategies keep using `GetSkills()` (metadata only). No fil
 
 ### Overall Design Review (Judgement Call)
 
-This is a **strong, production-ready proposal** — clean, DRY, SOLID, and perfectly scoped for Phase 1. The **Subconscious** (SkillLoader) as the single runtime merge point is the smartest part: it solves the exact pain Claude-style agents have with stateless skills while keeping the DB as the enabled/strategy source of truth. It mirrors real-world patterns in **ZeroClaw** (mormclaw) and **OpenClaw** almost 1:1 (SKILL.md YAML frontmatter + `metadata.openclaw.requires`, workspace precedence, ClawHub gating, compact prompt injection all match).
+This is a **strong, production-ready proposal** — clean, DRY, SOLID, and perfectly scoped for Phase 1. The **Subconscious** as the single runtime merge point is the smartest part: it solves the exact pain Claude-style agents have with stateless skills while keeping the DB as the enabled/strategy source of truth. It mirrors real-world patterns in **ZeroClaw** (mormclaw) and **OpenClaw** almost 1:1 (SKILL.md YAML frontmatter + `metadata.openclaw.requires`, workspace precedence, ClawHub gating, compact prompt injection all match).
 
 No over-engineering. Token budget cap and fault-tolerant loading are thoughtful. Migration is low-risk.
 
@@ -377,7 +377,7 @@ Document: "path = skill directory".
 
 **Adopted Option B with tweak.** Phase 1: Support **SKILL.md** for instructions (body after frontmatter). SKILL.toml is metadata-only in Phase 1.
 
-**SkillLoader rule (SKILL.toml):**
+**Subconscious rule (SKILL.toml):**
 ```go
 if toml exists {
     meta = parseTOML()

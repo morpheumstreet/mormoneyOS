@@ -760,7 +760,7 @@ cmd/moneyclaw/main.go
   +-> internal/state/       # Database, schema, migrations
   +-> internal/memory/      # 5-tier retrieval (DBMemoryRetriever)
   +-> internal/soul/        # Reflection pipeline
-  +-> internal/skills/     # SkillLoader, prompt injection
+  +-> internal/skills/     # Subconscious, prompt injection
   +-> internal/social/      # Conway, Telegram, Discord channels
   +-> internal/replication/ # Child health, sandbox cleanup, lineage
   +-> internal/web/         # HTTP server, embedded static dashboard

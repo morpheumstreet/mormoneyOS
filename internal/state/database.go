@@ -1003,7 +1003,7 @@ type SkillRow struct {
 }
 
 // GetSkillRows returns full skill rows for enabled skills (for subconscious prompt injection).
-// Used by SkillLoader; list_skills and /api/strategies use GetSkills() instead (metadata only).
+// Used by Subconscious; list_skills and /api/strategies use GetSkills() instead (metadata only).
 func (d *Database) GetSkillRows() ([]SkillRow, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()

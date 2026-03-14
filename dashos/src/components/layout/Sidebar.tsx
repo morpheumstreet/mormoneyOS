@@ -61,9 +61,9 @@ export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse
                 <div
                   className="electric-brand-mark h-9 w-9 shrink-0 rounded-xl"
                   role="img"
-                  aria-label="DashOS"
+                  aria-label="MormOS"
                 >
-                  <span className="sr-only">DashOS</span>
+                  <span className="sr-only">MormOS</span>
                 </div>
                 <span className="text-lg font-semibold tracking-[0.1em] text-white">DashOS</span>
               </>
@@ -128,7 +128,7 @@ export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse
             isCollapsed ? 'md:px-1.5 md:text-center' : '',
           ].join(' ')}
         >
-          <p className={isCollapsed ? 'hidden md:block' : ''}>MoneyClaw</p>
+          <p className={isCollapsed ? 'hidden md:block' : ''}>mormOS</p>
           <p className={isCollapsed ? 'text-[10px] uppercase tracking-widest' : 'mt-1 text-[#5f84cc]'}>
             {isCollapsed ? 'UI' : 'Command Center'}
           </p>

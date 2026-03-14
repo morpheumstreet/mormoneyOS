@@ -29,8 +29,8 @@ type Skill struct {
 	Enabled      bool
 }
 
-// SkillLoader loads and merges skills from DB + filesystem.
-type SkillLoader struct {
+// Subconscious loads and merges skills from DB + filesystem (runtime merge layer).
+type Subconscious struct {
 	TrustedRoots []string
 	DescUpdater  func(name, description string) error // optional; for one-time DB sync
 	Log          *slog.Logger
@@ -38,7 +38,7 @@ type SkillLoader struct {
 
 // Load reads a row and merges with file content when path is set.
 // Graceful: on error, logs and returns nil (never fail prompt build).
-func (l *SkillLoader) Load(row state.SkillRow) *Skill {
+func (sub *Subconscious) Load(row state.SkillRow) *Skill {
 	if !row.Enabled {
 		return nil
 	}
@@ -60,20 +60,20 @@ func (l *SkillLoader) Load(row state.SkillRow) *Skill {
 	// Resolve symlinks and validate under trusted root
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		if l.Log != nil {
-			l.Log.Warn("skill load: path resolve failed", "name", row.Name, "path", dir, "err", err)
+		if sub.Log != nil {
+			sub.Log.Warn("skill load: path resolve failed", "name", row.Name, "path", dir, "err", err)
 		}
 		return s
 	}
 	abs, err := filepath.Abs(resolved)
 	if err != nil {
-		if l.Log != nil {
-			l.Log.Warn("skill load: abs failed", "name", row.Name, "err", err)
+		if sub.Log != nil {
+			sub.Log.Warn("skill load: abs failed", "name", row.Name, "err", err)
 		}
 		return s
 	}
 	allowed := false
-	for _, root := range l.TrustedRoots {
+	for _, root := range sub.TrustedRoots {
 		r := filepath.Clean(root)
 		if r == "" {
 			continue
@@ -96,23 +96,23 @@ func (l *SkillLoader) Load(row state.SkillRow) *Skill {
 		}
 	}
 	if !allowed {
-		if l.Log != nil {
-			l.Log.Warn("skill load: path not under trusted root", "name", row.Name, "path", abs)
+		if sub.Log != nil {
+			sub.Log.Warn("skill load: path not under trusted root", "name", row.Name, "path", abs)
 		}
 		return s
 	}
 	// Load from file: SKILL.toml first, then SKILL.md
-	fileDesc, fileInst, err := l.loadFromDir(abs)
+	fileDesc, fileInst, err := sub.loadFromDir(abs)
 	if err != nil {
-		if l.Log != nil {
-			l.Log.Warn("skill load failed", "name", row.Name, "path", abs, "err", err)
+		if sub.Log != nil {
+			sub.Log.Warn("skill load failed", "name", row.Name, "path", abs, "err", err)
 		}
 		return s
 	}
 	if fileDesc != "" {
 		s.Description = fileDesc
-		if l.DescUpdater != nil {
-			_ = l.DescUpdater(row.Name, fileDesc)
+		if sub.DescUpdater != nil {
+			_ = sub.DescUpdater(row.Name, fileDesc)
 		}
 	}
 	if fileInst != "" {
@@ -122,7 +122,7 @@ func (l *SkillLoader) Load(row state.SkillRow) *Skill {
 }
 
 // loadFromDir reads SKILL.toml or SKILL.md from dir.
-func (l *SkillLoader) loadFromDir(dir string) (description, instructions string, err error) {
+func (sub *Subconscious) loadFromDir(dir string) (description, instructions string, err error) {
 	if _, err := os.Stat(dir); err != nil {
 		return "", "", err
 	}
@@ -130,15 +130,15 @@ func (l *SkillLoader) loadFromDir(dir string) (description, instructions string,
 	tomlPath := filepath.Join(dir, skillToml)
 	mdPath := filepath.Join(dir, skillMd)
 	if _, err := os.Stat(tomlPath); err == nil {
-		return l.loadFromTOML(tomlPath, dir)
+		return sub.loadFromTOML(tomlPath, dir)
 	}
 	if _, err := os.Stat(mdPath); err == nil {
-		return l.loadFromMD(mdPath)
+		return sub.loadFromMD(mdPath)
 	}
 	return "", "", nil
 }
 
-func (l *SkillLoader) loadFromTOML(tomlPath, dir string) (description, instructions string, err error) {
+func (sub *Subconscious) loadFromTOML(tomlPath, dir string) (description, instructions string, err error) {
 	data, err := os.ReadFile(tomlPath)
 	if err != nil {
 		return "", "", err
@@ -168,7 +168,7 @@ func (l *SkillLoader) loadFromTOML(tomlPath, dir string) (description, instructi
 	return description, instructions, nil
 }
 
-func (l *SkillLoader) loadFromMD(mdPath string) (description, instructions string, err error) {
+func (sub *Subconscious) loadFromMD(mdPath string) (description, instructions string, err error) {
 	data, err := os.ReadFile(mdPath)
 	if err != nil {
 		return "", "", err
@@ -191,10 +191,10 @@ func (l *SkillLoader) loadFromMD(mdPath string) (description, instructions strin
 }
 
 // LoadAll loads all rows and returns merged skills (graceful degradation).
-func (l *SkillLoader) LoadAll(rows []state.SkillRow) []*Skill {
+func (sub *Subconscious) LoadAll(rows []state.SkillRow) []*Skill {
 	var out []*Skill
 	for _, row := range rows {
-		s := l.Load(row)
+		s := sub.Load(row)
 		if s != nil {
 			out = append(out, s)
 		}
@@ -220,6 +220,6 @@ func LoadAllFromStore(store SkillRowStore, cfg *types.SkillsConfig) []*Skill {
 	if cfg != nil && len(cfg.TrustedRoots) > 0 {
 		trusted = cfg.TrustedRoots
 	}
-	loader := &SkillLoader{TrustedRoots: trusted, Log: slog.Default()}
-	return loader.LoadAll(rows)
+	sub := &Subconscious{TrustedRoots: trusted, Log: slog.Default()}
+	return sub.LoadAll(rows)
 }

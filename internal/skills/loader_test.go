@@ -30,9 +30,9 @@ Do X when user asks.
 		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(md), 0644); err != nil {
 			t.Fatal(err)
 		}
-		loader := &SkillLoader{TrustedRoots: trusted}
+		sub := &Subconscious{TrustedRoots: trusted}
 		row := state.SkillRow{Name: "md-skill", Path: skillDir, Enabled: true}
-		s := loader.Load(row)
+		s := sub.Load(row)
 		if s == nil {
 			t.Fatal("expected skill")
 		}
@@ -60,9 +60,9 @@ version = "0.1.0"
 		if err := os.WriteFile(filepath.Join(skillDir, "instructions.md"), []byte("Use instructions.md content."), 0644); err != nil {
 			t.Fatal(err)
 		}
-		loader := &SkillLoader{TrustedRoots: trusted}
+		sub := &Subconscious{TrustedRoots: trusted}
 		row := state.SkillRow{Name: "toml-inst-md", Path: skillDir, Enabled: true}
-		s := loader.Load(row)
+		s := sub.Load(row)
 		if s == nil {
 			t.Fatal("expected skill")
 		}
@@ -93,9 +93,9 @@ When the user asks to DCA, use the following procedure:
 		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.toml"), []byte(toml), 0644); err != nil {
 			t.Fatal(err)
 		}
-		loader := &SkillLoader{TrustedRoots: trusted}
+		sub := &Subconscious{TrustedRoots: trusted}
 		row := state.SkillRow{Name: "toml-inline", Path: skillDir, Enabled: true}
-		s := loader.Load(row)
+		s := sub.Load(row)
 		if s == nil {
 			t.Fatal("expected skill")
 		}
@@ -116,9 +116,9 @@ When the user asks to DCA, use the following procedure:
 		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: bad\n---\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		loader := &SkillLoader{TrustedRoots: trusted}
+		sub := &Subconscious{TrustedRoots: trusted}
 		row := state.SkillRow{Name: "bad", Path: skillDir, Enabled: true, Instructions: "DB fallback"}
-		s := loader.Load(row)
+		s := sub.Load(row)
 		if s == nil {
 			t.Fatal("expected skill (graceful: use DB)")
 		}
@@ -129,9 +129,9 @@ When the user asks to DCA, use the following procedure:
 	})
 
 	t.Run("DB-only no path", func(t *testing.T) {
-		loader := &SkillLoader{TrustedRoots: trusted}
+		sub := &Subconscious{TrustedRoots: trusted}
 		row := state.SkillRow{Name: "builtin", Path: "", Instructions: "Builtin instructions", Enabled: true}
-		s := loader.Load(row)
+		s := sub.Load(row)
 		if s == nil {
 			t.Fatal("expected skill")
 		}

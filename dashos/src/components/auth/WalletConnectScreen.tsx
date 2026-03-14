@@ -39,7 +39,7 @@ export function WalletConnectScreen() {
       <div className="pairing-card w-full max-w-md rounded-2xl p-8">
         <div className="text-center mb-6">
           <h1 className="mb-2 text-2xl font-semibold tracking-[0.16em] text-white">
-            DashOS
+          MormOS
           </h1>
           <p className="text-sm text-[#9bb8e8]">
             Connect your wallet and sign to authorize write access to MoneyClaw Command Center.
