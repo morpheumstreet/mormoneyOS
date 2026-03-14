@@ -7,12 +7,14 @@ import {
   Cpu,
   Sparkles,
   Wallet,
+  Activity,
 } from "lucide-react";
 
 const configNavItems = [
   { to: "/config/general", icon: FileJson, label: "General" },
   { to: "/config/tools", icon: Wrench, label: "Tools" },
   { to: "/config/social", icon: Users, label: "Social" },
+  { to: "/config/heartbeat", icon: Activity, label: "Heartbeat" },
   { to: "/config/tunnel", icon: Network, label: "Tunnel" },
   { to: "/config/model-list", icon: Cpu, label: "Model List" },
   { to: "/config/economic", icon: Wallet, label: "Economic" },

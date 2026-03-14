@@ -300,6 +300,38 @@ func Load() (*types.AutomatonConfig, error) {
 			}
 		}
 	}
+	// OpenClaw alias: allowFrom
+	if arr, ok := raw["telegramAllowFrom"].([]any); ok && len(cfg.TelegramAllowedUsers) == 0 {
+		for _, a := range arr {
+			if s, ok := a.(string); ok {
+				cfg.TelegramAllowedUsers = append(cfg.TelegramAllowedUsers, s)
+			}
+		}
+	}
+	if arr, ok := raw["telegramGroups"].([]any); ok {
+		for _, a := range arr {
+			if s, ok := a.(string); ok {
+				cfg.TelegramGroups = append(cfg.TelegramGroups, s)
+			}
+		}
+	}
+	if m, ok := raw["telegramGroupsConfig"].(map[string]any); ok {
+		if cfg.TelegramGroupsConfig == nil {
+			cfg.TelegramGroupsConfig = make(map[string]types.TelegramGroupCfg)
+		}
+		for k, v := range m {
+			if sub, ok := v.(map[string]any); ok {
+				var gc types.TelegramGroupCfg
+				if b, ok := sub["requireMention"].(bool); ok {
+					gc.RequireMention = b
+				}
+				cfg.TelegramGroupsConfig[k] = gc
+			}
+		}
+	}
+	if v, ok := raw["telegramRequireMention"].(bool); ok {
+		cfg.TelegramRequireMention = &v
+	}
 	if arr, ok := raw["discordAllowedUsers"].([]any); ok {
 		for _, a := range arr {
 			if s, ok := a.(string); ok {
@@ -307,8 +339,31 @@ func Load() (*types.AutomatonConfig, error) {
 			}
 		}
 	}
+	// OpenClaw alias: allowFrom
+	if arr, ok := raw["discordAllowFrom"].([]any); ok && len(cfg.DiscordAllowedUsers) == 0 {
+		for _, a := range arr {
+			if s, ok := a.(string); ok {
+				cfg.DiscordAllowedUsers = append(cfg.DiscordAllowedUsers, s)
+			}
+		}
+	}
+	if arr, ok := raw["discordAllowedChannels"].([]any); ok {
+		for _, a := range arr {
+			if s, ok := a.(string); ok && s != "" {
+				cfg.DiscordAllowedChannels = append(cfg.DiscordAllowedChannels, s)
+			}
+		}
+	}
 	if v, ok := raw["discordMentionOnly"].(bool); ok {
 		cfg.DiscordMentionOnly = v
+	}
+	if v, ok := raw["discordListenToBots"].(bool); ok {
+		cfg.DiscordListenToBots = v
+	}
+	if v, ok := raw["discordMediaMaxMb"].(float64); ok && v > 0 {
+		cfg.DiscordMediaMaxMb = int(v)
+	} else if v, ok := raw["discordMediaMaxMb"].(int); ok && v > 0 {
+		cfg.DiscordMediaMaxMb = v
 	}
 
 	// Soul config (personality, system prompt, tone, behavioral constraints)

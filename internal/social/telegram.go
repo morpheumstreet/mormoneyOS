@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
@@ -19,9 +20,25 @@ import (
 const telegramAPIBase = "https://api.telegram.org/bot"
 
 // TelegramChannel implements SocialChannel for Telegram Bot API.
+// OpenClaw-style: allowFrom (empty=deny, ["*"]=allow), groups allowlist, requireMention in groups.
 type TelegramChannel struct {
-	tokenMgr     *TokenManager
-	allowedUsers map[string]struct{} // username or user_id string; empty = allow all
+	tokenMgr *TokenManager
+
+	// DM allowlist: allowAll=true when ["*"]; allowSet populated for specific users; else deny all
+	allowAll bool
+	allowSet map[string]struct{}
+
+	// Group allowlist: allowAllGroups when ["*"]; groupSet for specific chat IDs
+	allowAllGroups bool
+	groupSet      map[string]struct{}
+
+	// requireMention: in groups, only respond when bot is @mentioned
+	requireMentionDefault bool
+	groupConfig          map[string]types.TelegramGroupCfg
+
+	// Bot username for mention detection (e.g. "mybot")
+	botUsername   string
+	botUsernameMu sync.RWMutex
 }
 
 // NewTelegramChannel creates a Telegram channel. Requires TelegramBotToken.
@@ -30,17 +47,43 @@ func NewTelegramChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 		return nil, fmt.Errorf("telegram: bot token required")
 	}
 	ch := &TelegramChannel{
-		allowedUsers: make(map[string]struct{}),
+		allowSet:              make(map[string]struct{}),
+		groupSet:              make(map[string]struct{}),
+		groupConfig:           make(map[string]types.TelegramGroupCfg),
+		requireMentionDefault: true, // safe default for groups
 	}
+	// Allowlist: empty = deny all; ["*"] = allow all; else exact match
 	for _, u := range cfg.TelegramAllowedUsers {
-		u = strings.TrimSpace(strings.ToLower(u))
-		if u != "" {
-			ch.allowedUsers[u] = struct{}{}
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
 		}
+		if strings.EqualFold(u, "*") {
+			ch.allowAll = true
+			break
+		}
+		ch.allowSet[strings.ToLower(u)] = struct{}{}
+	}
+	// Groups: ["*"] = all; else specific chat IDs
+	for _, g := range cfg.TelegramGroups {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		if strings.EqualFold(g, "*") {
+			ch.allowAllGroups = true
+			break
+		}
+		ch.groupSet[g] = struct{}{}
+	}
+	if cfg.TelegramRequireMention != nil {
+		ch.requireMentionDefault = *cfg.TelegramRequireMention
+	}
+	for k, gc := range cfg.TelegramGroupsConfig {
+		ch.groupConfig[k] = gc
 	}
 	ch.tokenMgr = NewTokenManager(
 		func(ctx context.Context) (string, time.Time, error) {
-			// Re-read config so token updates via API apply without restart
 			c, err := config.Load()
 			if err != nil {
 				return "", time.Time{}, err
@@ -59,17 +102,17 @@ func (c *TelegramChannel) Name() string {
 	return "telegram"
 }
 
-// GetAuthToken returns the bot token (refreshed from config if invalidated).
 func (c *TelegramChannel) GetAuthToken(ctx context.Context) (string, error) {
 	return c.tokenMgr.GetAuthToken(ctx)
 }
 
-// Invalidate clears cached token so next GetAuthToken re-reads from config.
 func (c *TelegramChannel) Invalidate() {
 	c.tokenMgr.Invalidate()
+	c.botUsernameMu.Lock()
+	c.botUsername = ""
+	c.botUsernameMu.Unlock()
 }
 
-// doRequest performs an HTTP request with auth. On 401/403, invalidates token for next call.
 func (c *TelegramChannel) doRequest(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
 	token, err := c.tokenMgr.GetAuthToken(ctx)
 	if err != nil {
@@ -95,6 +138,36 @@ func (c *TelegramChannel) doRequest(ctx context.Context, method, url string, bod
 		c.tokenMgr.Invalidate()
 	}
 	return resp, nil
+}
+
+// ensureBotUsername fetches bot username from getMe if not cached.
+func (c *TelegramChannel) ensureBotUsername(ctx context.Context) (string, error) {
+	c.botUsernameMu.RLock()
+	u := c.botUsername
+	c.botUsernameMu.RUnlock()
+	if u != "" {
+		return u, nil
+	}
+	resp, err := c.doRequest(ctx, http.MethodGet, "/getMe", nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		OK     bool `json:"ok"`
+		Result *struct {
+			Username string `json:"username"`
+		} `json:"result"`
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(body, &result); err != nil || !result.OK || result.Result == nil {
+		return "", nil
+	}
+	u = strings.ToLower(result.Result.Username)
+	c.botUsernameMu.Lock()
+	c.botUsername = u
+	c.botUsernameMu.Unlock()
+	return u, nil
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg *OutboundMessage) (string, error) {
@@ -146,6 +219,58 @@ func (c *TelegramChannel) Send(ctx context.Context, msg *OutboundMessage) (strin
 	return strconv.FormatInt(result.Result.MessageID, 10), nil
 }
 
+// telegramMessage is the raw message from getUpdates (with entities and caption).
+type telegramMessage struct {
+	MessageID int64 `json:"message_id"`
+	From      *struct {
+		ID        int64  `json:"id"`
+		Username  string `json:"username"`
+		FirstName string `json:"first_name"`
+	} `json:"from"`
+	Chat struct {
+		ID    int64  `json:"id"`
+		Type  string `json:"type"` // "private", "group", "supergroup", "channel"
+		Title string `json:"title"`
+	} `json:"chat"`
+	Text     string             `json:"text"`
+	Caption  string             `json:"caption"`
+	Date     int64              `json:"date"`
+	Entities []telegramEntity   `json:"entities"`
+}
+
+type telegramEntity struct {
+	Type   string `json:"type"` // "mention", "text_mention", "bot_command"
+	Offset int    `json:"offset"`
+	Length int    `json:"length"`
+	User   *struct {
+		Username string `json:"username"`
+	} `json:"user"`
+}
+
+// isBotMentioned returns true if the bot is @mentioned in text using entities.
+func isBotMentioned(text string, entities []telegramEntity, botUsername string) bool {
+	if botUsername == "" {
+		return false
+	}
+	botMention := "@" + botUsername
+	for _, e := range entities {
+		if e.Type != "mention" && e.Type != "text_mention" && e.Type != "bot_command" {
+			continue
+		}
+		if e.Offset >= len(text) || e.Offset+e.Length > len(text) {
+			continue
+		}
+		slice := text[e.Offset : e.Offset+e.Length]
+		if strings.EqualFold(slice, botMention) || strings.EqualFold(slice, "/"+botUsername) {
+			return true
+		}
+		if e.Type == "text_mention" && e.User != nil && strings.EqualFold(e.User.Username, botUsername) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([]InboxMessage, string, error) {
 	if limit <= 0 {
 		limit = 50
@@ -172,22 +297,8 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 	var result struct {
 		OK     bool `json:"ok"`
 		Result []struct {
-			UpdateID int64 `json:"update_id"`
-			Message  *struct {
-				MessageID int64 `json:"message_id"`
-				From      *struct {
-					ID        int64  `json:"id"`
-					Username  string `json:"username"`
-					FirstName string `json:"first_name"`
-				} `json:"from"`
-				Chat struct {
-					ID    int64  `json:"id"`
-					Type  string `json:"type"`
-					Title string `json:"title"`
-				} `json:"chat"`
-				Text string `json:"text"`
-				Date int64  `json:"date"`
-			} `json:"message"`
+			UpdateID int64            `json:"update_id"`
+			Message  *telegramMessage  `json:"message"`
 		} `json:"result"`
 		Description string `json:"description"`
 	}
@@ -201,6 +312,8 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 		return nil, "", fmt.Errorf("telegram poll: %s", string(respBody))
 	}
 
+	botUsername, _ := c.ensureBotUsername(ctx)
+
 	out := make([]InboxMessage, 0, len(result.Result))
 	nextOffset := offset
 	for _, u := range result.Result {
@@ -211,31 +324,68 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 			continue
 		}
 		msg := u.Message
-		if msg.Text == "" {
+		content := msg.Text
+		if content == "" {
+			content = msg.Caption
+		}
+		if content == "" {
 			continue
 		}
-		senderID := ""
-		senderKey := ""
-		if msg.From != nil {
-			senderID = strconv.FormatInt(msg.From.ID, 10)
-			if msg.From.Username != "" {
-				senderKey = strings.ToLower("@" + msg.From.Username)
-			} else {
-				senderKey = senderID
-			}
-		}
-		if len(c.allowedUsers) > 0 {
-			if _, ok := c.allowedUsers[senderKey]; !ok {
-				if _, ok := c.allowedUsers[senderID]; !ok {
+
+		chatIDStr := strconv.FormatInt(msg.Chat.ID, 10)
+		isGroup := msg.Chat.Type == "group" || msg.Chat.Type == "supergroup"
+
+		// Group filter: if groups configured, only allow listed groups
+		if isGroup {
+			if !c.allowAllGroups {
+				if len(c.groupSet) == 0 {
+					continue
+				}
+				if _, ok := c.groupSet[chatIDStr]; !ok {
 					continue
 				}
 			}
+			// requireMention: only process when bot is @mentioned
+			reqMention := c.requireMentionDefault
+			if gc, ok := c.groupConfig[chatIDStr]; ok {
+				reqMention = gc.RequireMention
+			}
+			if reqMention && !isBotMentioned(content, msg.Entities, botUsername) {
+				continue
+			}
+		} else {
+			// DM: apply allowlist (empty = deny all, ["*"] = allow all)
+			if !c.allowAll {
+				if len(c.allowSet) == 0 {
+					continue
+				}
+				senderID := ""
+				senderKey := ""
+				if msg.From != nil {
+					senderID = strconv.FormatInt(msg.From.ID, 10)
+					if msg.From.Username != "" {
+						senderKey = strings.ToLower("@" + msg.From.Username)
+					} else {
+						senderKey = senderID
+					}
+				}
+				if _, ok := c.allowSet[senderKey]; !ok {
+					if _, ok := c.allowSet[senderID]; !ok {
+						continue
+					}
+				}
+			}
+		}
+
+		senderID := ""
+		if msg.From != nil {
+			senderID = strconv.FormatInt(msg.From.ID, 10)
 		}
 		out = append(out, InboxMessage{
 			ID:          strconv.FormatInt(msg.MessageID, 10),
 			Sender:      senderID,
-			ReplyTarget: strconv.FormatInt(msg.Chat.ID, 10),
-			Content:     msg.Text,
+			ReplyTarget: chatIDStr,
+			Content:     content,
 			Channel:     "telegram",
 			Timestamp:   msg.Date,
 			ThreadID:    "",
@@ -264,5 +414,7 @@ func (c *TelegramChannel) HealthCheck(ctx context.Context) error {
 		}
 		return fmt.Errorf("telegram health: %s", string(respBody))
 	}
+	// Cache bot username for mention detection
+	_, _ = c.ensureBotUsername(ctx)
 	return nil
 }

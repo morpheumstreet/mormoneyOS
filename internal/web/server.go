@@ -175,6 +175,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/skills/{name}", s.handleAPISkillsDelete)
 	s.mux.HandleFunc("PATCH /api/skills/{name}/activate", s.handleAPISkillsActivate)
 	s.mux.HandleFunc("PATCH /api/skills/{name}/deactivate", s.handleAPISkillsDeactivate)
+
+	// Heartbeat schedule API
+	s.mux.HandleFunc("GET /api/heartbeat", s.handleAPIHeartbeatList)
+	s.mux.HandleFunc("PATCH /api/heartbeat/{name}", s.handleAPIHeartbeatPatch)
+	s.mux.HandleFunc("PATCH /api/heartbeat/{name}/schedule", s.handleAPIHeartbeatSchedulePatch)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

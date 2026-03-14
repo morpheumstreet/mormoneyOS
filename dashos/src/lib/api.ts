@@ -272,6 +272,56 @@ export function patchToolEnabled(name: string, enabled: boolean): Promise<{ name
   });
 }
 
+/** Heartbeat schedule (when backend implements GET /api/heartbeat) */
+export interface HeartbeatScheduleItem {
+  name: string;
+  schedule: string;
+  task: string;
+  enabled: boolean;
+  tierMinimum: string;
+  lastRun: string;
+  nextRun: string;
+  leaseUntil: string;
+  leaseOwner: string;
+}
+
+export interface HeartbeatResponse {
+  schedules: HeartbeatScheduleItem[];
+}
+
+export function getHeartbeat(): Promise<HeartbeatResponse> {
+  return fetch(API + "/heartbeat").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Heartbeat API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function patchHeartbeatEnabled(
+  name: string,
+  enabled: boolean
+): Promise<{ name: string; enabled: boolean }> {
+  return apiFetch<{ name: string; enabled: boolean }>(
+    "/heartbeat/" + encodeURIComponent(name),
+    {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }
+  );
+}
+
+export function patchHeartbeatSchedule(
+  name: string,
+  schedule: string
+): Promise<{ name: string; schedule: string }> {
+  return apiFetch<{ name: string; schedule: string }>(
+    "/heartbeat/" + encodeURIComponent(name) + "/schedule",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ schedule }),
+    }
+  );
+}
+
 /** Social channels (when backend implements GET /api/social) */
 export interface SocialConfigField {
   key: string;

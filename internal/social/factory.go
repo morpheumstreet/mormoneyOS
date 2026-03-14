@@ -2,6 +2,7 @@ package social
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -32,13 +33,19 @@ var channelConfigSchema = map[string][]ConfigField{
 	},
 	"telegram": {
 		{Key: "telegramBotToken", Label: "Bot Token", Type: "password", Required: true, Description: "Telegram Bot API token from @BotFather"},
-		{Key: "telegramAllowedUsers", Label: "Allowed Users", Type: "array", Required: false, Description: "Comma-separated usernames or user IDs; empty = allow all"},
+		{Key: "telegramAllowedUsers", Label: "Allowed Users (DMs)", Type: "array", Required: false, Description: "empty=deny all; [\"*\"]=allow all; else list of @usernames or user IDs"},
+		{Key: "telegramGroups", Label: "Allowed Groups", Type: "array", Required: false, Description: "[\"*\"]=all groups; else list of group chat IDs; empty=no groups"},
+		{Key: "telegramGroupsConfig", Label: "Per-Group Config", Type: "object", Required: false, Description: "Map groupId -> { requireMention: bool }"},
+		{Key: "telegramRequireMention", Label: "Require @mention in Groups", Type: "boolean", Required: false, Description: "Only respond when bot is @mentioned (default: true)"},
 	},
 	"discord": {
 		{Key: "discordBotToken", Label: "Bot Token", Type: "password", Required: true, Description: "Discord bot token from Developer Portal"},
 		{Key: "discordGuildId", Label: "Guild ID", Type: "text", Required: false, Description: "Server ID for inbox polling"},
-		{Key: "discordAllowedUsers", Label: "Allowed Users", Type: "array", Required: false, Description: "Comma-separated user IDs or usernames"},
+		{Key: "discordAllowedUsers", Label: "Allowed Users", Type: "array", Required: false, Description: "empty=deny all; [\"*\"]=allow all; else user IDs or usernames (OpenClaw-aligned)"},
+		{Key: "discordAllowedChannels", Label: "Allowed Channels", Type: "array", Required: false, Description: "Channel IDs to poll; empty=all channels in guild"},
 		{Key: "discordMentionOnly", Label: "Mention Only", Type: "boolean", Required: false, Description: "Only process messages that @mention the bot"},
+		{Key: "discordListenToBots", Label: "Listen to Bots", Type: "boolean", Required: false, Description: "Process messages from other bots (default: false)"},
+		{Key: "discordMediaMaxMb", Label: "Media Max MB", Type: "text", Required: false, Description: "Max upload size in MB (default 8, for future file attachments)"},
 	},
 }
 
@@ -65,6 +72,15 @@ func GetChannelConfigValues(key string, cfg *types.AutomatonConfig) map[string]a
 		if len(cfg.TelegramAllowedUsers) > 0 {
 			out["telegramAllowedUsers"] = cfg.TelegramAllowedUsers
 		}
+		if len(cfg.TelegramGroups) > 0 {
+			out["telegramGroups"] = cfg.TelegramGroups
+		}
+		if len(cfg.TelegramGroupsConfig) > 0 {
+			out["telegramGroupsConfig"] = cfg.TelegramGroupsConfig
+		}
+		if cfg.TelegramRequireMention != nil {
+			out["telegramRequireMention"] = *cfg.TelegramRequireMention
+		}
 	case "discord":
 		if cfg.DiscordBotToken != "" {
 			out["discordBotToken"] = "••••••••"
@@ -75,7 +91,14 @@ func GetChannelConfigValues(key string, cfg *types.AutomatonConfig) map[string]a
 		if len(cfg.DiscordAllowedUsers) > 0 {
 			out["discordAllowedUsers"] = cfg.DiscordAllowedUsers
 		}
+		if len(cfg.DiscordAllowedChannels) > 0 {
+			out["discordAllowedChannels"] = cfg.DiscordAllowedChannels
+		}
 		out["discordMentionOnly"] = cfg.DiscordMentionOnly
+		out["discordListenToBots"] = cfg.DiscordListenToBots
+		if cfg.DiscordMediaMaxMb > 0 {
+			out["discordMediaMaxMb"] = cfg.DiscordMediaMaxMb
+		}
 	}
 	return out
 }
@@ -113,6 +136,43 @@ func ApplyChannelConfig(cfg *types.AutomatonConfig, key string, updates map[stri
 				}
 			}
 		}
+		if v, ok := updates["telegramGroups"]; ok {
+			switch val := v.(type) {
+			case []string:
+				cfg.TelegramGroups = val
+			case []any:
+				var arr []string
+				for _, a := range val {
+					if s, ok := a.(string); ok && s != "" {
+						arr = append(arr, s)
+					}
+				}
+				cfg.TelegramGroups = arr
+			case string:
+				if val != "" {
+					cfg.TelegramGroups = splitCommaTrim(val)
+				}
+			}
+		}
+		if v, ok := updates["telegramGroupsConfig"]; ok {
+			if m, ok := v.(map[string]any); ok {
+				if cfg.TelegramGroupsConfig == nil {
+					cfg.TelegramGroupsConfig = make(map[string]types.TelegramGroupCfg)
+				}
+				for k, sub := range m {
+					if sm, ok := sub.(map[string]any); ok {
+						var gc types.TelegramGroupCfg
+						if b, ok := sm["requireMention"].(bool); ok {
+							gc.RequireMention = b
+						}
+						cfg.TelegramGroupsConfig[k] = gc
+					}
+				}
+			}
+		}
+		if v, ok := updates["telegramRequireMention"].(bool); ok {
+			cfg.TelegramRequireMention = &v
+		}
 	case "discord":
 		if v, ok := updates["discordBotToken"].(string); ok && v != "" {
 			cfg.DiscordBotToken = v
@@ -127,19 +187,48 @@ func ApplyChannelConfig(cfg *types.AutomatonConfig, key string, updates map[stri
 			case []any:
 				var arr []string
 				for _, a := range val {
-					if s, ok := a.(string); ok && s != "" {
+					if s, ok := a.(string); ok {
 						arr = append(arr, s)
 					}
 				}
 				cfg.DiscordAllowedUsers = arr
 			case string:
+				cfg.DiscordAllowedUsers = splitCommaTrim(val)
+			}
+		}
+		if v, ok := updates["discordAllowedChannels"]; ok {
+			switch val := v.(type) {
+			case []string:
+				cfg.DiscordAllowedChannels = val
+			case []any:
+				var arr []string
+				for _, a := range val {
+					if s, ok := a.(string); ok && s != "" {
+						arr = append(arr, s)
+					}
+				}
+				cfg.DiscordAllowedChannels = arr
+			case string:
 				if val != "" {
-					cfg.DiscordAllowedUsers = splitCommaTrim(val)
+					cfg.DiscordAllowedChannels = splitCommaTrim(val)
 				}
 			}
 		}
 		if v, ok := updates["discordMentionOnly"].(bool); ok {
 			cfg.DiscordMentionOnly = v
+		}
+		if v, ok := updates["discordListenToBots"].(bool); ok {
+			cfg.DiscordListenToBots = v
+		}
+		if v, ok := updates["discordMediaMaxMb"].(float64); ok && v > 0 {
+			cfg.DiscordMediaMaxMb = int(v)
+		} else if v, ok := updates["discordMediaMaxMb"].(int); ok && v > 0 {
+			cfg.DiscordMediaMaxMb = v
+		} else if v, ok := updates["discordMediaMaxMb"].(string); ok && v != "" {
+			var n int
+			if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+				cfg.DiscordMediaMaxMb = n
+			}
 		}
 	}
 }

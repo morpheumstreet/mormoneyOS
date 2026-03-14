@@ -23,11 +23,14 @@ const (
 
 // DiscordChannel implements SocialChannel for Discord Bot API (REST).
 type DiscordChannel struct {
-	tokenMgr     *TokenManager
-	guildID      string
-	botID        string // For mention_only check
-	allowedUsers map[string]struct{}
-	mentionOnly  bool
+	tokenMgr        *TokenManager
+	guildID         string
+	botID           string // For mention_only check
+	allowedUsers    map[string]struct{}
+	allowAllUsers   bool   // true when discordAllowedUsers contains "*"
+	allowedChannels map[string]struct{} // empty = all; non-empty = channel IDs to poll
+	mentionOnly     bool
+	listenToBots    bool
 }
 
 // NewDiscordChannel creates a Discord channel. Requires DiscordBotToken.
@@ -37,14 +40,26 @@ func NewDiscordChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 		return nil, fmt.Errorf("discord: bot token required")
 	}
 	ch := &DiscordChannel{
-		guildID:      strings.TrimSpace(cfg.DiscordGuildID),
-		allowedUsers: make(map[string]struct{}),
-		mentionOnly:  cfg.DiscordMentionOnly,
+		guildID:         strings.TrimSpace(cfg.DiscordGuildID),
+		allowedUsers:    make(map[string]struct{}),
+		allowedChannels: make(map[string]struct{}),
+		mentionOnly:     cfg.DiscordMentionOnly,
+		listenToBots:    cfg.DiscordListenToBots,
 	}
 	for _, u := range cfg.DiscordAllowedUsers {
 		u = strings.TrimSpace(strings.ToLower(u))
+		if u == "*" {
+			ch.allowAllUsers = true
+			break
+		}
 		if u != "" {
 			ch.allowedUsers[u] = struct{}{}
+		}
+	}
+	for _, id := range cfg.DiscordAllowedChannels {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			ch.allowedChannels[id] = struct{}{}
 		}
 	}
 	ch.tokenMgr = NewTokenManager(
@@ -236,12 +251,21 @@ func (c *DiscordChannel) Poll(ctx context.Context, cursor string, limit int) ([]
 			senderKey = strings.ToLower(m.Author.Username)
 		}
 
-		if len(c.allowedUsers) > 0 {
+		// Allowlist: empty=deny all, ["*"]=allow all, else exact match (OpenClaw-aligned)
+		if !c.allowAllUsers {
+			if len(c.allowedUsers) == 0 {
+				continue // deny all until configured
+			}
 			if _, ok := c.allowedUsers[authorID]; !ok {
 				if _, ok := c.allowedUsers[senderKey]; !ok {
 					continue
 				}
 			}
+		}
+
+		// Filter bot messages unless listenToBots (OpenClaw default: ignore bots)
+		if !c.listenToBots && m.Author != nil && m.Author.Bot {
+			continue
 		}
 
 		if c.mentionOnly && c.botID != "" {
@@ -330,7 +354,11 @@ func (c *DiscordChannel) listGuildChannels(ctx context.Context) ([]discordChanne
 	for _, ch := range channels {
 		switch ch.Type {
 		case 0, 5, 10, 11, 12:
-			out = append(out, ch)
+			if len(c.allowedChannels) == 0 {
+				out = append(out, ch)
+			} else if _, ok := c.allowedChannels[ch.ID]; ok {
+				out = append(out, ch)
+			}
 		}
 	}
 	return out, nil
@@ -376,6 +404,7 @@ type discordMessage struct {
 type discordUser struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
+	Bot      bool   `json:"bot"` // true when message author is a bot
 }
 
 type discordEmbed struct {

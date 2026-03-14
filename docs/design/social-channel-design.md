@@ -194,13 +194,20 @@ discordGuildId: "..."   # optional
 slackBotToken: "..."
 
 # Per-channel allowlist (inbound filter; empty = deny all, ["*"] = allow all)
-telegramAllowedUsers: ["123456789"]
-discordAllowedUsers: ["987654321"]
+telegramAllowedUsers: ["123456789"]   # or ["*"] for all DMs
+telegramGroups: ["*"]                 # or ["-1001234567890"] for specific groups
+telegramRequireMention: true          # in groups, only respond when @mentioned (default)
+telegramGroupsConfig:                 # per-group overrides
+  "-1001234567890":
+    requireMention: false
+discordAllowedUsers: ["987654321"]   # empty=deny all; ["*"]=allow all; else user IDs (OpenClaw-aligned)
+discordAllowedChannels: []           # empty=all channels; else channel IDs to poll
 discordMentionOnly: false   # When true, only respond to @-mentions in guilds
-discordListenToBots: false
+discordListenToBots: false  # When true, process messages from other bots (default: ignore)
+discordMediaMaxMb: 8       # Max upload size in MB for file attachments (OpenClaw default)
 ```
 
-**Allowlist semantics (mormclaw-aligned):** `allowed_users` empty = deny all until configured. `["*"]` = allow all. Otherwise exact match on sender ID. Poll implementations filter before returning; or filter at wake_event insertion.
+**Allowlist semantics (OpenClaw-aligned, security-first):** `telegramAllowedUsers` empty = deny all. `["*"]` = allow all. Otherwise exact match on @username or user ID. `telegramGroups` empty = no groups; `["*"]` = all groups; else list of group chat IDs. In groups, `telegramRequireMention` (default true) = only respond when bot is @mentioned. **Discord:** `discordAllowedUsers` empty = deny all; `["*"]` = allow all; else user IDs or usernames. `discordAllowedChannels` empty = poll all guild channels; non-empty = only listed channel IDs. Bot messages are ignored unless `discordListenToBots: true`.
 
 ---
 

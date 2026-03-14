@@ -84,16 +84,27 @@ type AutomatonConfig struct {
 	// Social channels (Conway, Telegram, Discord, etc.)
 	SocialChannels    []string `json:"socialChannels,omitempty"`    // e.g. ["conway", "telegram"]
 	SocialRelayURL    string   `json:"socialRelayUrl,omitempty"`    // For conway channel
-	TelegramBotToken  string   `json:"telegramBotToken,omitempty"`
-	DiscordBotToken   string   `json:"discordBotToken,omitempty"`
-	DiscordGuildID    string   `json:"discordGuildId,omitempty"`
-	SlackBotToken     string   `json:"slackBotToken,omitempty"`
-	TelegramAllowedUsers []string `json:"telegramAllowedUsers,omitempty"`
-	DiscordAllowedUsers  []string `json:"discordAllowedUsers,omitempty"`
-	DiscordMentionOnly   bool     `json:"discordMentionOnly,omitempty"`
+	TelegramBotToken       string                       `json:"telegramBotToken,omitempty"`
+	DiscordBotToken        string                       `json:"discordBotToken,omitempty"`
+	DiscordGuildID         string                       `json:"discordGuildId,omitempty"`
+	SlackBotToken          string                       `json:"slackBotToken,omitempty"`
+	TelegramAllowedUsers   []string                     `json:"telegramAllowedUsers,omitempty"`   // DM allowlist; empty=deny all, ["*"]=allow all
+	TelegramGroups         []string                     `json:"telegramGroups,omitempty"`        // Group allowlist; ["*"]=all groups; empty=none
+	TelegramGroupsConfig   map[string]TelegramGroupCfg  `json:"telegramGroupsConfig,omitempty"` // Per-group: requireMention, etc.
+	TelegramRequireMention *bool                        `json:"telegramRequireMention,omitempty"` // In groups, only respond when @mentioned; nil = true (default)
+	DiscordAllowedUsers    []string                     `json:"discordAllowedUsers,omitempty"`    // empty=deny all, ["*"]=allow all; else user IDs/usernames
+	DiscordAllowedChannels []string                     `json:"discordAllowedChannels,omitempty"` // empty=all channels; else channel IDs to poll
+	DiscordMentionOnly     bool                         `json:"discordMentionOnly,omitempty"`
+	DiscordListenToBots    bool                         `json:"discordListenToBots,omitempty"`    // default false: ignore bot messages
+	DiscordMediaMaxMb      int                          `json:"discordMediaMaxMb,omitempty"`     // max upload size in MB (default 8, OpenClaw-aligned)
 
 	// Soul config: personality, system prompt, tone, behavioral constraints
 	Soul *SoulConfig `json:"soul,omitempty"`
+}
+
+// TelegramGroupCfg is per-group Telegram config (OpenClaw-style).
+type TelegramGroupCfg struct {
+	RequireMention bool `json:"requireMention,omitempty"` // Only respond when bot is @mentioned
 }
 
 // SoulConfig defines the agent's personality, system prompt, tone, and behavioral constraints.

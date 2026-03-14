@@ -73,6 +73,9 @@ mormoneyOS integrates with several API surfaces:
 | DELETE | `/api/skills/{name}` | ✅ Implemented | Remove skill | `204 No Content` |
 | PATCH | `/api/skills/{name}/activate` | ✅ Implemented | Enable skill | `{ name, enabled: true }` |
 | PATCH | `/api/skills/{name}/deactivate` | ✅ Implemented | Disable skill | `{ name, enabled: false }` |
+| GET | `/api/heartbeat` | ✅ Implemented | List all heartbeat_schedule rows from DB | `{ schedules: [{ name, schedule, task, enabled, tierMinimum, lastRun, nextRun, leaseUntil, leaseOwner }] }` |
+| PATCH | `/api/heartbeat/{name}` | ✅ Implemented | Toggle heartbeat schedule enabled/disabled by name | `{ name, enabled }` |
+| PATCH | `/api/heartbeat/{name}/schedule` | ✅ Implemented | Update cron schedule for a heartbeat by name | `{ name, schedule }` |
 
 ### 2.3 Query Parameters
 
@@ -243,7 +246,34 @@ Model list configuration: add, remove, prioritize LLM providers; set API keys, m
 
 **PATCH /api/tools/{name}** — Toggle tool enabled. Body: `{ "enabled": true|false }`. Response: `{ name, enabled }`.
 
-### 2.14 Social Channels API
+### 2.14 Heartbeat Schedule API
+
+Heartbeat schedules are cron jobs stored in the `heartbeat_schedule` DB table. Requires `state.Database` (or any DB implementing `HeartbeatScheduleAPI`).
+
+**GET /api/heartbeat** — List all heartbeat schedule rows. Response:
+```json
+{
+  "schedules": [
+    {
+      "name": "report_metrics",
+      "schedule": "0 */6 * * *",
+      "task": "report_metrics",
+      "enabled": true,
+      "tierMinimum": "dead",
+      "lastRun": "2026-03-15T12:00:00Z",
+      "nextRun": "",
+      "leaseUntil": "",
+      "leaseOwner": ""
+    }
+  ]
+}
+```
+
+**PATCH /api/heartbeat/{name}** — Toggle enabled/disabled by name. Body: `{ "enabled": true|false }`. Response: `{ name, enabled }`. Returns `404` if schedule not found.
+
+**PATCH /api/heartbeat/{name}/schedule** — Update cron schedule. Body: `{ "schedule": "0 */6 * * *" }`. Response: `{ name, schedule }`. Returns `404` if schedule not found.
+
+### 2.15 Social Channels API
 
 **GET /api/social** — List channels (Conway, Telegram, Discord, etc.) with status, config schema, and current values. Returns `{ channels: [{ name, displayName, enabled, ready, configFields, config }] }`.
 
@@ -251,7 +281,7 @@ Model list configuration: add, remove, prioritize LLM providers; set API keys, m
 
 **PUT /api/social/{name}/config** — Update channel config. Body: partial config object. Validates via `HealthCheck` before save; auto-enables on success. Response: `{ ok, validated?, enabled?, error? }`.
 
-### 2.15 Tunnel API
+### 2.16 Tunnel API
 
 Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expose local ports to the internet. Providers that require API keys: cloudflare (token), ngrok (authToken), tailscale (authKey).
 
@@ -282,7 +312,7 @@ Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expos
 - **Response:** `{ "ok": true, "provider": "cloudflare", "restarted": true }`
 - **Errors:** `400` if provider requires API key but it is missing; `404` if TunnelReloader not configured.
 
-### 2.16 Skills API
+### 2.17 Skills API
 
 Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the ClawHub registry. The API supports list, CRUD, discovery, recommended skills, and activate/deactivate.
 
@@ -442,7 +472,7 @@ Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the Cla
 
 | Category | Paths |
 |----------|-------|
-| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `POST /api/auth/verify`, `GET /api/reports` |
+| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `GET /api/heartbeat`, `PATCH /api/heartbeat/{name}`, `PATCH /api/heartbeat/{name}/schedule`, `POST /api/auth/verify`, `GET /api/reports` |
 | **Conway** | `GET/POST /v1/credits/*`, `GET/POST /v1/sandboxes`, `POST /v1/sandboxes/{id}/exec`, `POST /v1/sandboxes/{id}/files/upload/json`, `GET /v1/sandboxes/{id}/files/read`, `GET /v1/models` |
 | **Conway Auth** | `POST /v1/auth/nonce`, `POST /v1/auth/verify`, `POST /v1/auth/api-keys`, `POST /v1/automaton/register-parent` |
 | **Conway x402** | `GET /pay/{amountUsd}/{address}` |
@@ -493,6 +523,9 @@ Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the Cla
 | `DELETE /api/skills/{name}` | ✅ Full | Remove skill |
 | `PATCH /api/skills/{name}/activate` | ✅ Full | Enable skill |
 | `PATCH /api/skills/{name}/deactivate` | ✅ Full | Disable skill |
+| `GET /api/heartbeat` | ✅ Full | List heartbeat_schedule rows from DB |
+| `PATCH /api/heartbeat/{name}` | ✅ Full | Toggle heartbeat enabled by name |
+| `PATCH /api/heartbeat/{name}/schedule` | ✅ Full | Update cron schedule by name |
 
 **Auth:** None. Dashboard is unauthenticated. Anyone reaching the URL has full access. Write endpoints can optionally require auth via `POST /api/auth/verify` flow.
 
@@ -506,8 +539,8 @@ Endpoints that can be added using existing data sources. Requires extending `Ser
 | `GET /api/soul` | `DB.GetKV("soul_content")` | Low | Read soul *document* from KV (self-authored identity). Distinct from `GET /api/soul/config` which returns soul *configuration* (personality, tone, constraints). Same pattern as `view_soul` tool. |
 | `GET /api/memory` | `state.GetSemanticMemory`, `GetProceduralMemory`, KV goals/facts | Medium | Facts, goals, procedures. Requires schema v13 (5-tier) + KV keys like `goal:`, `procedure:`. |
 | `GET /api/health` | — | Trivial | Liveness: return `200 OK` or `{"ok": true}`. |
-| `GET /api/heartbeat` | `state.GetHeartbeatSchedule`, heartbeat history | Medium | Schedule + recent run history. |
-| `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart` | — | — | ✅ Implemented. See §2.14. |
+| `GET /api/heartbeat`, `PATCH /api/heartbeat/{name}`, `PATCH /api/heartbeat/{name}/schedule` | — | — | ✅ Implemented. See §2.14. |
+| `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart` | — | — | ✅ Implemented. See §2.16. |
 | `POST /api/chat` (enhance) | Inference client or agent loop | High | Wire to real LLM or forward to agent. Frontend must call `POST /api/chat` with body `{ "message": "..." }`. |
 
 ### 8.3 Frontend Gaps

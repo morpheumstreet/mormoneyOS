@@ -8,6 +8,7 @@ import ConfigLayout from "@/components/config/ConfigLayout";
 import ConfigGeneral from "@/pages/config/ConfigGeneral";
 import ConfigTools from "@/pages/config/ConfigTools";
 import ConfigSocial from "@/pages/config/ConfigSocial";
+import ConfigHeartbeat from "@/pages/config/ConfigHeartbeat";
 import ConfigTunnel from "@/pages/config/ConfigTunnel";
 import ConfigModelList from "@/pages/config/ConfigModelList";
 import ConfigEconomic from "@/pages/config/ConfigEconomic";
@@ -33,6 +34,7 @@ function AppContent() {
           <Route path="general" element={<ConfigGeneral />} />
           <Route path="tools" element={<ConfigTools />} />
           <Route path="social" element={<ConfigSocial />} />
+          <Route path="heartbeat" element={<ConfigHeartbeat />} />
           <Route path="tunnel" element={<ConfigTunnel />} />
           <Route path="model-list" element={<ConfigModelList />} />
           <Route path="economic" element={<ConfigEconomic />} />

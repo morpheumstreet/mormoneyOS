@@ -73,6 +73,46 @@ func (d *Database) UpsertHeartbeatSchedule(row HeartbeatScheduleRow) error {
 	return err
 }
 
+// SetHeartbeatEnabled sets the enabled flag for a schedule row by name.
+func (d *Database) SetHeartbeatEnabled(name string, enabled bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	en := 0
+	if enabled {
+		en = 1
+	}
+	res, err := d.db.Exec(
+		`UPDATE heartbeat_schedule SET enabled=?, updated_at=datetime('now') WHERE name=?`,
+		en, name,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// SetHeartbeatSchedule updates the cron schedule for a schedule row by name.
+func (d *Database) SetHeartbeatSchedule(name string, schedule string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	res, err := d.db.Exec(
+		`UPDATE heartbeat_schedule SET schedule=?, updated_at=datetime('now') WHERE name=?`,
+		schedule, name,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // UpdateHeartbeatSchedule updates last_run and optionally lease fields.
 func (d *Database) UpdateHeartbeatSchedule(name, lastRun, leaseUntil, leaseOwner string) error {
 	d.mu.Lock()
