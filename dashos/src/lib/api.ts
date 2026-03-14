@@ -145,6 +145,56 @@ export function putConfig(config: string): Promise<void> {
   });
 }
 
+/** Economic (wallets, USDC balances, treasury policy, constraint mode) */
+export interface EconomicAddress {
+  address: string;
+  chain: string;
+  source: string;
+}
+
+export interface EconomicBalance {
+  address: string;
+  chain: string;
+  source: string;
+  balance: number | null;
+  error?: string;
+}
+
+export interface TreasuryPolicy {
+  maxSingleTransferCents?: number;
+  maxHourlyTransferCents?: number;
+  maxDailyTransferCents?: number;
+  minReserveCents?: number;
+  inferenceDailyBudgetCents?: number;
+  x402AllowedDomains?: string[];
+}
+
+export interface EconomicResponse {
+  addresses: EconomicAddress[];
+  balances: EconomicBalance[];
+  treasuryPolicy: TreasuryPolicy;
+  resourceConstraintMode: "auto" | "forced_on" | "forced_off";
+}
+
+export function getEconomic(): Promise<EconomicResponse> {
+  return fetch(API + "/economic").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Economic API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function putEconomic(
+  updates: Partial<{
+    treasuryPolicy: TreasuryPolicy;
+    resourceConstraintMode: "auto" | "forced_on" | "forced_off";
+  }>
+): Promise<void> {
+  return apiFetch<void>("/economic", {
+    method: "PUT",
+    body: JSON.stringify(updates),
+  });
+}
+
 /** Verify a signed message (Ethereum, Solana, Bitcoin, Morpheum) */
 export interface VerifyRequest {
   chain: "ethereum" | "solana" | "bitcoin" | "morpheum";

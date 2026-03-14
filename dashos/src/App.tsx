@@ -10,6 +10,7 @@ import ConfigTools from "@/pages/config/ConfigTools";
 import ConfigSocial from "@/pages/config/ConfigSocial";
 import ConfigTunnel from "@/pages/config/ConfigTunnel";
 import ConfigModelList from "@/pages/config/ConfigModelList";
+import ConfigEconomic from "@/pages/config/ConfigEconomic";
 import ConfigSoul from "@/pages/config/ConfigSoul";
 import Skills from "@/pages/Skills";
 
@@ -34,6 +35,7 @@ function AppContent() {
           <Route path="social" element={<ConfigSocial />} />
           <Route path="tunnel" element={<ConfigTunnel />} />
           <Route path="model-list" element={<ConfigModelList />} />
+          <Route path="economic" element={<ConfigEconomic />} />
           <Route path="soul" element={<ConfigSoul />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

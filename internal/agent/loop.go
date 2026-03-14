@@ -158,10 +158,20 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	// Step 4: survival tier — set agent_state, low-compute mode, model selection
 	tier := conway.TierFromCreditsCents(creditsCents)
 	agentState = tierToAgentState(tier)
+	useLowCompute := tier == types.SurvivalTierCritical || tier == types.SurvivalTierLowCompute
+	if l.config != nil && l.config.ResourceConstraintMode != "" {
+		switch l.config.ResourceConstraintMode {
+		case "forced_on":
+			useLowCompute = true
+			agentState = string(types.AgentStateLowCompute)
+		case "forced_off":
+			useLowCompute = false
+		}
+	}
 	if tierStore, ok := l.store.(TierStateStore); ok {
 		_ = tierStore.SetAgentState(agentState)
 	}
-	l.inference.SetLowComputeMode(tier == types.SurvivalTierCritical || tier == types.SurvivalTierLowCompute)
+	l.inference.SetLowComputeMode(useLowCompute)
 
 	// Build wakeup/input (TS step 2: claim inbox messages when no pendingInput)
 	recentTurns, _ := l.store.GetRecentTurns(5)
@@ -249,7 +259,7 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		toolDefs = filtered
 	}
 	model := l.inference.GetDefaultModel()
-	if (tier == types.SurvivalTierCritical || tier == types.SurvivalTierLowCompute) && l.config != nil && l.config.LowComputeModel != "" {
+	if useLowCompute && l.config != nil && l.config.LowComputeModel != "" {
 		model = l.config.LowComputeModel
 	}
 	opts := &inference.InferenceOptions{

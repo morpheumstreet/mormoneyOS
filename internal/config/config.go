@@ -122,6 +122,9 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["lowComputeModel"].(string); ok {
 		cfg.LowComputeModel = v
 	}
+	if v, ok := raw["resourceConstraintMode"].(string); ok && (v == "auto" || v == "forced_on" || v == "forced_off") {
+		cfg.ResourceConstraintMode = v
+	}
 	if v, ok := raw["dbPath"].(string); ok && v != "" {
 		cfg.DBPath = ResolvePath(v)
 	} else {

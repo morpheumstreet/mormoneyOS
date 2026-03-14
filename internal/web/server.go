@@ -21,6 +21,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
+	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify"
@@ -156,6 +157,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/soul/config", s.handleAPISoulConfigGet)
 	s.mux.HandleFunc("PUT /api/soul/config", s.handleAPISoulConfigPut)
 	s.mux.HandleFunc("POST /api/soul/enhance", s.handleAPISoulEnhance)
+	s.mux.HandleFunc("GET /api/economic", s.handleAPIEconomicGet)
+	s.mux.HandleFunc("PUT /api/economic", s.handleAPIEconomicPut)
 	s.mux.HandleFunc("GET /api/models", s.handleAPIModelsList)
 	s.mux.HandleFunc("POST /api/models", s.handleAPIModelsPost)
 	s.mux.HandleFunc("PUT /api/models/order", s.handleAPIModelsOrder)
@@ -1372,6 +1375,206 @@ func (s *Server) validateJWT(r *http.Request) (string, bool) {
 	}
 	addr, _ := claims["address"].(string)
 	return addr, addr != ""
+}
+
+// knownEVMChains for USDC balance checks (identity address_<chain> keys).
+var knownEVMChains = []string{"eip155:8453", "eip155:84532", "eip155:1", "eip155:137", "eip155:42161"}
+
+func (s *Server) handleAPIEconomicGet(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Warn("economic: load config failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = &types.AutomatonConfig{}
+	}
+
+	// Collect addresses: config, identity table, children
+	type addrEntry struct {
+		Address string
+		Chain   string
+		Source  string
+	}
+	seen := make(map[string]bool)
+	var entries []addrEntry
+	add := func(addr, chain, source string) {
+		if addr == "" || !strings.HasPrefix(addr, "0x") {
+			return
+		}
+		key := strings.ToLower(addr) + "|" + chain
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		entries = append(entries, addrEntry{Address: addr, Chain: chain, Source: source})
+	}
+
+	chains := knownEVMChains
+	var providers map[string]conway.USDCChainProvider
+	if len(cfg.ChainProviders) > 0 {
+		chains = make([]string, 0, len(cfg.ChainProviders))
+		providers = make(map[string]conway.USDCChainProvider)
+		for ch, cp := range cfg.ChainProviders {
+			if cp.RPCURL != "" && cp.USDCAddress != "" {
+				chains = append(chains, ch)
+				providers[ch] = conway.USDCChainProvider{RPCURL: cp.RPCURL, USDCAddress: cp.USDCAddress}
+			}
+		}
+	}
+	defaultChain := cfg.DefaultChain
+	if defaultChain == "" {
+		defaultChain = identity.DefaultChainBase
+	}
+
+	// Config addresses
+	if cfg.WalletAddress != "" {
+		add(cfg.WalletAddress, defaultChain, "wallet")
+	}
+	if cfg.CreatorAddress != "" && cfg.CreatorAddress != cfg.WalletAddress {
+		add(cfg.CreatorAddress, defaultChain, "creator")
+	}
+
+	// Identity table
+	if s.DB != nil {
+		if a, ok, _ := s.DB.GetIdentity("address"); ok && a != "" {
+			add(a, defaultChain, "identity")
+		}
+		for _, ch := range chains {
+			if a, ok, _ := s.DB.GetIdentity(identity.AddressKeyForChain(ch)); ok && a != "" {
+				add(a, ch, "identity_"+ch)
+			}
+		}
+	}
+
+	// Children
+	if db, ok := s.DB.(*state.Database); ok {
+		children, _ := db.GetAllChildren()
+		for _, c := range children {
+			if c.Address != "" {
+				ch := c.Chain
+				if ch == "" {
+					ch = defaultChain
+				}
+				add(c.Address, ch, "child")
+			}
+		}
+	}
+
+	// Fetch USDC balances per (address, chain)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	balances := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		if !identity.IsEVM(e.Chain) {
+			continue
+		}
+		results, err := conway.GetUSDCBalanceMulti(ctx, e.Address, []string{e.Chain}, providers)
+		if err != nil {
+			balances = append(balances, map[string]any{
+				"address": e.Address, "chain": e.Chain, "source": e.Source,
+				"balance": nil, "error": err.Error(),
+			})
+			continue
+		}
+		bal := 0.0
+		if len(results) > 0 {
+			bal = results[0].Balance
+		}
+		balances = append(balances, map[string]any{
+			"address": e.Address, "chain": e.Chain, "source": e.Source,
+			"balance": bal,
+		})
+	}
+
+	tp := cfg.TreasuryPolicy
+	if tp == nil {
+		tp = &types.TreasuryPolicy{}
+		*tp = types.DefaultTreasuryPolicy()
+	}
+	resourceMode := cfg.ResourceConstraintMode
+	if resourceMode == "" {
+		resourceMode = "auto"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"addresses":            entries,
+		"balances":             balances,
+		"treasuryPolicy":       tp,
+		"resourceConstraintMode": resourceMode,
+	})
+}
+
+func (s *Server) handleAPIEconomicPut(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.validateJWT(r); !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("economic put: load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = &types.AutomatonConfig{}
+	}
+	if cfg.TreasuryPolicy == nil {
+		tp := types.DefaultTreasuryPolicy()
+		cfg.TreasuryPolicy = &tp
+	}
+
+	if v, ok := raw["resourceConstraintMode"].(string); ok && (v == "auto" || v == "forced_on" || v == "forced_off") {
+		cfg.ResourceConstraintMode = v
+	}
+	if tp, ok := raw["treasuryPolicy"].(map[string]any); ok {
+		cfg.TreasuryPolicy = mergeTreasuryPolicyFromMap(cfg.TreasuryPolicy, tp)
+	}
+	if err := config.Save(cfg); err != nil {
+		s.Log.Error("economic put: save failed", "err", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func mergeTreasuryPolicyFromMap(base *types.TreasuryPolicy, over map[string]any) *types.TreasuryPolicy {
+	if base == nil {
+		tp := types.DefaultTreasuryPolicy()
+		base = &tp
+	}
+	out := *base
+	if v, ok := over["maxSingleTransferCents"].(float64); ok && v >= 0 {
+		out.MaxSingleTransferCents = int(v)
+	}
+	if v, ok := over["maxHourlyTransferCents"].(float64); ok && v >= 0 {
+		out.MaxHourlyTransferCents = int(v)
+	}
+	if v, ok := over["maxDailyTransferCents"].(float64); ok && v >= 0 {
+		out.MaxDailyTransferCents = int(v)
+	}
+	if v, ok := over["minReserveCents"].(float64); ok && v >= 0 {
+		out.MinReserveCents = int(v)
+	}
+	if v, ok := over["inferenceDailyBudgetCents"].(float64); ok && v >= 0 {
+		out.InferenceDailyBudgetCents = int(v)
+	}
+	if arr, ok := over["x402AllowedDomains"].([]any); ok {
+		out.X402AllowedDomains = make([]string, 0, len(arr))
+		for _, a := range arr {
+			if s, ok := a.(string); ok && s != "" {
+				out.X402AllowedDomains = append(out.X402AllowedDomains, s)
+			}
+		}
+	}
+	return &out
 }
 
 // maskAPIKey returns a masked version of an API key for API responses.

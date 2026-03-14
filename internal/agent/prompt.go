@@ -10,13 +10,14 @@ import (
 
 // LoopConfig holds config for prompt building (TS-aligned subset).
 type LoopConfig struct {
-	Name             string
-	GenesisPrompt    string
-	CreatorMsg       string
-	InferenceModel   string
-	LowComputeModel  string // Optional; used when tier is critical/low_compute
-	WalletAddress    string
-	SkillsConfig     *types.SkillsConfig // Optional; for skill injection
+	Name                  string
+	GenesisPrompt         string
+	CreatorMsg            string
+	InferenceModel        string
+	LowComputeModel       string // Optional; used when tier is critical/low_compute
+	ResourceConstraintMode string // "auto" | "forced_on" | "forced_off"; empty = auto
+	WalletAddress         string
+	SkillsConfig          *types.SkillsConfig // Optional; for skill injection
 }
 
 // BuildSystemPrompt builds the system prompt (TS buildSystemPrompt-aligned, simplified).
