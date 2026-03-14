@@ -106,6 +106,8 @@ type SoulConfig struct {
 	Tone string `json:"tone,omitempty"`
 	// BehavioralConstraints are rules the agent must follow (e.g. "Never disclose private keys").
 	BehavioralConstraints []string `json:"behavioralConstraints,omitempty"`
+	// SystemPromptVersions keeps the last 30 system prompts (newest first) for history/rollback.
+	SystemPromptVersions []string `json:"systemPromptVersions,omitempty"`
 }
 
 // ChainProviderConfig configures RPC and USDC contract for a chain (USDC balance check).

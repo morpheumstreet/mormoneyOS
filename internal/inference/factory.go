@@ -2,6 +2,7 @@ package inference
 
 import (
 	"os"
+	"sort"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
@@ -63,6 +64,79 @@ func NewClientFromConfig(cfg *types.AutomatonConfig) Client {
 // Priority: OpenAI > Conway > ... > ChatJimmy (fallback when no keys).
 func ResolveProviderFromConfig(cfg *types.AutomatonConfig) string {
 	return resolveProviderFromKeys(cfg)
+}
+
+// NewClientForModelEntry creates an inference client for a specific LLMModelEntry.
+// Uses entry.APIKey if set, else the config's provider API key. Returns nil if provider
+// requires a key and none is available.
+func NewClientForModelEntry(cfg *types.AutomatonConfig, entry *types.LLMModelEntry) Client {
+	if entry == nil || !entry.Enabled {
+		return nil
+	}
+	provider := entry.Provider
+	if provider == "" {
+		provider = "chatjimmy"
+	}
+	if provider == "chatjimmy-cli" {
+		provider = "chatjimmy"
+	}
+	model := entry.ModelID
+	if model == "" {
+		model = DefaultModelForProvider(provider)
+	}
+	maxTokens := cfg.MaxTokensPerTurn
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
+
+	if provider == "chatjimmy" {
+		baseURL := cfg.ChatJimmyAPIURL
+		if baseURL == "" {
+			if v := os.Getenv("CHATJIMMY_BASE_URL"); v != "" {
+				baseURL = v
+			}
+		}
+		if baseURL == "" {
+			baseURL = "https://chatjimmy.ai"
+		}
+		return NewChatJimmyClient(baseURL, model, maxTokens)
+	}
+
+	spec := LookupProvider(provider)
+	if spec == nil {
+		return nil
+	}
+	apiKey := entry.APIKey
+	if apiKey == "" {
+		apiKey = getConfigValue(cfg, spec.APIKeyConfigKey)
+	}
+	if apiKey == "" && !spec.Local {
+		return nil
+	}
+	baseURL := resolveBaseURL(spec, cfg)
+	return NewOpenAICompatibleClient(spec.DisplayName, baseURL, apiKey, spec.AuthStyle, model, maxTokens)
+}
+
+// BestEnhanceClient returns the best available client for soul enhancement:
+// first enabled model from cfg.Models (by priority), or ChatJimmy as fallback.
+func BestEnhanceClient(cfg *types.AutomatonConfig) Client {
+	// Sort models by priority (lower = first)
+	models := make([]types.LLMModelEntry, len(cfg.Models))
+	copy(models, cfg.Models)
+	sort.Slice(models, func(i, j int) bool { return models[i].Priority < models[j].Priority })
+
+	for i := range models {
+		client := NewClientForModelEntry(cfg, &models[i])
+		if client != nil {
+			return client
+		}
+	}
+	// Fallback: ChatJimmy (no auth, always available when no better model in list)
+	return NewClientForModelEntry(cfg, &types.LLMModelEntry{
+		Provider: "chatjimmy",
+		ModelID:  DefaultModelForProvider("chatjimmy"),
+		Enabled:  true,
+	})
 }
 
 // resolveProviderFromKeys returns provider key from config keys (backward compat).

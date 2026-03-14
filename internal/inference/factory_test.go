@@ -150,3 +150,48 @@ func TestLookupProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestBestEnhanceClient_EmptyModelsUsesChatJimmy(t *testing.T) {
+	cfg := &types.AutomatonConfig{MaxTokensPerTurn: 4096}
+	c := BestEnhanceClient(cfg)
+	if c == nil {
+		t.Fatal("BestEnhanceClient returned nil")
+	}
+	if _, ok := c.(*ChatJimmyClient); !ok {
+		t.Errorf("expected ChatJimmyClient when Models empty, got %T", c)
+	}
+}
+
+func TestBestEnhanceClient_PrefersModelList(t *testing.T) {
+	cfg := &types.AutomatonConfig{
+		MaxTokensPerTurn: 4096,
+		Models: []types.LLMModelEntry{
+			{Provider: "openai", ModelID: "gpt-4o-mini", APIKey: "sk-test", Enabled: true, Priority: 0},
+		},
+	}
+	c := BestEnhanceClient(cfg)
+	if c == nil {
+		t.Fatal("BestEnhanceClient returned nil")
+	}
+	if _, ok := c.(*OpenAICompatibleClient); !ok {
+		t.Errorf("expected OpenAICompatibleClient from Models list, got %T", c)
+	}
+}
+
+func TestBestEnhanceClient_SkipsDisabledAndMissingKey(t *testing.T) {
+	cfg := &types.AutomatonConfig{
+		MaxTokensPerTurn: 4096,
+		Models: []types.LLMModelEntry{
+			{Provider: "openai", ModelID: "gpt-4o", Enabled: false, Priority: 0},
+			{Provider: "groq", ModelID: "llama", Enabled: true, Priority: 1}, // no API key
+		},
+	}
+	c := BestEnhanceClient(cfg)
+	if c == nil {
+		t.Fatal("BestEnhanceClient returned nil")
+	}
+	// Should fall back to ChatJimmy when no model in list has credentials
+	if _, ok := c.(*ChatJimmyClient); !ok {
+		t.Errorf("expected ChatJimmyClient fallback when list has no working models, got %T", c)
+	}
+}

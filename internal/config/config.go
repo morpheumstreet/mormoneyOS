@@ -370,6 +370,9 @@ func mergeSoulConfig(base *types.SoulConfig, over map[string]any) *types.SoulCon
 		if len(base.BehavioralConstraints) > 0 {
 			out.BehavioralConstraints = append([]string{}, base.BehavioralConstraints...)
 		}
+		if len(base.SystemPromptVersions) > 0 {
+			out.SystemPromptVersions = append([]string{}, base.SystemPromptVersions...)
+		}
 	}
 	if v, ok := over["systemPrompt"].(string); ok {
 		out.SystemPrompt = v
@@ -385,6 +388,14 @@ func mergeSoulConfig(base *types.SoulConfig, over map[string]any) *types.SoulCon
 		for _, a := range arr {
 			if s, ok := a.(string); ok && s != "" {
 				out.BehavioralConstraints = append(out.BehavioralConstraints, s)
+			}
+		}
+	}
+	if arr, ok := over["systemPromptVersions"].([]any); ok {
+		out.SystemPromptVersions = make([]string, 0, len(arr))
+		for _, a := range arr {
+			if s, ok := a.(string); ok && s != "" {
+				out.SystemPromptVersions = append(out.SystemPromptVersions, s)
 			}
 		}
 	}

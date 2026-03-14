@@ -344,6 +344,7 @@ export interface SoulConfig {
   personality?: string;
   tone?: string;
   behavioralConstraints?: string[];
+  systemPromptVersions?: string[];
 }
 
 export function getSoulConfig(): Promise<SoulConfig> {
@@ -357,6 +358,26 @@ export function putSoulConfig(config: Partial<SoulConfig>): Promise<void> {
   return apiFetch<void>("/soul/config", {
     method: "PUT",
     body: JSON.stringify(config),
+  });
+}
+
+/** Soul enhance: turn casual words into a full system prompt via LLM. Requires auth. */
+export interface SoulEnhanceRequest {
+  words: string;
+  apply?: boolean;
+}
+
+export interface SoulEnhanceResponse {
+  systemPrompt: string;
+}
+
+export function postSoulEnhance(
+  words: string,
+  apply = false
+): Promise<SoulEnhanceResponse> {
+  return apiFetch<SoulEnhanceResponse>("/soul/enhance", {
+    method: "POST",
+    body: JSON.stringify({ words, apply }),
   });
 }
 

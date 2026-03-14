@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
@@ -154,6 +155,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/social/{name}/config", s.handleAPISocialConfigPut)
 	s.mux.HandleFunc("GET /api/soul/config", s.handleAPISoulConfigGet)
 	s.mux.HandleFunc("PUT /api/soul/config", s.handleAPISoulConfigPut)
+	s.mux.HandleFunc("POST /api/soul/enhance", s.handleAPISoulEnhance)
 	s.mux.HandleFunc("GET /api/models", s.handleAPIModelsList)
 	s.mux.HandleFunc("POST /api/models", s.handleAPIModelsPost)
 	s.mux.HandleFunc("PUT /api/models/order", s.handleAPIModelsOrder)
@@ -1166,6 +1168,9 @@ func (s *Server) handleAPISoulConfigGet(w http.ResponseWriter, r *http.Request) 
 		if len(cfg.Soul.BehavioralConstraints) > 0 {
 			out["behavioralConstraints"] = cfg.Soul.BehavioralConstraints
 		}
+		if len(cfg.Soul.SystemPromptVersions) > 0 {
+			out["systemPromptVersions"] = cfg.Soul.SystemPromptVersions
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
@@ -1189,21 +1194,24 @@ func (s *Server) handleAPISoulConfigPut(w http.ResponseWriter, r *http.Request) 
 	if cfg.Soul == nil {
 		cfg.Soul = &types.SoulConfig{}
 	}
-	// Merge only fields present in request body (partial PUT)
+	// Merge only fields present in request body (partial PUT); sanitize to prevent injection
 	if v, ok := raw["systemPrompt"].(string); ok {
-		cfg.Soul.SystemPrompt = v
+		cfg.Soul.SystemPrompt = sanitizeForStorage(v, maxStoredContentLen)
 	}
 	if v, ok := raw["personality"].(string); ok {
-		cfg.Soul.Personality = v
+		cfg.Soul.Personality = sanitizeForStorage(v, 2048)
 	}
 	if v, ok := raw["tone"].(string); ok {
-		cfg.Soul.Tone = v
+		cfg.Soul.Tone = sanitizeForStorage(v, 2048)
 	}
 	if arr, ok := raw["behavioralConstraints"].([]any); ok {
 		cfg.Soul.BehavioralConstraints = make([]string, 0, len(arr))
 		for _, a := range arr {
 			if str, ok := a.(string); ok {
-				cfg.Soul.BehavioralConstraints = append(cfg.Soul.BehavioralConstraints, str)
+				s := sanitizeForStorage(str, 1024)
+				if s != "" {
+					cfg.Soul.BehavioralConstraints = append(cfg.Soul.BehavioralConstraints, s)
+				}
 			}
 		}
 	}
@@ -1213,6 +1221,157 @@ func (s *Server) handleAPISoulConfigPut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+const maxSystemPromptVersions = 30
+const maxStoredContentLen = 32768 // 32KB max for system prompt / versions
+
+// sanitizeForStorage removes control chars, null bytes, and limits length to prevent
+// injection exploits and unsafe content in automaton.json.
+func sanitizeForStorage(s string, maxLen int) string {
+	if maxLen <= 0 {
+		maxLen = maxStoredContentLen
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == 0 {
+			continue
+		}
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			continue
+		}
+		if r == unicode.ReplacementChar {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	out := strings.TrimSpace(b.String())
+	if len(out) > maxLen {
+		out = out[:maxLen]
+	}
+	return out
+}
+
+const soulEnhancerPrompt = `You are a soul enhancer.
+User gives you just a few casual words.
+Turn those words into one complete, ready-to-use system prompt.
+
+Make it natural, alive, and powerful — add clear rules, personality, and helpful details so the AI feels real and works great.
+Keep the language simple and warm, never fancy or long-winded.
+Output ONLY the final system prompt, nothing else.`
+
+func (s *Server) handleAPISoulEnhance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, ok := s.validateJWT(r); !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Words string `json:"words"`
+		Apply bool   `json:"apply"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	words := sanitizeForStorage(req.Words, 512)
+	if words == "" {
+		http.Error(w, "words is required", http.StatusBadRequest)
+		return
+	}
+	if len(strings.Fields(words)) < 5 {
+		http.Error(w, "words must be at least 5 words", http.StatusBadRequest)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("soul enhance: load config failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		http.Error(w, "Config not available", http.StatusServiceUnavailable)
+		return
+	}
+	enhanceClient := inference.BestEnhanceClient(cfg)
+	if enhanceClient == nil {
+		http.Error(w, "No inference client available for enhancement", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	messages := []inference.ChatMessage{
+		{Role: "system", Content: soulEnhancerPrompt},
+		{Role: "user", Content: words},
+	}
+	resp, err := enhanceClient.Chat(ctx, messages, &inference.InferenceOptions{MaxTokens: 2048})
+	if err != nil {
+		s.Log.Warn("soul enhance inference failed", "err", err)
+		http.Error(w, "Enhancement failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	enhanced := sanitizeForStorage(resp.Content, maxStoredContentLen)
+	if enhanced == "" {
+		http.Error(w, "Empty response from inference", http.StatusInternalServerError)
+		return
+	}
+	if req.Apply {
+		if cfg == nil {
+			cfg = &types.AutomatonConfig{}
+		}
+		if cfg.Soul == nil {
+			cfg.Soul = &types.SoulConfig{}
+		}
+		cfg.Soul.SystemPrompt = enhanced
+		versions := append([]string{enhanced}, cfg.Soul.SystemPromptVersions...)
+		if len(versions) > maxSystemPromptVersions {
+			versions = versions[:maxSystemPromptVersions]
+		}
+		cfg.Soul.SystemPromptVersions = versions
+		if err := config.Save(cfg); err != nil {
+			s.Log.Error("soul enhance: save failed", "err", err)
+			http.Error(w, "Failed to save config", http.StatusInternalServerError)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"systemPrompt": enhanced,
+	})
+}
+
+func (s *Server) validateJWT(r *http.Request) (string, bool) {
+	secret := ""
+	if s.Cfg != nil && s.Cfg.JWTSecret != "" {
+		secret = s.Cfg.JWTSecret
+	}
+	if secret == "" {
+		return "", false
+	}
+	auth := r.Header.Get("Authorization")
+	if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+		return "", false
+	}
+	tokenStr := strings.TrimPrefix(auth, "Bearer ")
+	token, err := jwt.ParseWithClaims(tokenStr, jwt.MapClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !token.Valid {
+		return "", false
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", false
+	}
+	addr, _ := claims["address"].(string)
+	return addr, addr != ""
 }
 
 // maskAPIKey returns a masked version of an API key for API responses.

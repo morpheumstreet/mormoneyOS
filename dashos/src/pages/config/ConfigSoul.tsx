@@ -7,11 +7,13 @@ import {
   Plus,
   Trash2,
   CheckCircle,
+  Wand2,
 } from "lucide-react";
 import { useWalletAuth } from "@/contexts/WalletAuthContext";
 import {
   getSoulConfig,
   putSoulConfig,
+  postSoulEnhance,
   type SoulConfig,
 } from "@/lib/api";
 
@@ -22,6 +24,8 @@ export default function ConfigSoul() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [enhanceWords, setEnhanceWords] = useState("");
+  const [enhancing, setEnhancing] = useState(false);
 
   useEffect(() => {
     getSoulConfig()
@@ -65,6 +69,39 @@ export default function ConfigSoul() {
     const arr = [...(config.behavioralConstraints || [])];
     arr.splice(idx, 1);
     setConfig((c) => ({ ...c, behavioralConstraints: arr }));
+  };
+
+  const handleEnhance = async (apply: boolean) => {
+    const words = enhanceWords.trim();
+    if (!words) {
+      setError("Enter a few words to enhance.");
+      return;
+    }
+    if (words.split(/\s+/).filter(Boolean).length < 5) {
+      setError("Enter at least 5 words to enhance.");
+      return;
+    }
+    if (!hasWriteAccess && apply) {
+      setError("Write access required to apply. Connect wallet and sign.");
+      return;
+    }
+    setEnhancing(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await postSoulEnhance(words, apply);
+      setConfig((c) => ({ ...c, systemPrompt: res.systemPrompt }));
+      if (apply) {
+        setSuccess("System prompt enhanced and saved.");
+        setEnhanceWords("");
+      } else {
+        setSuccess("Preview ready. Click 'Enhance & Apply' to save.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Enhance failed");
+    } finally {
+      setEnhancing(false);
+    }
   };
 
   if (loading) {
@@ -130,6 +167,52 @@ export default function ConfigSoul() {
       )}
 
       <div className="electric-card p-6 space-y-6">
+        <div className="rounded-lg border border-[#29509c] bg-[#071228]/50 p-4 space-y-3">
+          <label className="block text-sm font-medium text-[#8aa8df]">
+            Soul enhancer
+          </label>
+          <p className="text-xs text-[#6b8fcc]">
+            Enter at least 5 casual words. The AI will turn them into a complete,
+            ready-to-use system prompt.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={enhanceWords}
+              onChange={(e) => setEnhanceWords(e.target.value)}
+              disabled={!hasWriteAccess}
+              placeholder="e.g. helpful financial assistant with warm tone and analytical style"
+              className="flex-1 rounded-lg border border-[#29509c] bg-[#071228]/90 px-3 py-2 text-sm text-white placeholder:text-[#6b8fcc] focus:border-[#4f83ff] focus:outline-none disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => handleEnhance(false)}
+              disabled={enhancing || !hasWriteAccess}
+              className="electric-button flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              {enhancing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              Preview
+            </button>
+            <button
+              type="button"
+              onClick={() => handleEnhance(true)}
+              disabled={enhancing || !hasWriteAccess}
+              className="electric-button flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              {enhancing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              Enhance & Apply
+            </button>
+          </div>
+        </div>
+
         <div>
           <label className="mb-2 block text-sm font-medium text-[#8aa8df]">
             System prompt

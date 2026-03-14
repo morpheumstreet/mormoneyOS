@@ -104,9 +104,12 @@ Returns soul configuration: personality, system prompt, tone, and behavioral con
   "systemPrompt": "string",
   "personality": "string",
   "tone": "string",
-  "behavioralConstraints": ["string", "..."]
+  "behavioralConstraints": ["string", "..."],
+  "systemPromptVersions": ["string", "..."]
 }
 ```
+
+`systemPromptVersions` — Last 30 system prompts (newest first), for history/rollback.
 
 ### 2.7 PUT /api/soul/config
 
@@ -124,7 +127,30 @@ Updates soul configuration. Accepts partial JSON; only provided fields are updat
 ```
 - **Response:** `204 No Content`
 
-### 2.8 POST /api/auth/verify Request
+### 2.8 POST /api/soul/enhance (authorized)
+
+Turns casual words into a complete system prompt via LLM (soul enhancer). Requires `Authorization: Bearer <token>`.
+
+- **Content-Type:** `application/json`
+- **Body:**
+```json
+{
+  "words": "helpful financial assistant, warm tone",
+  "apply": false
+}
+```
+
+- `words` — A few casual words describing the desired agent.
+- `apply` — If `true`, saves the enhanced prompt to `automaton.json` and adds to version history (max 30). If `false`, returns preview only.
+
+**Response:**
+```json
+{
+  "systemPrompt": "You are a helpful financial assistant..."
+}
+```
+
+### 2.9 POST /api/auth/verify Request
 
 Verifies a signed message across multiple chains using `github.com/morpheum-labs/standards` components.
 
@@ -150,7 +176,7 @@ Verifies a signed message across multiple chains using `github.com/morpheum-labs
 
 **Response:** On success: `{ "valid": true, "address": "0x...", "token": "<JWT>" }` — the JWT is issued for user operations (pause, resume, chat, config) and should be sent as `Authorization: Bearer <token>` on write endpoints. On failure: `{ "valid": false, "error": "..." }`. JWT secret: `MONEYCLAW_JWT_SECRET` env var, or auto-generated at startup (tokens invalid on restart).
 
-### 2.9 POST /api/auth/dev-bypass (dev only)
+### 2.10 POST /api/auth/dev-bypass (dev only)
 
 When `MONEYCLAW_DEV_BYPASS=1`, returns a JWT for address `0xdev` without wallet signing. For agent browser / automated testing.
 
@@ -160,7 +186,7 @@ When `MONEYCLAW_DEV_BYPASS=1`, returns a JWT for address `0xdev` without wallet 
 
 To trigger from agent browser: `fetch("/api/auth/dev-bypass", { method: "POST" })` then store `response.token` in `localStorage.setItem("dashos:bearer", token)` and reload.
 
-### 2.10 GET /api/reports
+### 2.11 GET /api/reports
 
 Returns metric reports from the `report_metrics` heartbeat task:
 
@@ -169,7 +195,7 @@ Returns metric reports from the `report_metrics` heartbeat task:
 
 Metrics include `balance_cents`, `survival_tier`. Alerts indicate critical conditions (e.g. survival tier dead/critical).
 
-### 2.11 Model List API
+### 2.12 Model List API
 
 Model list configuration: add, remove, prioritize LLM providers; set API keys, model IDs, context limits, and cost caps.
 
@@ -211,13 +237,13 @@ Model list configuration: add, remove, prioritize LLM providers; set API keys, m
 - **Body:** `{ "ids": ["id1", "id2", "id3"] }` — order defines priority (first = highest)
 - **Response:** `204 No Content`
 
-### 2.12 Tools API
+### 2.13 Tools API
 
 **GET /api/tools** — List registered tools. Requires `ToolsLister` in ServerConfig. Returns `{ tools: [{ name, description, enabled }] }`. Enabled state stored in KV `disabled_tools`.
 
 **PATCH /api/tools/{name}** — Toggle tool enabled. Body: `{ "enabled": true|false }`. Response: `{ name, enabled }`.
 
-### 2.13 Social Channels API
+### 2.14 Social Channels API
 
 **GET /api/social** — List channels (Conway, Telegram, Discord, etc.) with status, config schema, and current values. Returns `{ channels: [{ name, displayName, enabled, ready, configFields, config }] }`.
 
@@ -225,7 +251,7 @@ Model list configuration: add, remove, prioritize LLM providers; set API keys, m
 
 **PUT /api/social/{name}/config** — Update channel config. Body: partial config object. Validates via `HealthCheck` before save; auto-enables on success. Response: `{ ok, validated?, enabled?, error? }`.
 
-### 2.14 Tunnel API
+### 2.15 Tunnel API
 
 Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expose local ports to the internet. Providers that require API keys: cloudflare (token), ngrok (authToken), tailscale (authKey).
 
@@ -256,7 +282,7 @@ Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expos
 - **Response:** `{ "ok": true, "provider": "cloudflare", "restarted": true }`
 - **Errors:** `400` if provider requires API key but it is missing; `404` if TunnelReloader not configured.
 
-### 2.15 Skills API
+### 2.16 Skills API
 
 Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the ClawHub registry. The API supports list, CRUD, discovery, recommended skills, and activate/deactivate.
 
