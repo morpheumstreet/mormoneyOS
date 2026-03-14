@@ -176,7 +176,24 @@ func NewChannelsFromConfig(cfg *types.AutomatonConfig) map[string]SocialChannel
 
 **Logic:** For each channel key in `cfg.SocialChannels` (e.g. `["conway", "telegram"]`), lookup spec, resolve config (token or URL + wallet per channel), call constructor. Skip channels with missing config.
 
-### 3.5 Config Shape
+### 3.5 Channel Lifecycle
+
+Channels have their own listening mechanics. `check_social_inbox` consumes messages they have collected; it does not drive polling.
+
+| Interface | Role |
+|-----------|------|
+| **SocialChannel** | Send, Poll, HealthCheck. All channels implement this. |
+| **LifecycleChannel** | Optional. Start(ctx), Stop(). For channels that run goroutines (e.g. go-telegram/bot). |
+
+**ChannelManager** (`internal/social/lifecycle.go`) coordinates lifecycle:
+
+- `Start(ctx)` — starts all LifecycleChannel implementations with process ctx
+- `Close()` — stops them and waits for exit (call before process exit to avoid stuck goroutines)
+- `Channels()` — returns the map for heartbeat/agent use
+
+Channels that do not implement LifecycleChannel (e.g. Conway relay) are stateless; Poll fetches on demand.
+
+### 3.6 Config Shape
 
 ```yaml
 # automaton.json
@@ -262,20 +279,23 @@ Additional patterns: `!cmd <subcommand>` (e.g. `!cmd balance`), `@bot status` (s
 
 ### 4.4 check_social_inbox Heartbeat Task
 
-**Scope:** Social channel responsiveness is in scope. The agent should poll frequently enough to respond to messages within ~10 seconds under normal conditions.
+**Scope:** Consumes messages from social channels and sorts them for the LLM. Channels have their own listening; this task processes whatever they have collected.
 
-Poll all enabled channels uniformly. Default schedule: **every 10 seconds** (`*/10 * * * * *` cron with seconds). Requires `--tick-interval=10s` (default) so the heartbeat evaluates tasks every 10s.
+Default schedule: **every 10 seconds** (`*/10 * * * * *` cron). Requires `--tick-interval=10s` so the heartbeat evaluates tasks every 10s.
 
 ```go
-func runCheckSocialInbox(tc *TickContext) {
+func runCheckSocialInbox(ctx context.Context, tc *TaskContext) {
 	for _, ch := range tc.Channels {
 		msgs, next, _ := ch.Poll(ctx, cursor, limit)
-		// Merge, dedupe, insert wake_events for new messages
+		for _, m := range msgs {
+			res := ProcessInboxMessage(ctx, tc, m, ch, agentSleeping)
+			// Type 2: command reply sent; Type 1: queue + wake
+		}
 	}
 }
 ```
 
-**Instruction:** Configure `check_social_inbox` schedule via the heartbeat API or `heartbeat_schedule` DB. For sub-minute response, use 6-field cron (e.g. `*/10 * * * * *` = every 10 seconds). The tick interval must be ≤ schedule interval for effective polling.
+**Message processing** (`internal/heartbeat/social_inbox.go`): `ProcessInboxMessage` handles one message — Type 2 (programmatic) or Type 1 (LLM). DRY, single place for reply logic.
 
 ---
 
@@ -283,7 +303,8 @@ func runCheckSocialInbox(tc *TickContext) {
 
 ```
 internal/social/
-  channel.go      # SocialChannel interface, OutboundMessage, InboxMessage
+  channel.go      # SocialChannel, LifecycleChannel, OutboundMessage, InboxMessage
+  lifecycle.go    # ChannelManager (Start, Close, Channels)
   commands.go     # IsCommand, ParseCommand (slash command detection)
   fast_reply.go   # ClassifyFastReply (rule-based, no LLM)
   types.go        # Validation, constants
@@ -293,6 +314,10 @@ internal/social/
   telegram.go     # TelegramChannel
   discord.go      # DiscordChannel
   stub.go         # StubChannel for tests / no config
+
+internal/heartbeat/
+  social_inbox.go # ProcessInboxMessage (DRY message handling)
+  social_commands.go # HandleSocialCommand (Type 2 replies)
 ```
 
 **TS alignment:** Refactor `src/social/client.ts` into `ConwayChannel` implementing a shared `SocialChannel` interface; add `TelegramChannel`, `DiscordChannel` when porting.

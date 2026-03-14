@@ -28,6 +28,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.6 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/go-telegram/bot v1.19.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect

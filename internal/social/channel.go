@@ -2,12 +2,25 @@ package social
 
 import "context"
 
+// LifecycleChannel is implemented by channels that run their own listening loop.
+// Channels that do not implement this are stateless (e.g. Conway relay).
+type LifecycleChannel interface {
+	SocialChannel
+	// Start begins the channel's listening loop in a goroutine. Call with process ctx
+	// so shutdown propagates. Returns immediately.
+	Start(ctx context.Context)
+	// Stop signals shutdown and waits for the loop to exit. Idempotent. Call before process exit.
+	Stop()
+}
+
 // OutboundMessage is the normalized outbound payload.
 type OutboundMessage struct {
 	Content   string
 	Recipient string // Conway: 0x... wallet; Telegram: chat_id; Discord: channel_id
 	ThreadID  string // Optional; for threaded replies (Slack thread_ts, Discord thread)
 	ReplyTo   string // Optional message ID to reply to
+	// ParseMode: "Markdown", "MarkdownV2", or "HTML" for Telegram; empty = plain text. Discord ignores.
+	ParseMode string
 }
 
 // InboxMessage is a normalized inbound message.

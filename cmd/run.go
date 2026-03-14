@@ -93,6 +93,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// 5c. Social channels (Conway, Telegram, Discord)
 	channels := social.NewChannelsFromConfig(cfg)
+	channelMgr := social.NewChannelManager(channels)
 	// Run HealthCheck on each channel at startup (registers Telegram commands, validates tokens)
 	func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -260,6 +261,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 		slog.Info("shutdown signal received")
 		cancel()
 	}()
+
+	channelMgr.Start(ctx)
+	defer channelMgr.Close()
 
 	daemon.Start(ctx)
 	defer daemon.Stop()

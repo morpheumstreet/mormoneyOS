@@ -12,20 +12,20 @@ import (
 )
 
 // HandleSocialCommand processes slash commands (Type 2 / programmatic replies).
-// Returns response text for immediate send via ch.Send in check_social_inbox.
+// Returns response text, parse mode ("Markdown" or ""), and whether handled.
 // No LLM, no agent wake — always on time. Must NOT be saved to inbox_messages.
 // OpenClaw-aligned: /status, /help, /pause, /resume, /reset.
-func HandleSocialCommand(ctx context.Context, tc *TaskContext, m social.InboxMessage) (response string, handled bool) {
+func HandleSocialCommand(ctx context.Context, tc *TaskContext, m social.InboxMessage) (response string, parseMode string, handled bool) {
 	cmd, args := social.ParseCommand(m.Content)
 	if cmd == "" {
-		return "", false
+		return "", "", false
 	}
 
 	db, _ := tc.DB.(*state.Database)
 
 	switch cmd {
 	case "ping":
-		return "pong", true
+		return "pong", "", true
 
 	case "status":
 		agentState := "unknown"
@@ -47,7 +47,7 @@ func HandleSocialCommand(ctx context.Context, tc *TaskContext, m social.InboxMes
 			tier = string(tc.Tick.SurvivalTier)
 		}
 		return fmt.Sprintf("Status: %s | Turns: %d | Credits: %d¢ | Tier: %s",
-			strings.ToUpper(agentState), turnCount, credits, tier), true
+			strings.ToUpper(agentState), turnCount, credits, tier), "", true
 
 	case "help":
 		return `Commands (also: ping, status, credits?, !cmd <x>):
@@ -57,20 +57,18 @@ func HandleSocialCommand(ctx context.Context, tc *TaskContext, m social.InboxMes
 /help — this message
 /pause — pause agent (dashboard-style)
 /resume — resume agent
-/reset — request context reset (wake agent)`, true
+/reset — request context reset (wake agent)`, "", true
 
 	case "skill", "skills":
 		if db == nil {
-			return "Skills not available.", true
+			return "Skills not available.", "", true
 		}
 		skills, err := db.GetAllSkills()
 		if err != nil || len(skills) == 0 {
-			return "No skills installed.", true
+			return "No skills installed.", "", true
 		}
 		var sb strings.Builder
-		sb.WriteString("## Skills\n\n")
-		sb.WriteString("| Name | Description | Status |\n")
-		sb.WriteString("|------|-------------|--------|\n")
+		sb.WriteString("*Skills*\n\n")
 		for _, s := range skills {
 			status := "disabled"
 			if s.Enabled {
@@ -80,70 +78,67 @@ func HandleSocialCommand(ctx context.Context, tc *TaskContext, m social.InboxMes
 			if len(desc) > 60 {
 				desc = desc[:57] + "..."
 			}
-			// Escape pipe in markdown table
-			name := strings.ReplaceAll(s.Name, "|", "\\|")
-			desc = strings.ReplaceAll(desc, "|", "\\|")
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", name, desc, status))
+			sb.WriteString("• *" + social.EscapeMarkdownV2(s.Name) + "*: " + social.EscapeMarkdownV2(desc) + " \\(" + social.EscapeMarkdownV2(status) + "\\)\n")
 		}
-		return sb.String(), true
+		return sb.String(), "MarkdownV2", true
 
 	case "balance", "balances":
-		return formatBalanceCommand(ctx, tc, db), true
+		return formatBalanceCommand(ctx, tc, db), "MarkdownV2", true
 
 	case "pause":
 		if tc.DB == nil {
-			return "Pause not available.", true
+			return "Pause not available.", "", true
 		}
 		_ = tc.DB.SetAgentState("sleeping")
 		_ = tc.DB.SetKV("sleep_until", "2099-12-31T23:59:59.000Z")
-		return "Agent paused.", true
+		return "Agent paused.", "", true
 
 	case "resume":
 		if tc.DB == nil {
-			return "Resume not available.", true
+			return "Resume not available.", "", true
 		}
 		_ = tc.DB.DeleteKV("sleep_until")
 		_ = tc.DB.InsertWakeEvent("social", "resume from "+m.Channel)
-		return "Agent resumed.", true
+		return "Agent resumed.", "", true
 
 	case "reset":
 		if tc.DB == nil {
-			return "Reset not available.", true
+			return "Reset not available.", "", true
 		}
 		_ = tc.DB.InsertWakeEvent("social", "reset requested from "+m.Channel)
-		return "Reset requested. Agent will clear context on next turn.", true
+		return "Reset requested. Agent will clear context on next turn.", "", true
 
 	case "compact":
-		return "Compact is a dashboard feature. Use the web UI.", true
+		return "Compact is a dashboard feature. Use the web UI.", "", true
 
 	case "think":
 		if args != "" {
-			return fmt.Sprintf("Think level '%s' — set via dashboard or config.", args), true
+			return fmt.Sprintf("Think level '%s' — set via dashboard or config.", args), "", true
 		}
-		return "Usage: /think off|minimal|low|medium|high", true
+		return "Usage: /think off|minimal|low|medium|high", "", true
 
 	case "verbose":
-		return "Verbose — set via dashboard.", true
+		return "Verbose — set via dashboard.", "", true
 
 	case "usage":
-		return "Usage — set via dashboard.", true
+		return "Usage — set via dashboard.", "", true
 
 	case "activation":
 		if args != "" {
-			return fmt.Sprintf("Activation '%s' — group-only; set via config.", args), true
+			return fmt.Sprintf("Activation '%s' — group-only; set via config.", args), "", true
 		}
-		return "Usage: /activation mention|always (groups only)", true
+		return "Usage: /activation mention|always (groups only)", "", true
 
 	case "restart":
-		return "Restart requires dashboard or process restart.", true
+		return "Restart requires dashboard or process restart.", "", true
 
 	default:
 		// Unknown command — don't claim as handled so it goes to inbox
-		return "", false
+		return "", "", false
 	}
 }
 
-// formatBalanceCommand builds markdown for /balance: credits, USDC by wallet.
+// formatBalanceCommand builds MarkdownV2 for /balance: credits, USDC by wallet.
 func formatBalanceCommand(ctx context.Context, tc *TaskContext, db *state.Database) string {
 	var sb strings.Builder
 
@@ -156,9 +151,9 @@ func formatBalanceCommand(ctx context.Context, tc *TaskContext, db *state.Databa
 	if tc.Tick != nil {
 		tier = string(tc.Tick.SurvivalTier)
 	}
-	sb.WriteString("## Economic Status\n\n")
-	sb.WriteString(fmt.Sprintf("- **Credits:** $%.2f (%d¢)\n", float64(credits)/100, credits))
-	sb.WriteString(fmt.Sprintf("- **Tier:** %s\n\n", tier))
+	sb.WriteString("*Economic Status*\n\n")
+	sb.WriteString("• *Credits:* $" + social.EscapeMarkdownV2(fmt.Sprintf("%.2f (%d¢)", float64(credits)/100, credits)) + "\n")
+	sb.WriteString("• *Tier:* " + social.EscapeMarkdownV2(tier) + "\n\n")
 
 	// Collect addresses: config, identity, children
 	type addrEntry struct {
@@ -230,13 +225,11 @@ func formatBalanceCommand(ctx context.Context, tc *TaskContext, db *state.Databa
 	}
 
 	if len(entries) == 0 {
-		sb.WriteString("No wallets configured.")
+		sb.WriteString(social.EscapeMarkdownV2("No wallets configured."))
 		return sb.String()
 	}
 
-	sb.WriteString("## Wallets (USDC)\n\n")
-	sb.WriteString("| Address | Chain | Source | USDC |\n")
-	sb.WriteString("|---------|-------|--------|------|\n")
+	sb.WriteString("*Wallets \\(USDC\\)*\n\n")
 
 	totalUSDC := 0.0
 	for _, e := range entries {
@@ -257,12 +250,15 @@ func formatBalanceCommand(ctx context.Context, tc *TaskContext, db *state.Databa
 			shortAddr = shortAddr[:6] + "…" + shortAddr[len(shortAddr)-4:]
 		}
 		chainShort := strings.TrimPrefix(e.Chain, "eip155:")
+		addrEsc := social.EscapeMarkdownV2(shortAddr)
+		chainEsc := social.EscapeMarkdownV2(chainShort)
+		srcEsc := social.EscapeMarkdownV2(e.Source)
 		if errStr != "" {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | error |\n", shortAddr, chainShort, e.Source))
+			sb.WriteString("• " + addrEsc + " \\( " + chainEsc + " \\) " + srcEsc + ": " + social.EscapeMarkdownV2("error") + "\n")
 		} else {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | $%.2f |\n", shortAddr, chainShort, e.Source, bal))
+			sb.WriteString("• " + addrEsc + " \\( " + chainEsc + " \\) " + srcEsc + ": $" + social.EscapeMarkdownV2(fmt.Sprintf("%.2f", bal)) + "\n")
 		}
 	}
-	sb.WriteString(fmt.Sprintf("\n**Total USDC:** $%.2f", totalUSDC))
+	sb.WriteString("\n*Total USDC:* $" + social.EscapeMarkdownV2(fmt.Sprintf("%.2f", totalUSDC)))
 	return sb.String()
 }

@@ -12,12 +12,23 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
 const telegramAPIBase = "https://api.telegram.org/bot"
+
+// TooManyRequestsError is returned when Telegram API returns 429 (flood control).
+// RetryAfter is the seconds to wait before retrying.
+type TooManyRequestsError struct {
+	RetryAfter int
+}
+
+func (e *TooManyRequestsError) Error() string {
+	return fmt.Sprintf("telegram: too many requests, retry after %d seconds", e.RetryAfter)
+}
 
 // TelegramChannel implements SocialChannel for Telegram Bot API.
 // OpenClaw-style: allowFrom (empty=deny, ["*"]=allow), groups allowlist, requireMention in groups.
@@ -137,6 +148,21 @@ func (c *TelegramChannel) doRequest(ctx context.Context, method, url string, bod
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		c.tokenMgr.Invalidate()
 	}
+	if resp.StatusCode == 429 {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var errResp struct {
+			Parameters struct {
+				RetryAfter int `json:"retry_after"`
+			} `json:"parameters"`
+		}
+		_ = json.Unmarshal(respBody, &errResp)
+		retrySec := errResp.Parameters.RetryAfter
+		if retrySec <= 0 {
+			retrySec = 60
+		}
+		return nil, &TooManyRequestsError{RetryAfter: retrySec}
+	}
 	return resp, nil
 }
 
@@ -182,6 +208,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg *OutboundMessage) (strin
 	payload := map[string]any{
 		"chat_id": chatID,
 		"text":    msg.Content,
+	}
+	if msg.ParseMode != "" {
+		payload["parse_mode"] = msg.ParseMode
 	}
 	if msg.ReplyTo != "" {
 		if mid, err := strconv.ParseInt(msg.ReplyTo, 10, 64); err == nil {
@@ -247,7 +276,23 @@ type telegramEntity struct {
 	} `json:"user"`
 }
 
+// entitySlice extracts substring from text using Telegram's UTF-16 offset/length (core.telegram.org/api/entities).
+func entitySlice(text string, offset, length int) string {
+	runes := []rune(text)
+	utf16Units := utf16.Encode(runes)
+	if offset < 0 || length <= 0 || offset >= len(utf16Units) {
+		return ""
+	}
+	end := offset + length
+	if end > len(utf16Units) {
+		end = len(utf16Units)
+	}
+	decoded := utf16.Decode(utf16Units[offset:end])
+	return string(decoded)
+}
+
 // isBotMentioned returns true if the bot is @mentioned in text using entities.
+// Entity offset/length are UTF-16 code units per Telegram API, not bytes.
 func isBotMentioned(text string, entities []telegramEntity, botUsername string) bool {
 	if botUsername == "" {
 		return false
@@ -257,10 +302,10 @@ func isBotMentioned(text string, entities []telegramEntity, botUsername string) 
 		if e.Type != "mention" && e.Type != "text_mention" && e.Type != "bot_command" {
 			continue
 		}
-		if e.Offset >= len(text) || e.Offset+e.Length > len(text) {
+		slice := entitySlice(text, e.Offset, e.Length)
+		if slice == "" {
 			continue
 		}
-		slice := text[e.Offset : e.Offset+e.Length]
 		if strings.EqualFold(slice, botMention) || strings.EqualFold(slice, "/"+botUsername) {
 			return true
 		}
@@ -279,10 +324,10 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 		limit = 100
 	}
 
-	offset := 0
+	var offset int64
 	if cursor != "" {
 		if o, err := strconv.ParseInt(cursor, 10, 64); err == nil {
-			offset = int(o)
+			offset = o
 		}
 	}
 
@@ -315,10 +360,10 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 	botUsername, _ := c.ensureBotUsername(ctx)
 
 	out := make([]InboxMessage, 0, len(result.Result))
-	nextOffset := offset
+	var maxUpdateID int64
 	for _, u := range result.Result {
-		if u.UpdateID >= int64(nextOffset) {
-			nextOffset = int(u.UpdateID) + 1
+		if u.UpdateID > maxUpdateID {
+			maxUpdateID = u.UpdateID
 		}
 		if u.Message == nil {
 			continue
@@ -391,7 +436,14 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 			ThreadID:    "",
 		})
 	}
-	return out, strconv.Itoa(nextOffset), nil
+	// Advance offset past all received updates so Telegram confirms them (avoids stuck/repeated messages)
+	var nextOffset int64
+	if maxUpdateID > 0 {
+		nextOffset = maxUpdateID + 1
+	} else {
+		nextOffset = offset
+	}
+	return out, strconv.FormatInt(nextOffset, 10), nil
 }
 
 func (c *TelegramChannel) HealthCheck(ctx context.Context) error {

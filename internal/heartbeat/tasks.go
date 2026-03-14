@@ -12,7 +12,6 @@ import (
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
-	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/soul"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
@@ -246,15 +245,12 @@ func runHealthCheck(ctx context.Context, tc *TaskContext) (bool, string, error) 
 	return false, "", nil
 }
 
-// runCheckSocialInbox polls all social channels. Two reply types:
+// runCheckSocialInbox consumes messages from all social channels and sorts them for the LLM.
+// Channels have their own listening; this task processes whatever they have collected.
 //
-//  1. Type 2 (programmatic): Slash commands (/status, /help, etc.) — handled immediately in this task,
-//     reply sent via ch.Send. No LLM, no agent wake. Always on time; only delay is polling interval.
-//     Not affected by survival tier or agent sleep (check_social_inbox skips tier filter).
-//
-//  2. Type 1 (LLM): Non-commands — queued to inbox_messages, wake event inserted. Agent processes when
-//     awake and sends LLM reply. When agent is sleeping: message goes to pending; we send a short
-//     acknowledgment so user knows it was received.
+// Two reply types:
+//   - Type 2 (programmatic): Slash commands — handled immediately via ch.Send. No LLM, no wake.
+//   - Type 1 (LLM): Non-commands — queued to inbox_messages, wake event. When sleeping, send ack.
 func runCheckSocialInbox(ctx context.Context, tc *TaskContext) (bool, string, error) {
 	if tc == nil {
 		return false, "", nil
@@ -270,68 +266,40 @@ func runCheckSocialInbox(ctx context.Context, tc *TaskContext) (bool, string, er
 	var all []map[string]any
 	var shouldWake bool
 	var wakeMsg string
+	var lastErr string
+
 	for name, ch := range tc.Channels {
 		cursor, _, _ := tc.DB.GetKV("social_cursor:" + name)
 		msgs, next, err := ch.Poll(ctx, cursor, 20)
 		if err != nil {
-			_ = tc.DB.SetKV("last_social_check", `{"status":"error","channel":"`+name+`","error":"`+err.Error()+`","checkedAt":"`+now+`"}`)
+			lastErr = err.Error()
 			continue
 		}
 		if next != "" {
 			_ = tc.DB.SetKV("social_cursor:"+name, next)
 		}
 		for _, m := range msgs {
-			// Type 2 (programmatic): Fast-reply classification — immediate reply, no agent, no LLM. No inbox, no wake.
-			if fast, norm := social.ClassifyFastReply(m.Content); fast && norm != "" {
-				mNorm := m
-				mNorm.Content = norm
-				resp, handled := HandleSocialCommand(ctx, tc, mNorm)
-				if handled {
-					_ = tc.DB.SetKV("inbox_seen_"+m.ID, "1")
-					outMsg := &social.OutboundMessage{
-						Content:   resp,
-						Recipient: m.ReplyTarget,
-						ReplyTo:   m.ID,
-					}
-					if _, err := ch.Send(ctx, outMsg); err != nil {
-						_ = tc.DB.SetKV("last_social_check", `{"status":"error","channel":"`+name+`","error":"send command reply: `+err.Error()+`","checkedAt":"`+now+`"}`)
-					}
-					all = append(all, map[string]any{
-						"id": m.ID, "from": m.Sender, "content": m.Content, "channel": m.Channel, "command": true,
-					})
-					continue
+			res := ProcessInboxMessage(ctx, tc, m, ch, agentSleeping)
+			all = append(all, res.Record)
+			if res.ShouldWake {
+				shouldWake = true
+				if wakeMsg == "" {
+					wakeMsg = res.WakeMsg
 				}
 			}
-			// Type 1 (LLM): Non-commands — queue for agent, insert wake. When sleeping, send acknowledgment.
-			all = append(all, map[string]any{
-				"id": m.ID, "from": m.Sender, "content": m.Content, "channel": m.Channel,
-			})
-			shouldWake = true
-			if wakeMsg == "" {
-				wakeMsg = fmt.Sprintf("New message from %s on %s", m.Sender, m.Channel)
-			}
-			if db, ok := tc.DB.(*state.Database); ok {
-				seen, _, _ := tc.DB.GetKV("inbox_seen_" + m.ID)
-				if seen == "" {
-					_ = db.InsertInboxMessage(m.ID, m.Sender, m.Content, "")
-					_ = tc.DB.SetKV("inbox_seen_"+m.ID, "1")
-					// When agent sleeping: send acknowledgment so user knows message was received
-					if agentSleeping {
-						ack := &social.OutboundMessage{
-							Content:   "Message received. Agent will respond when it wakes.",
-							Recipient: m.ReplyTarget,
-							ReplyTo:   m.ID,
-						}
-						_, _ = ch.Send(ctx, ack)
-					}
-				}
+			if res.SendErr != nil {
+				lastErr = res.SendErr.Error()
 			}
 		}
 	}
+
 	if shouldWake && tc.DB != nil {
 		_ = tc.DB.InsertWakeEvent("social", wakeMsg)
 	}
 	status := map[string]any{"status": "ok", "count": len(all), "checkedAt": now, "messages": all}
+	if lastErr != "" {
+		status["lastError"] = lastErr
+	}
 	b, _ := json.Marshal(status)
 	_ = tc.DB.SetKV("last_social_check", string(b))
 	return shouldWake, wakeMsg, nil
