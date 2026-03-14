@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/morpheumlabs/mormoneyos-go/internal/config"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
@@ -21,7 +23,7 @@ const (
 
 // DiscordChannel implements SocialChannel for Discord Bot API (REST).
 type DiscordChannel struct {
-	token        string
+	tokenMgr     *TokenManager
 	guildID      string
 	botID        string // For mention_only check
 	allowedUsers map[string]struct{}
@@ -35,7 +37,6 @@ func NewDiscordChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 		return nil, fmt.Errorf("discord: bot token required")
 	}
 	ch := &DiscordChannel{
-		token:        cfg.DiscordBotToken,
 		guildID:      strings.TrimSpace(cfg.DiscordGuildID),
 		allowedUsers: make(map[string]struct{}),
 		mentionOnly:  cfg.DiscordMentionOnly,
@@ -46,6 +47,20 @@ func NewDiscordChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 			ch.allowedUsers[u] = struct{}{}
 		}
 	}
+	ch.tokenMgr = NewTokenManager(
+		func(ctx context.Context) (string, time.Time, error) {
+			// Re-read config so token updates via API apply without restart
+			c, err := config.Load()
+			if err != nil {
+				return "", time.Time{}, err
+			}
+			if c == nil || c.DiscordBotToken == "" {
+				return "", time.Time{}, fmt.Errorf("discord: bot token not in config")
+			}
+			return c.DiscordBotToken, time.Now().Add(365 * 24 * time.Hour), nil
+		},
+		slog.With("channel", "discord"),
+	)
 	// Resolve bot ID for mention_only; ignore error, we'll skip mention check if unknown
 	if id, err := ch.resolveBotID(context.Background()); err == nil {
 		ch.botID = id
@@ -55,6 +70,44 @@ func NewDiscordChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 
 func (c *DiscordChannel) Name() string {
 	return "discord"
+}
+
+// GetAuthToken returns the bot token (refreshed from config if invalidated).
+func (c *DiscordChannel) GetAuthToken(ctx context.Context) (string, error) {
+	return c.tokenMgr.GetAuthToken(ctx)
+}
+
+// Invalidate clears cached token so next GetAuthToken re-reads from config.
+func (c *DiscordChannel) Invalidate() {
+	c.tokenMgr.Invalidate()
+}
+
+// doRequest performs an HTTP request with auth. On 401/403, invalidates token for next call.
+func (c *DiscordChannel) doRequest(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
+	token, err := c.tokenMgr.GetAuthToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req *http.Request
+	if len(body) > 0 {
+		req, err = http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, url, nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bot "+token)
+	client := &http.Client{Timeout: requestTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		c.tokenMgr.Invalidate()
+	}
+	return resp, nil
 }
 
 func (c *DiscordChannel) Send(ctx context.Context, msg *OutboundMessage) (string, error) {
@@ -86,15 +139,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg *OutboundMessage) (string
 
 	body, _ := json.Marshal(payload)
 	url := discordAPIBase + "/channels/" + channelID + "/messages"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bot "+c.token)
-
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return "", fmt.Errorf("discord send: %w", err)
 	}
@@ -234,13 +279,7 @@ func (c *DiscordChannel) Poll(ctx context.Context, cursor string, limit int) ([]
 }
 
 func (c *DiscordChannel) HealthCheck(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discordAPIBase+"/users/@me", nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bot "+c.token)
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, discordAPIBase+"/users/@me", nil)
 	if err != nil {
 		return fmt.Errorf("discord health: %w", err)
 	}
@@ -253,13 +292,7 @@ func (c *DiscordChannel) HealthCheck(ctx context.Context) error {
 }
 
 func (c *DiscordChannel) resolveBotID(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discordAPIBase+"/users/@me", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bot "+c.token)
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, discordAPIBase+"/users/@me", nil)
 	if err != nil {
 		return "", err
 	}
@@ -279,13 +312,7 @@ func (c *DiscordChannel) resolveBotID(ctx context.Context) (string, error) {
 
 func (c *DiscordChannel) listGuildChannels(ctx context.Context) ([]discordChannel, error) {
 	url := discordAPIBase + "/guilds/" + c.guildID + "/channels"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bot "+c.token)
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("discord list channels: %w", err)
 	}
@@ -314,13 +341,7 @@ func (c *DiscordChannel) getChannelMessages(ctx context.Context, channelID, afte
 	if after != "" {
 		url += "&after=" + after
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bot "+c.token)
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

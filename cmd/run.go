@@ -221,6 +221,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		webSrv = web.NewServer(webAddr, webState, db, &web.ServerConfig{
 			Name:            cfg.Name,
 			WalletAddress:   primaryAddr,
+			CreatorAddress:  cfg.CreatorAddress,
 			DefaultChain:    cfg.DefaultChain,
 			Version:         web.Version,
 			CreditsGetter:   creditsGetter,

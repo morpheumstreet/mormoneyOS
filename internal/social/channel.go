@@ -28,3 +28,16 @@ type SocialChannel interface {
 	Poll(ctx context.Context, cursor string, limit int) ([]InboxMessage, string, error)
 	HealthCheck(ctx context.Context) error
 }
+
+// Refreshable allows a channel to refresh its auth token and invalidate on 401/403.
+// Conway uses wallet signing (no token); Discord/Telegram use TokenManager.
+type Refreshable interface {
+	GetAuthToken(ctx context.Context) (string, error)
+	Invalidate() // Force refresh on next GetAuthToken (call on 401/403)
+}
+
+// ManagedChannel extends SocialChannel with token lifecycle support.
+type ManagedChannel interface {
+	SocialChannel
+	Refreshable
+}

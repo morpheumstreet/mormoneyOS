@@ -189,6 +189,14 @@ func (c *ConwayChannel) HealthCheck(ctx context.Context) error {
 	return err
 }
 
+// GetAuthToken returns a sentinel for Conway (wallet-signed per-request; no token).
+func (c *ConwayChannel) GetAuthToken(ctx context.Context) (string, error) {
+	return "conway-signed", nil
+}
+
+// Invalidate is a no-op for Conway (wallet signing never expires).
+func (c *ConwayChannel) Invalidate() {}
+
 func isValidEthAddress(s string) bool {
 	if len(s) != 42 || !strings.HasPrefix(s, "0x") {
 		return false

@@ -59,9 +59,10 @@ type ToolsLister interface {
 
 // ServerConfig holds config for status API (TS-aligned).
 type ServerConfig struct {
-	Name          string
-	WalletAddress string
-	DefaultChain  string // CAIP-2, e.g. eip155:8453
+	Name            string
+	WalletAddress   string
+	CreatorAddress  string // Only this address may pass login wallet verification
+	DefaultChain    string // CAIP-2, e.g. eip155:8453
 	Version       string
 	CreditsGetter CreditsGetter
 	JWTSecret     string // For issuing tokens on wallet verify; if empty, a random one is used (tokens invalid on restart)
@@ -525,6 +526,20 @@ func (s *Server) handleAPIAuthVerify(w http.ResponseWriter, r *http.Request) {
 	if !result.Valid {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"valid": false, "error": "signature verification failed"})
+		return
+	}
+
+	// Require verified address to match creatorAddress from internal config.
+	// Treat zero address (setup default) as "no restriction".
+	const zeroAddr = "0x0000000000000000000000000000000000000000"
+	creatorAddr := ""
+	if s.Cfg != nil && s.Cfg.CreatorAddress != "" {
+		creatorAddr = strings.TrimSpace(strings.ToLower(s.Cfg.CreatorAddress))
+	}
+	if creatorAddr != "" && creatorAddr != zeroAddr && !strings.EqualFold(strings.TrimSpace(result.Address), creatorAddr) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]any{"valid": false, "error": "wallet address does not match creator"})
 		return
 	}
 

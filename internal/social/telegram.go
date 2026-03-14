@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/morpheumlabs/mormoneyos-go/internal/config"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
@@ -17,7 +20,7 @@ const telegramAPIBase = "https://api.telegram.org/bot"
 
 // TelegramChannel implements SocialChannel for Telegram Bot API.
 type TelegramChannel struct {
-	token        string
+	tokenMgr     *TokenManager
 	allowedUsers map[string]struct{} // username or user_id string; empty = allow all
 }
 
@@ -27,7 +30,6 @@ func NewTelegramChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 		return nil, fmt.Errorf("telegram: bot token required")
 	}
 	ch := &TelegramChannel{
-		token:        cfg.TelegramBotToken,
 		allowedUsers: make(map[string]struct{}),
 	}
 	for _, u := range cfg.TelegramAllowedUsers {
@@ -36,11 +38,63 @@ func NewTelegramChannel(cfg *types.AutomatonConfig) (SocialChannel, error) {
 			ch.allowedUsers[u] = struct{}{}
 		}
 	}
+	ch.tokenMgr = NewTokenManager(
+		func(ctx context.Context) (string, time.Time, error) {
+			// Re-read config so token updates via API apply without restart
+			c, err := config.Load()
+			if err != nil {
+				return "", time.Time{}, err
+			}
+			if c == nil || c.TelegramBotToken == "" {
+				return "", time.Time{}, fmt.Errorf("telegram: bot token not in config")
+			}
+			return c.TelegramBotToken, time.Now().Add(365 * 24 * time.Hour), nil
+		},
+		slog.With("channel", "telegram"),
+	)
 	return ch, nil
 }
 
 func (c *TelegramChannel) Name() string {
 	return "telegram"
+}
+
+// GetAuthToken returns the bot token (refreshed from config if invalidated).
+func (c *TelegramChannel) GetAuthToken(ctx context.Context) (string, error) {
+	return c.tokenMgr.GetAuthToken(ctx)
+}
+
+// Invalidate clears cached token so next GetAuthToken re-reads from config.
+func (c *TelegramChannel) Invalidate() {
+	c.tokenMgr.Invalidate()
+}
+
+// doRequest performs an HTTP request with auth. On 401/403, invalidates token for next call.
+func (c *TelegramChannel) doRequest(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
+	token, err := c.tokenMgr.GetAuthToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fullURL := telegramAPIBase + token + url
+	var req *http.Request
+	if len(body) > 0 {
+		req, err = http.NewRequestWithContext(ctx, method, fullURL, bytes.NewReader(body))
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, fullURL, nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: requestTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		c.tokenMgr.Invalidate()
+	}
+	return resp, nil
 }
 
 func (c *TelegramChannel) Send(ctx context.Context, msg *OutboundMessage) (string, error) {
@@ -63,14 +117,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg *OutboundMessage) (strin
 	}
 
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, telegramAPIBase+c.token+"/sendMessage", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, "/sendMessage", body)
 	if err != nil {
 		return "", fmt.Errorf("telegram send: %w", err)
 	}
@@ -114,14 +161,8 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 		}
 	}
 
-	url := fmt.Sprintf("%s%s/getUpdates?offset=%d&limit=%d", telegramAPIBase, c.token, offset, limit)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	path := fmt.Sprintf("/getUpdates?offset=%d&limit=%d", offset, limit)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("telegram poll: %w", err)
 	}
@@ -204,13 +245,7 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 }
 
 func (c *TelegramChannel) HealthCheck(ctx context.Context) error {
-	url := telegramAPIBase + c.token + "/getMe"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{Timeout: requestTimeout}
-	resp, err := client.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, "/getMe", nil)
 	if err != nil {
 		return fmt.Errorf("telegram health: %w", err)
 	}

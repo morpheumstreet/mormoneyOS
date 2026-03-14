@@ -28,7 +28,7 @@ all: build install
 
 # Build dashos UI and replace embedded static files.
 # Uses base /static/ so asset URLs work with the Go server's /static/ route.
-build-webui:
+web:
 	cd $(WEBUI_DIR) && bun run build -- --base /static/
 	@find $(WEBUI_STATIC) -mindepth 1 -delete 2>/dev/null || true
 	@mkdir -p $(WEBUI_STATIC)
