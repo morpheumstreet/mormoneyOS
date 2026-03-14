@@ -441,6 +441,134 @@ export function postTunnelProviderRestart(
   );
 }
 
+/** Skills (installed + ClawHub discovery) */
+export interface SkillItem {
+  name: string;
+  description?: string;
+  source: string;
+  path?: string;
+  enabled: boolean;
+  trusted?: boolean;
+  auto_activate?: number;
+}
+
+export interface SkillsResponse {
+  skills: SkillItem[];
+}
+
+export interface DiscoveryResult {
+  slug: string;
+  displayName?: string;
+  summary?: string;
+  version?: string;
+  score?: number;
+}
+
+export interface DiscoverySearchResponse {
+  results: DiscoveryResult[];
+}
+
+export interface DiscoveryListResponse {
+  items: DiscoveryResult[];
+  nextCursor?: string;
+}
+
+export interface RecommendedSkill {
+  slug: string;
+  displayName?: string;
+  summary?: string;
+  version?: string;
+  installed?: boolean;
+}
+
+export interface RecommendedResponse {
+  recommended: RecommendedSkill[];
+}
+
+export function getSkills(params?: {
+  filter?: "all" | "enabled" | "disabled";
+  trusted?: "all" | "trusted" | "untrusted";
+}): Promise<SkillsResponse> {
+  const search = new URLSearchParams();
+  if (params?.filter) search.set("filter", params.filter);
+  if (params?.trusted) search.set("trusted", params.trusted);
+  const qs = search.toString();
+  return fetch(`${API}/skills${qs ? `?${qs}` : ""}`).then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Skills API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getSkill(name: string): Promise<SkillItem> {
+  return fetch(API + "/skills/" + encodeURIComponent(name)).then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Skill not found" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getSkillsDiscovery(params?: {
+  q?: string;
+  limit?: number;
+  cursor?: string;
+}): Promise<DiscoverySearchResponse | DiscoveryListResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set("q", params.q);
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.cursor) search.set("cursor", params.cursor);
+  const qs = search.toString();
+  return fetch(`${API}/skills/discovery${qs ? `?${qs}` : ""}`).then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Discovery API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getSkillsRecommended(): Promise<RecommendedResponse> {
+  return fetch(API + "/skills/recommended").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Recommended API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function postSkillInstall(body: {
+  source: "clawhub";
+  id: string;
+  version?: string;
+  name?: string;
+  description?: string;
+} | {
+  name: string;
+  path: string;
+  description?: string;
+}): Promise<{ name: string; source?: string; path?: string; enabled?: boolean }> {
+  return apiFetch<{ name: string; source?: string; path?: string; enabled?: boolean }>("/skills", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function patchSkill(name: string, body: Partial<{ enabled: boolean; description: string; instructions: string }>): Promise<SkillItem> {
+  return apiFetch<SkillItem>("/skills/" + encodeURIComponent(name), {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteSkill(name: string): Promise<void> {
+  return apiFetch<void>("/skills/" + encodeURIComponent(name), { method: "DELETE" });
+}
+
+export function patchSkillActivate(name: string): Promise<{ name: string; enabled: boolean }> {
+  return apiFetch<{ name: string; enabled: boolean }>("/skills/" + encodeURIComponent(name) + "/activate", {
+    method: "PATCH",
+  });
+}
+
+export function patchSkillDeactivate(name: string): Promise<{ name: string; enabled: boolean }> {
+  return apiFetch<{ name: string; enabled: boolean }>("/skills/" + encodeURIComponent(name) + "/deactivate", {
+    method: "PATCH",
+  });
+}
+
 export async function putSocialConfig(
   name: string,
   config: Record<string, unknown>

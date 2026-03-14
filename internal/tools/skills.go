@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
+	"github.com/morpheumlabs/mormoneyos-go/internal/skills"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
@@ -23,7 +24,7 @@ type SkillStore interface {
 	GetSkills() ([]map[string]any, bool)
 }
 
-// InstallSkillTool installs a skill from a path (file-based). Path is required.
+// InstallSkillTool installs a skill from a path (file-based) or from ClawHub registry.
 // Use create_skill for DB-only (builtin) skills.
 type InstallSkillTool struct {
 	Store  interface {
@@ -33,27 +34,61 @@ type InstallSkillTool struct {
 }
 
 func (InstallSkillTool) Name() string        { return "install_skill" }
-func (InstallSkillTool) Description() string { return "Install a skill from a directory path. Path must contain SKILL.md or SKILL.toml. Use create_skill for DB-only skills." }
+func (InstallSkillTool) Description() string { return "Install a skill from a directory path or from ClawHub registry. Path: local dir with SKILL.md/SKILL.toml. ClawHub: use source=clawhub and id=<slug> (e.g. gmail-secretary). Use create_skill for DB-only skills." }
 func (InstallSkillTool) Parameters() string {
-	return `{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"description":{"type":"string"}},"required":["name","path"]}`
+	return `{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"description":{"type":"string"},"source":{"type":"string","enum":["path","clawhub"]},"id":{"type":"string"},"version":{"type":"string"}},"required":[]}`
 }
 
 func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t.Store == nil {
 		return "", ErrInvalidArgs{Msg: "install_skill requires store"}
 	}
-	name, _ := args["name"].(string)
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", ErrInvalidArgs{Msg: "name required"}
-	}
+	source, _ := args["source"].(string)
+	source = strings.TrimSpace(strings.ToLower(source))
+	id, _ := args["id"].(string)
+	id = strings.TrimSpace(id)
+	version, _ := args["version"].(string)
+	version = strings.TrimSpace(version)
 	path, _ := args["path"].(string)
 	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", ErrInvalidArgs{Msg: "path required for install_skill; use create_skill for DB-only skills"}
-	}
+	name, _ := args["name"].(string)
+	name = strings.TrimSpace(name)
 	desc, _ := args["description"].(string)
+	desc = strings.TrimSpace(desc)
 
+	// ClawHub install: source=clawhub, id=slug
+	if source == "clawhub" || (source == "" && id != "" && path == "") {
+		return t.installFromClawHub(ctx, id, version, name, desc)
+	}
+
+	// Path install (default)
+	if path == "" {
+		return "", ErrInvalidArgs{Msg: "path required for install_skill; use source=clawhub and id=<slug> for registry, or create_skill for DB-only"}
+	}
+	if name == "" {
+		return "", ErrInvalidArgs{Msg: "name required for path install"}
+	}
+	return t.installFromPath(path, name, desc)
+}
+
+func (t *InstallSkillTool) installFromClawHub(ctx context.Context, slug, version, name, desc string) (string, error) {
+	if slug == "" {
+		return "", ErrInvalidArgs{Msg: "id (ClawHub slug) required for registry install"}
+	}
+	cfg := t.Config
+	if cfg == nil || cfg.Skills == nil {
+		cfg = &types.AutomatonConfig{Skills: &types.SkillsConfig{}}
+	}
+	regURL, timeoutSec := skills.RegistryConfigFrom(cfg.Skills)
+	client := skills.NewRegistryClient(regURL, timeoutSec)
+	skillRoot, skillName, err := skills.InstallFromRegistry(ctx, client, t.Store, cfg.Skills, slug, version, name, desc)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Installed skill %q from ClawHub (%s) to %q", skillName, slug, skillRoot), nil
+}
+
+func (t *InstallSkillTool) installFromPath(path, name, desc string) (string, error) {
 	// Normalize to directory: store directory only
 	dir := path
 	if strings.HasSuffix(filepath.Clean(path), skillMd) || strings.HasSuffix(filepath.Clean(path), skillToml) {

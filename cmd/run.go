@@ -219,16 +219,17 @@ func runRun(cmd *cobra.Command, args []string) error {
 	var webSrv *web.Server
 	if !noWeb {
 		webSrv = web.NewServer(webAddr, webState, db, &web.ServerConfig{
-			Name:            cfg.Name,
-			WalletAddress:   primaryAddr,
-			CreatorAddress:  cfg.CreatorAddress,
-			DefaultChain:    cfg.DefaultChain,
-			Version:         web.Version,
-			CreditsGetter:   creditsGetter,
-			ChatClient:      infClient,
-			ToolsLister:     reg,
-			TunnelManager:   tunnelMgr,
-			TunnelReloader:  func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
+			Name:               cfg.Name,
+			WalletAddress:      primaryAddr,
+			CreatorAddress:     cfg.CreatorAddress,
+			DefaultChain:       cfg.DefaultChain,
+			Version:            web.Version,
+			CreditsGetter:      creditsGetter,
+			ChatClient:         infClient,
+			ToolsLister:        reg,
+			TunnelManager:      tunnelMgr,
+			TunnelReloader:     func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
+			SkillsConfigGetter: func() *types.SkillsConfig { return cfg.Skills },
 		}, slog.Default())
 		go func() {
 			if err := webSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

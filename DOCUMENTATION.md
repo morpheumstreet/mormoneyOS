@@ -541,7 +541,7 @@ The automaton has **56+ built-in tools** (plus stubs for parity) organized into 
 
 | Tool | Risk | Description |
 |---|---|---|
-| `install_skill` | dangerous | Install from git, URL, or create inline. |
+| `install_skill` | dangerous | Install from local path or ClawHub registry. Path: `name`, `path`. ClawHub: `source=clawhub`, `id=<slug>` (e.g. gmail-secretary). |
 | `list_skills` | safe | List all installed skills. |
 | `create_skill` | dangerous | Write a new SKILL.md file. |
 | `remove_skill` | dangerous | Disable or delete a skill. |
@@ -672,9 +672,9 @@ Step-by-step instructions for the agent...
 
 Skills can be installed three ways:
 
-1. **From git:** `install_skill` with `source: "git"` and a repo URL
-2. **From URL:** `install_skill` with `source: "url"` and a SKILL.md URL
-3. **Self-authored:** `create_skill` with inline name, description, and instructions
+1. **From ClawHub:** `install_skill` with `source: "clawhub"` and `id: "<slug>"` (e.g. `id: "gmail-secretary"`). Optional: `version`, `name`, `description`.
+2. **From local path:** `install_skill` with `name` and `path` pointing to a directory containing SKILL.md or SKILL.toml (must be under a trusted root, e.g. `~/.automaton/skills`).
+3. **Self-authored:** `create_skill` with inline name, description, and instructions (DB-only, no file).
 
 ### Skill directory
 

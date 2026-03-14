@@ -69,7 +69,8 @@ type ServerConfig struct {
 	ChatClient    inference.Client // Optional; when set, Agent Comm Link uses LLM for chat
 	ToolsLister    ToolsLister       // Optional; when set, GET /api/tools and PATCH /api/tools/:name work
 	TunnelManager  *tunnel.TunnelManager // Optional; when set, GET /api/tunnels returns active tunnels
-	TunnelReloader func(cfg *types.TunnelConfig) // Optional; when set, POST /api/tunnels/providers/{name}/restart reloads providers
+	TunnelReloader      func(cfg *types.TunnelConfig) // Optional; when set, POST /api/tunnels/providers/{name}/restart reloads providers
+	SkillsConfigGetter func() *types.SkillsConfig     // Optional; when set, skills API uses this for registry config (DI)
 }
 
 // RuntimeState holds shared runtime state for the web API.
@@ -158,6 +159,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/models/order", s.handleAPIModelsOrder)
 	s.mux.HandleFunc("PATCH /api/models/{id}", s.handleAPIModelsPatch)
 	s.mux.HandleFunc("DELETE /api/models/{id}", s.handleAPIModelsDelete)
+
+	// Skills API (list, CRUD, discovery, recommended, activate/deactivate)
+	s.mux.HandleFunc("GET /api/skills", s.handleAPISkillsList)
+	s.mux.HandleFunc("GET /api/skills/discovery", s.handleAPISkillsDiscovery)
+	s.mux.HandleFunc("GET /api/skills/recommended", s.handleAPISkillsRecommended)
+	s.mux.HandleFunc("GET /api/skills/{name}", s.handleAPISkillsGet)
+	s.mux.HandleFunc("POST /api/skills", s.handleAPISkillsPost)
+	s.mux.HandleFunc("PATCH /api/skills/{name}", s.handleAPISkillsPatch)
+	s.mux.HandleFunc("DELETE /api/skills/{name}", s.handleAPISkillsDelete)
+	s.mux.HandleFunc("PATCH /api/skills/{name}/activate", s.handleAPISkillsActivate)
+	s.mux.HandleFunc("PATCH /api/skills/{name}/deactivate", s.handleAPISkillsDeactivate)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

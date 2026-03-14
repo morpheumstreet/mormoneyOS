@@ -4,6 +4,7 @@ import {
   ChevronsLeftRightEllipsis,
   FileText,
   LayoutDashboard,
+  Puzzle,
   Settings,
   X,
 } from 'lucide-react';
@@ -11,6 +12,7 @@ import {
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/reports', icon: FileText, label: 'Reports' },
+  { to: '/skills', icon: Puzzle, label: 'Skills' },
   { to: '/config', icon: Settings, label: 'Config' },
 ];
 

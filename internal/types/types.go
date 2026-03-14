@@ -135,8 +135,16 @@ type TunnelProviderConfig struct {
 
 // SkillsConfig configures skill loading (trusted roots, token budget).
 type SkillsConfig struct {
-	TrustedRoots   []string `json:"trustedRoots,omitempty"`   // Paths under which skill dirs are allowed (~/.automaton/skills, workspace/skills)
-	TokenBudgetMax int      `json:"tokenBudgetMax,omitempty"` // Max chars for skills block in prompt (default 2000)
+	TrustedRoots   []string       `json:"trustedRoots,omitempty"`   // Paths under which skill dirs are allowed (~/.automaton/skills, workspace/skills)
+	TokenBudgetMax int            `json:"tokenBudgetMax,omitempty"` // Max chars for skills block in prompt (default 2000)
+	Registry       *RegistryConfig `json:"registry,omitempty"`      // ClawHub registry for install_skill from registry
+}
+
+// RegistryConfig configures the ClawHub skill registry.
+type RegistryConfig struct {
+	Enabled       bool   `json:"enabled,omitempty"`       // Enable registry installs (default true when registry URL set)
+	URL           string `json:"url,omitempty"`           // Registry base URL (default https://clawhub.ai)
+	TimeoutSec    int    `json:"timeoutSec,omitempty"`   // HTTP timeout in seconds (default 30)
 }
 
 // ConfigToolDef defines a tool loaded from config (extension point).

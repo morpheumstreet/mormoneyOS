@@ -326,6 +326,22 @@ func Load() (*types.AutomatonConfig, error) {
 		if v, ok := sc["tokenBudgetMax"].(float64); ok && v > 0 {
 			cfg.Skills.TokenBudgetMax = int(v)
 		}
+		if rc, ok := sc["registry"].(map[string]any); ok {
+			cfg.Skills.Registry = &types.RegistryConfig{}
+			if v, ok := rc["enabled"].(bool); ok {
+				cfg.Skills.Registry.Enabled = v
+			} else {
+				cfg.Skills.Registry.Enabled = true
+			}
+			if v, ok := rc["url"].(string); ok && v != "" {
+				cfg.Skills.Registry.URL = v
+			} else {
+				cfg.Skills.Registry.URL = "https://clawhub.ai"
+			}
+			if v, ok := rc["timeoutSec"].(float64); ok && v > 0 {
+				cfg.Skills.Registry.TimeoutSec = int(v)
+			}
+		}
 	}
 	ensureSkillsConfig(cfg)
 

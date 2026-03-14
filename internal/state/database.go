@@ -1064,6 +1064,76 @@ func (d *Database) GetSkills() ([]map[string]any, bool) {
 	return out, true
 }
 
+// GetAllSkills returns all skills (enabled and disabled) with full columns.
+func (d *Database) GetAllSkills() ([]SkillRow, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var exists int
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'").Scan(&exists); err != nil || exists == 0 {
+		return nil, nil
+	}
+	rows, err := d.db.Query("SELECT name, description, instructions, source, path, enabled, auto_activate FROM skills ORDER BY auto_activate DESC, name ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SkillRow
+	for rows.Next() {
+		var r SkillRow
+		var enabled int
+		if err := rows.Scan(&r.Name, &r.Description, &r.Instructions, &r.Source, &r.Path, &enabled, &r.AutoActivate); err != nil {
+			continue
+		}
+		r.Enabled = enabled == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetSkillByName returns a single skill by name, or nil if not found.
+func (d *Database) GetSkillByName(name string) (*SkillRow, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var exists int
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'").Scan(&exists); err != nil || exists == 0 {
+		return nil, nil
+	}
+	var r SkillRow
+	var enabled int
+	err := d.db.QueryRow(
+		"SELECT name, description, instructions, source, path, enabled, auto_activate FROM skills WHERE name = ?",
+		name,
+	).Scan(&r.Name, &r.Description, &r.Instructions, &r.Source, &r.Path, &enabled, &r.AutoActivate)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.Enabled = enabled == 1
+	return &r, nil
+}
+
+// UpdateSkillEnabled sets the enabled flag for a skill.
+func (d *Database) UpdateSkillEnabled(name string, enabled bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	en := 0
+	if enabled {
+		en = 1
+	}
+	_, err := d.db.Exec("UPDATE skills SET enabled = ? WHERE name = ?", en, name)
+	return err
+}
+
+// UpdateSkill updates description and instructions for a skill.
+func (d *Database) UpdateSkill(name, description, instructions string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("UPDATE skills SET description = ?, instructions = ? WHERE name = ?", description, instructions, name)
+	return err
+}
+
 // InstalledTool represents a tool from installed_tools table (TS-aligned).
 type InstalledTool struct {
 	ID          string

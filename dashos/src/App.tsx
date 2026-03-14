@@ -11,6 +11,7 @@ import ConfigSocial from "@/pages/config/ConfigSocial";
 import ConfigTunnel from "@/pages/config/ConfigTunnel";
 import ConfigModelList from "@/pages/config/ConfigModelList";
 import ConfigSoul from "@/pages/config/ConfigSoul";
+import Skills from "@/pages/Skills";
 
 function AppContent() {
   const { address, hasWriteAccess } = useWalletAuth();
@@ -25,6 +26,7 @@ function AppContent() {
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/skills" element={<Skills />} />
         <Route path="/config" element={<ConfigLayout />}>
           <Route index element={<Navigate to="/config/general" replace />} />
           <Route path="general" element={<ConfigGeneral />} />

@@ -64,10 +64,21 @@ mormoneyOS integrates with several API surfaces:
 | PATCH | `/api/models/{id}` | ✅ Implemented | Update model (apiKey, modelId, contextLimit, costCapCents, enabled) | Model object |
 | DELETE | `/api/models/{id}` | ✅ Implemented | Remove a model | `204 No Content` |
 | PUT | `/api/models/order` | ✅ Implemented | Reorder models by priority | `204 No Content` |
+| GET | `/api/skills` | ✅ Implemented | List installed skills (filter, trusted) | `{ skills: [{ name, description, source, path, enabled, trusted }] }` |
+| GET | `/api/skills/discovery` | ✅ Implemented | Discover skills from ClawHub (search or list) | `{ results?: [...] }` or `{ items, nextCursor }` |
+| GET | `/api/skills/recommended` | ✅ Implemented | Recommended skills from ClawHub | `{ recommended: [{ slug, displayName, summary, version, installed }] }` |
+| GET | `/api/skills/{name}` | ✅ Implemented | Get single skill | `{ name, description, source, path, enabled, trusted }` |
+| POST | `/api/skills` | ✅ Implemented | Install skill (path or ClawHub) | `201` + skill object |
+| PATCH | `/api/skills/{name}` | ✅ Implemented | Update skill (enabled, description) | Skill object |
+| DELETE | `/api/skills/{name}` | ✅ Implemented | Remove skill | `204 No Content` |
+| PATCH | `/api/skills/{name}/activate` | ✅ Implemented | Enable skill | `{ name, enabled: true }` |
+| PATCH | `/api/skills/{name}/deactivate` | ✅ Implemented | Disable skill | `{ name, enabled: false }` |
 
 ### 2.3 Query Parameters
 
 - **GET /api/status**: `?chain=<CAIP-2>` — Override chain for address resolution (e.g. `eip155:8453`).
+- **GET /api/skills**: `?filter=all|enabled|disabled` — Filter by enabled state. `?trusted=all|trusted|untrusted` — Filter by trust (registry/builtin = trusted).
+- **GET /api/skills/discovery**: `?q=<query>` — Search ClawHub by query. `?limit=N` — Max results (default 20). `?cursor=<token>` — Pagination for list (when no q).
 
 ### 2.4 POST /api/chat Request Body
 
@@ -245,6 +256,84 @@ Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expos
 - **Response:** `{ "ok": true, "provider": "cloudflare", "restarted": true }`
 - **Errors:** `400` if provider requires API key but it is missing; `404` if TunnelReloader not configured.
 
+### 2.15 Skills API
+
+Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the ClawHub registry. The API supports list, CRUD, discovery, recommended skills, and activate/deactivate.
+
+**Trusted vs untrusted:** `source` = `registry` or `builtin` → trusted; `source` = `installed` → untrusted (local path).
+
+**GET /api/skills** — List installed skills.
+
+- **Query:** `?filter=all|enabled|disabled` — Filter by enabled state.
+- **Query:** `?trusted=all|trusted|untrusted` — Filter by trust.
+- **Response:**
+```json
+{
+  "skills": [
+    {
+      "name": "gmail-secretary",
+      "description": "Gmail triage assistant...",
+      "source": "registry",
+      "path": "/Users/me/.automaton/skills/gmail-secretary",
+      "enabled": true,
+      "trusted": true,
+      "auto_activate": 1
+    }
+  ]
+}
+```
+
+**GET /api/skills/{name}** — Get single skill. Returns `404` if not found.
+
+**GET /api/skills/discovery** — Discover skills from ClawHub.
+
+- **Query:** `?q=<query>` — Search by text (vector search).
+- **Query:** `?limit=N` — Max results (default 20, max 100).
+- **Query:** `?cursor=<token>` — Pagination when listing (no `q`).
+- **Response (search):** `{ "results": [{ "slug", "displayName", "summary", "version", "score" }] }`
+- **Response (list):** `{ "items": [...], "nextCursor": "..." }`
+
+**GET /api/skills/recommended** — Curated recommended skills from ClawHub.
+
+- **Response:** `{ "recommended": [{ "slug", "displayName", "summary", "version", "installed" }] }`
+
+**POST /api/skills** — Install a skill.
+
+- **Content-Type:** `application/json`
+- **Body (ClawHub):**
+```json
+{
+  "source": "clawhub",
+  "id": "gmail-secretary",
+  "version": "1.0.20",
+  "name": "Gmail Secretary",
+  "description": "Optional override"
+}
+```
+- **Body (local path):**
+```json
+{
+  "name": "my-skill",
+  "path": "/path/to/skill-dir",
+  "description": "Optional"
+}
+```
+- **Response:** `201 Created` + `{ "name", "source", "path", "enabled" }`
+- **Errors:** `400` for invalid body or install failure; `503` if skills API not available (DB does not implement SkillsAPIStore).
+
+**PATCH /api/skills/{name}** — Update skill (partial).
+
+- **Body:** `{ "enabled"?: bool, "description"?: string, "instructions"?: string }`
+- **Response:** `{ "name", "description", "enabled" }`
+
+**DELETE /api/skills/{name}** — Remove skill. Response: `204 No Content`.
+
+**PATCH /api/skills/{name}/activate** — Enable skill. Response: `{ "name", "enabled": true }`.
+
+**PATCH /api/skills/{name}/deactivate** — Disable skill. Response: `{ "name", "enabled": false }`.
+
+**Config:** Registry URL and timeout from `skills.registry` in automaton.json, or `SkillsConfigGetter` in ServerConfig. Default: `https://clawhub.ai`, 30s timeout.
+
 ---
 
 ## 3. Conway API (External Client)
@@ -327,7 +416,7 @@ Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expos
 
 | Category | Paths |
 |----------|-------|
-| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `POST /api/auth/verify`, `GET /api/reports` |
+| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `POST /api/auth/verify`, `GET /api/reports` |
 | **Conway** | `GET/POST /v1/credits/*`, `GET/POST /v1/sandboxes`, `POST /v1/sandboxes/{id}/exec`, `POST /v1/sandboxes/{id}/files/upload/json`, `GET /v1/sandboxes/{id}/files/read`, `GET /v1/models` |
 | **Conway Auth** | `POST /v1/auth/nonce`, `POST /v1/auth/verify`, `POST /v1/auth/api-keys`, `POST /v1/automaton/register-parent` |
 | **Conway x402** | `GET /pay/{amountUsd}/{address}` |
@@ -369,6 +458,15 @@ Tunnel providers (bore, localtunnel, cloudflare, ngrok, tailscale, custom) expos
 | `GET /api/tunnels/providers` | ✅ Full | Provider schemas + config (secrets masked); loads from config |
 | `PUT /api/tunnels/providers/{name}` | ✅ Full | Update provider config in automaton.json; partial merge |
 | `POST /api/tunnels/providers/{name}/restart` | ✅ Full | Reload providers via TunnelReloader; validates API key for cloudflare/ngrok/tailscale |
+| `GET /api/skills` | ✅ Full | List installed skills; filter by enabled/trusted |
+| `GET /api/skills/discovery` | ✅ Full | Search or list ClawHub registry |
+| `GET /api/skills/recommended` | ✅ Full | Curated recommended skills |
+| `GET /api/skills/{name}` | ✅ Full | Get single skill |
+| `POST /api/skills` | ✅ Full | Install from ClawHub or local path |
+| `PATCH /api/skills/{name}` | ✅ Full | Update enabled, description, instructions |
+| `DELETE /api/skills/{name}` | ✅ Full | Remove skill |
+| `PATCH /api/skills/{name}/activate` | ✅ Full | Enable skill |
+| `PATCH /api/skills/{name}/deactivate` | ✅ Full | Disable skill |
 
 **Auth:** None. Dashboard is unauthenticated. Anyone reaching the URL has full access. Write endpoints can optionally require auth via `POST /api/auth/verify` flow.
 
