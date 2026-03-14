@@ -4,6 +4,7 @@
 
 export interface EthereumProvider {
   request(args: { method: "eth_requestAccounts" }): Promise<string[]>;
+  request(args: { method: "personal_sign"; params: [string, string] }): Promise<string>;
   request(args: { method: "eth_sign"; params: [string, string] }): Promise<string>;
   request(args: { method: "eth_chainId" }): Promise<string>;
 }
@@ -34,23 +35,44 @@ export async function getEthereumAddress(): Promise<string> {
 }
 
 /**
- * Sign message with personal_sign (eth_sign).
+ * Sign message for SIWE (EIP-191). Tries personal_sign first, falls back to eth_sign.
+ * Many wallets support eth_sign with [address, message] (plain string) for compatibility.
  */
 export async function signEthereumMessage(message: string, address: string): Promise<string> {
   const provider = getEthereumProvider();
   if (!provider) throw new Error("No Ethereum wallet detected");
-  try {
-    const signature = await provider.request({
-      method: "eth_sign",
-      params: [address, message],
-    });
-    return signature;
-  } catch (err: unknown) {
+  const messageHex =
+    "0x" +
+    Array.from(new TextEncoder().encode(message))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+  const handleSignError = (err: unknown): never => {
     const code = (err as { code?: number })?.code;
     if (code === 4001 || code === -32603) {
       throw new Error("User rejected the signature request");
     }
     throw new Error(`Failed to sign: ${err instanceof Error ? err.message : "Unknown error"}`);
+  };
+
+  // Try personal_sign first (standard EIP-191, params: [messageHex, address])
+  try {
+    const sig = await provider.request({
+      method: "personal_sign",
+      params: [messageHex, address],
+    });
+    return sig;
+  } catch (err: unknown) {
+    // Fall back to eth_sign [address, message] for wallets that don't support personal_sign
+    try {
+      const sig = await provider.request({
+        method: "eth_sign",
+        params: [address, message],
+      });
+      return sig;
+    } catch (_err2) {
+      handleSignError(err);
+    }
   }
 }
 

@@ -55,6 +55,16 @@ function isBinanceProviderAvailable(): boolean {
   return !!(w.binancew3w?.isExtension === true || w.BinanceChain || w.ethereum?.isBinance);
 }
 
+function isCoinbaseWalletProviderAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  const ethereum = (window as unknown as { ethereum?: { isCoinbaseWallet?: boolean; providers?: unknown[] } }).ethereum;
+  if (!ethereum) return false;
+  const provider = Array.isArray(ethereum.providers)
+    ? ethereum.providers.find((p: { isCoinbaseWallet?: boolean }) => p?.isCoinbaseWallet) ?? ethereum
+    : ethereum;
+  return !!(provider as { isCoinbaseWallet?: boolean }).isCoinbaseWallet;
+}
+
 function isMetaMaskProviderAvailable(): boolean {
   if (typeof window === "undefined") return false;
   const ethereum = (window as unknown as { ethereum?: { isMetaMask?: boolean; _metamask?: unknown; providerInfo?: { rdns?: string }; isOneKey?: boolean; isOKX?: boolean } }).ethereum;
@@ -92,6 +102,7 @@ export function getBestWallet(chainType: ChainType): WalletName {
     if (isOKXEthereumAvailable()) return "OKX";
     if (isBitgetProviderAvailable()) return "Bitget";
     if (isTokenPocketProviderAvailable()) return "TokenPocket";
+    if (isCoinbaseWalletProviderAvailable()) return "Coinbase Wallet";
     if (isRainbowAvailable()) return "Rainbow";
     if (isBinanceProviderAvailable()) return "Binance";
     if (isMetaMaskProviderAvailable()) return "MetaMask";

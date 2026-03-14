@@ -23,6 +23,7 @@ export default defineConfig({
     outDir: "dist",
   },
   server: {
+    port: 5174,
     proxy: {
       "/api": {
         target: "http://localhost:8080", // dev only: always proxy to moneyclaw

@@ -6,6 +6,7 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
+import { getAddress } from "viem";
 import { getBestWallet } from "@/sdk/utils/extdetection";
 import { getEthereumAddress, signEthereumMessage } from "@/sdk/signing/ethereum";
 import { setToken, clearToken } from "@/lib/auth";
@@ -81,7 +82,7 @@ async function bypassAndGetToken(): Promise<{ address: string; token: string }> 
 
 /** Use mormoneyOS /api/auth/verify: sign message, verify, get JWT for write operations */
 async function verifyAndGetTokenLocal(
-  address: string,
+  _address: string,
   message: string,
   signature: string
 ): Promise<string> {
@@ -95,8 +96,15 @@ async function verifyAndGetTokenLocal(
     }),
   });
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err || "Verification failed");
+    const text = await res.text();
+    let msg = "Verification failed";
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (parsed?.error) msg = parsed.error;
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
   }
   const data = (await res.json()) as {
     valid?: boolean;
@@ -170,7 +178,8 @@ export function WalletAuthProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      const address = await getEthereumAddress();
+      const rawAddress = await getEthereumAddress();
+      const address = getAddress(rawAddress); // EIP-55 checksum for SIWE
       setState((s) => ({
         ...s,
         address,
@@ -204,7 +213,7 @@ export function WalletAuthProvider({ children }: { children: ReactNode }) {
         const signature = await signEthereumMessage(message, address);
         token = await verifyAndGetTokenConway(AUTH_API, message, signature);
       } else {
-        const nonce = crypto.randomUUID?.() ?? `n${Date.now()}`;
+        const nonce = (crypto.randomUUID?.() ?? `n${Date.now()}`).replace(/-/g, "");
         const siweMessage = new SiweMessage({
           domain,
           address,
@@ -229,11 +238,22 @@ export function WalletAuthProvider({ children }: { children: ReactNode }) {
         error: null,
       }));
     } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error("[WalletAuth] connectAndSign failed:", err);
+      }
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : err && typeof err === "object" && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "Connection failed";
       setState((s) => ({
         ...s,
         isConnecting: false,
         isSigning: false,
-        error: err instanceof Error ? err.message : "Connection failed",
+        error: msg || "Connection failed",
       }));
       throw err;
     }
