@@ -113,8 +113,47 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["moonshotApiKey"].(string); ok {
 		cfg.MoonshotAPIKey = v
 	}
+	if v, ok := raw["zaiApiKey"].(string); ok {
+		cfg.ZaiAPIKey = v
+	}
+	if v, ok := raw["googleApiKey"].(string); ok {
+		cfg.GoogleAPIKey = v
+	}
+	if v, ok := raw["heliconeApiKey"].(string); ok {
+		cfg.HeliconeAPIKey = v
+	}
+	if v, ok := raw["deepInfraApiKey"].(string); ok {
+		cfg.DeepInfraAPIKey = v
+	}
+	if v, ok := raw["novitaApiKey"].(string); ok {
+		cfg.NovitaAPIKey = v
+	}
+	if v, ok := raw["siliconFlowApiKey"].(string); ok {
+		cfg.SiliconFlowAPIKey = v
+	}
+	if v, ok := raw["cerebrasApiKey"].(string); ok {
+		cfg.CerebrasAPIKey = v
+	}
+	if v, ok := raw["sambaNovaApiKey"].(string); ok {
+		cfg.SambaNovaAPIKey = v
+	}
+	if v, ok := raw["azureOpenAIApiKey"].(string); ok {
+		cfg.AzureOpenAIAPIKey = v
+	}
+	if v, ok := raw["azureOpenAIEndpoint"].(string); ok && v != "" {
+		cfg.AzureOpenAIEndpoint = v
+	}
+	if v, ok := raw["vertexApiKey"].(string); ok {
+		cfg.VertexAPIKey = v
+	}
+	if v, ok := raw["vertexApiUrl"].(string); ok && v != "" {
+		cfg.VertexAPIURL = v
+	}
 	if v, ok := raw["chatjimmyApiUrl"].(string); ok && v != "" {
 		cfg.ChatJimmyAPIURL = v
+	}
+	if v, ok := raw["ollamaApiUrl"].(string); ok && v != "" {
+		cfg.OllamaAPIURL = v
 	}
 	if v, ok := raw["inferenceModel"].(string); ok && v != "" {
 		cfg.InferenceModel = v

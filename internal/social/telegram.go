@@ -30,6 +30,14 @@ func (e *TooManyRequestsError) Error() string {
 	return fmt.Sprintf("telegram: too many requests, retry after %d seconds", e.RetryAfter)
 }
 
+// ConflictError is returned when Telegram API returns 409 (another getUpdates in progress).
+// Call deleteWebhook and retry after short backoff.
+type ConflictError struct{}
+
+func (e *ConflictError) Error() string {
+	return "telegram: 409 conflict (another getUpdates in progress)"
+}
+
 // TelegramChannel implements SocialChannel for Telegram Bot API.
 // OpenClaw-style: allowFrom (empty=deny, ["*"]=allow), groups allowlist, requireMention in groups.
 type TelegramChannel struct {
@@ -162,6 +170,10 @@ func (c *TelegramChannel) doRequest(ctx context.Context, method, url string, bod
 			retrySec = 60
 		}
 		return nil, &TooManyRequestsError{RetryAfter: retrySec}
+	}
+	if resp.StatusCode == 409 {
+		resp.Body.Close()
+		return nil, &ConflictError{}
 	}
 	return resp, nil
 }
@@ -446,7 +458,30 @@ func (c *TelegramChannel) Poll(ctx context.Context, cursor string, limit int) ([
 	return out, strconv.FormatInt(nextOffset, 10), nil
 }
 
+// DeleteWebhook removes any webhook so getUpdates (long-polling) works.
+// OpenClaw-aligned: call before polling to avoid 409 conflicts.
+func (c *TelegramChannel) DeleteWebhook(ctx context.Context) error {
+	resp, err := c.doRequest(ctx, http.MethodGet, "/deleteWebhook", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// Best-effort: even if deleteWebhook fails (e.g. no webhook), polling can proceed
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(body, &result)
+	if !result.OK && result.Description != "" {
+		slog.Default().Debug("telegram deleteWebhook", "description", result.Description)
+	}
+	return nil
+}
+
 func (c *TelegramChannel) HealthCheck(ctx context.Context) error {
+	// Clear any leftover webhook before polling (OpenClaw-aligned)
+	_ = c.DeleteWebhook(ctx)
 	resp, err := c.doRequest(ctx, http.MethodGet, "/getMe", nil)
 	if err != nil {
 		return fmt.Errorf("telegram health: %w", err)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -178,7 +179,36 @@ func runRun(cmd *cobra.Command, args []string) error {
 			SkillsConfig:          cfg.Skills,
 		},
 		CreditsFn: creditsFn,
-		Log:       slog.Default(),
+		FallbackSender: func(ctx context.Context, claimedIds []string) {
+			for _, id := range claimedIds {
+				if sent, ok, _ := db.GetKV("inbox_fallback_sent:" + id); ok && sent != "" {
+					continue
+				}
+				route, ok, _ := db.GetKV("inbox_route:" + id)
+				if !ok || route == "" {
+					continue
+				}
+				parts := strings.SplitN(route, "|", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				ch := channels[parts[0]]
+				if ch == nil {
+					continue
+				}
+				msg := &social.OutboundMessage{
+					Content:   "Sorry, I'm having trouble processing. Please try again.",
+					Recipient: parts[1],
+					ReplyTo:   id,
+				}
+				if _, err := ch.Send(ctx, msg); err != nil {
+					slog.Default().Warn("fallback send failed", "id", id, "channel", parts[0], "err", err)
+					continue
+				}
+				_ = db.SetKV("inbox_fallback_sent:"+id, "1")
+			}
+		},
+		Log: slog.Default(),
 	})
 
 	// 7. Heartbeat daemon (full task context when Conway+config available)

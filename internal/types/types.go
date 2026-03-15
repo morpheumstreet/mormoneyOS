@@ -57,7 +57,20 @@ type AutomatonConfig struct {
 	CohereAPIKey       string         `json:"cohereApiKey,omitempty"`
 	QwenAPIKey         string         `json:"qwenApiKey,omitempty"`
 	MoonshotAPIKey     string         `json:"moonshotApiKey,omitempty"`
-	ChatJimmyAPIURL    string         `json:"chatjimmyApiUrl,omitempty"` // optional; default https://chatjimmy.ai (no auth)
+	ZaiAPIKey          string         `json:"zaiApiKey,omitempty"`
+	GoogleAPIKey          string         `json:"googleApiKey,omitempty"`
+	HeliconeAPIKey        string         `json:"heliconeApiKey,omitempty"`
+	DeepInfraAPIKey       string         `json:"deepInfraApiKey,omitempty"`
+	NovitaAPIKey          string         `json:"novitaApiKey,omitempty"`
+	SiliconFlowAPIKey     string         `json:"siliconFlowApiKey,omitempty"`
+	CerebrasAPIKey        string         `json:"cerebrasApiKey,omitempty"`
+	SambaNovaAPIKey       string         `json:"sambaNovaApiKey,omitempty"`
+	AzureOpenAIAPIKey    string         `json:"azureOpenAIApiKey,omitempty"`
+	AzureOpenAIEndpoint  string         `json:"azureOpenAIEndpoint,omitempty"` // e.g. https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT
+	VertexAPIKey         string         `json:"vertexApiKey,omitempty"`
+	VertexAPIURL         string         `json:"vertexApiUrl,omitempty"` // e.g. https://REGION-aiplatform.googleapis.com/v1/projects/PROJECT/locations/REGION
+	ChatJimmyAPIURL      string         `json:"chatjimmyApiUrl,omitempty"` // optional; default https://chatjimmy.ai (no auth)
+	OllamaAPIURL         string         `json:"ollamaApiUrl,omitempty"`   // optional; default http://localhost:11434 for local Ollama
 	InferenceModel        string         `json:"inferenceModel"`
 	LowComputeModel       string         `json:"lowComputeModel,omitempty"`       // Optional; used when tier is critical/low_compute
 	ResourceConstraintMode string         `json:"resourceConstraintMode,omitempty"` // "auto" | "forced_on" | "forced_off"; default "auto"

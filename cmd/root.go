@@ -41,7 +41,8 @@ Subcommands:
   pause      Pause agent (via web API)
   resume     Resume agent
   init       Initialize config directory
-  test-api   Verify inference API connectivity (ChatJimmy, etc.)
+  test-api      Verify inference API connectivity (ChatJimmy, etc.)
+  test-telegram Verify Telegram bot connectivity and message flow
 `,
 }
 

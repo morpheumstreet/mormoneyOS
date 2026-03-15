@@ -50,6 +50,10 @@ type ToolExecutor interface {
 	Execute(ctx context.Context, name string, args map[string]any) (result string, err error)
 }
 
+// FallbackSender sends a fallback message when LLM fails to process claimed inbox messages.
+// Called with ctx and claimed message IDs; implementation looks up route and sends via channels.
+type FallbackSender func(ctx context.Context, claimedIds []string)
+
 // Loop implements the ReAct cycle per mormoneyOS design.
 type Loop struct {
 	policy               *PolicyEngine
@@ -62,6 +66,7 @@ type Loop struct {
 	lineageStore         replication.LineageStore
 	memoryRetriever      memory.MemoryRetriever
 	disabledToolsGetter  func() []string
+	fallbackSender       FallbackSender
 	log                  *slog.Logger
 }
 
@@ -89,6 +94,7 @@ type LoopOptions struct {
 	LineageStore         replication.LineageStore   // optional; for GetLineageSummary in system prompt
 	MemoryRetriever      memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
 	DisabledToolsGetter  func() []string           // optional; when set, filters tool schemas (tools disabled via dashboard)
+	FallbackSender       FallbackSender            // optional; when LLM fails with claimed inbox, send "Sorry, having trouble" to user
 	Log                  *slog.Logger
 }
 
@@ -108,6 +114,7 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		lineageStore:        opts.LineageStore,
 		memoryRetriever:     opts.MemoryRetriever,
 		disabledToolsGetter: opts.DisabledToolsGetter,
+		fallbackSender:      opts.FallbackSender,
 		log:                 opts.Log,
 	}
 }
@@ -277,6 +284,10 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		id := uuid.New().String()
 		ts := time.Now().UTC().Format(time.RFC3339)
 		_ = l.store.InsertTurn(id, ts, stateStr, pendingInput, inputSource, "[inference error: "+err.Error()+"]", "[]", "{}", 0)
+		// Send fallback to user when LLM fails with claimed inbox (e.g. Telegram never gets reply)
+		if len(claimedIds) > 0 && l.fallbackSender != nil {
+			l.fallbackSender(ctx, claimedIds)
+		}
 		return TurnResult{State: types.AgentStateRunning, Err: err}
 	}
 

@@ -21,9 +21,12 @@ var TopModels = []ModelSpec{
 	{ModelID: "anthropic/claude-sonnet-4", Provider: "openrouter", DisplayName: "Claude Sonnet 4"},
 	{ModelID: "anthropic/claude-opus-4", Provider: "openrouter", DisplayName: "Claude Opus 4"},
 	{ModelID: "anthropic/claude-3-5-haiku", Provider: "openrouter", DisplayName: "Claude 3.5 Haiku"},
-	// Google (via OpenRouter)
-	{ModelID: "google/gemini-2.5-pro", Provider: "openrouter", DisplayName: "Gemini 2.5 Pro"},
-	{ModelID: "google/gemini-2.5-flash", Provider: "openrouter", DisplayName: "Gemini 2.5 Flash"},
+	// Google Gemini (direct or via OpenRouter)
+	{ModelID: "gemini-2.5-pro", Provider: "google", DisplayName: "Gemini 2.5 Pro"},
+	{ModelID: "gemini-2.5-flash", Provider: "google", DisplayName: "Gemini 2.5 Flash"},
+	{ModelID: "gemini-2.0-flash", Provider: "google", DisplayName: "Gemini 2.0 Flash"},
+	{ModelID: "google/gemini-2.5-pro", Provider: "openrouter", DisplayName: "Gemini 2.5 Pro (OpenRouter)"},
+	{ModelID: "google/gemini-2.5-flash", Provider: "openrouter", DisplayName: "Gemini 2.5 Flash (OpenRouter)"},
 	// Meta Llama (Groq, Together, OpenRouter)
 	{ModelID: "llama-3.3-70b-versatile", Provider: "groq", DisplayName: "Llama 3.3 70B (Groq)"},
 	{ModelID: "meta-llama/Llama-3.3-70B-Instruct-Turbo", Provider: "together", DisplayName: "Llama 3.3 70B (Together)"},
@@ -43,6 +46,9 @@ var TopModels = []ModelSpec{
 	// Moonshot
 	{ModelID: "moonshot-v1-32k", Provider: "moonshot", DisplayName: "Moonshot v1 32K"},
 	{ModelID: "moonshot-v1-128k", Provider: "moonshot", DisplayName: "Moonshot v1 128K"},
+	// Zhipu AI (Z.AI)
+	{ModelID: "glm-5", Provider: "zai", DisplayName: "GLM-5"},
+	{ModelID: "glm-4.6", Provider: "zai", DisplayName: "GLM-4.6"},
 	// Perplexity
 	{ModelID: "sonar", Provider: "perplexity", DisplayName: "Perplexity Sonar"},
 	{ModelID: "sonar-pro", Provider: "perplexity", DisplayName: "Perplexity Sonar Pro"},
@@ -57,47 +63,32 @@ var TopModels = []ModelSpec{
 	{ModelID: "llama3.1-8B", Provider: "chatjimmy", DisplayName: "Llama 3.1 8B (ChatJimmy)"},
 }
 
+// defaultModelFallback is for providers in registry but not in TopModels.
+// TopModels is the primary source; this covers helicone, deepinfra, etc.
+var defaultModelFallback = map[string]string{
+	"conway":      "gpt-4o-mini",
+	"helicone":   "gpt-4o-mini",
+	"deepinfra":  "meta-llama/Meta-Llama-3-8B-Instruct",
+	"novita":     "gpt-4o-mini",
+	"siliconflow": "Qwen/Qwen2.5-7B-Instruct",
+	"cerebras":   "gpt-oss-120b",
+	"sambanova": "Meta-Llama-3.1-70B-Instruct",
+	"azure":      "gpt-4o",
+	"vertex":     "gemini-2.5-flash",
+}
+
 // DefaultModelForProvider returns a suggested model ID for the given provider.
+// Uses first TopModels entry for that provider; fallback map for providers not in TopModels.
 func DefaultModelForProvider(provider string) string {
 	for _, m := range TopModels {
 		if m.Provider == provider {
 			return m.ModelID
 		}
 	}
-	switch provider {
-	case "openai":
-		return "gpt-4o-mini"
-	case "conway":
-		return "gpt-4o-mini"
-	case "openrouter":
-		return "anthropic/claude-sonnet-4"
-	case "groq":
-		return "llama-3.3-70b-versatile"
-	case "mistral":
-		return "mistral-large-latest"
-	case "deepseek":
-		return "deepseek-chat"
-	case "xai":
-		return "grok-3-mini"
-	case "together":
-		return "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-	case "fireworks":
-		return "accounts/fireworks/models/llama-v3p3-70b-instruct"
-	case "perplexity":
-		return "sonar"
-	case "cohere":
-		return "command-a"
-	case "qwen":
-		return "qwen-plus"
-	case "moonshot":
-		return "moonshot-v1-32k"
-	case "ollama":
-		return "llama3.2"
-	case "chatjimmy":
-		return "llama3.1-8B"
-	default:
-		return "gpt-4o-mini"
+	if model, ok := defaultModelFallback[provider]; ok {
+		return model
 	}
+	return "gpt-4o-mini"
 }
 
 // ListModelsByProvider returns models for a given provider.

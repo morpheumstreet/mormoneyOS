@@ -124,6 +124,53 @@ func TestNewClientFromConfig_ChatJimmyEnvBaseURL(t *testing.T) {
 	}
 }
 
+func TestNewClientForModelEntry_OllamaCustomURL(t *testing.T) {
+	cfg := &types.AutomatonConfig{
+		OllamaAPIURL:      "http://custom-ollama:11434",
+		MaxTokensPerTurn:  4096,
+	}
+	entry := &types.LLMModelEntry{
+		ID:       "ollama_llama3.1",
+		Provider: "ollama",
+		ModelID:  "llama3.1",
+		Enabled:  true,
+	}
+	c := NewClientForModelEntry(cfg, entry)
+	if c == nil {
+		t.Fatal("expected non-nil client for Ollama")
+	}
+	oc, ok := c.(*OpenAICompatibleClient)
+	if !ok {
+		t.Fatalf("expected OpenAICompatibleClient for Ollama, got %T", c)
+	}
+	if oc.BaseURL != "http://custom-ollama:11434" {
+		t.Errorf("expected custom Ollama URL, got %s", oc.BaseURL)
+	}
+}
+
+func TestNewClientForModelEntry_OllamaDefaultURL(t *testing.T) {
+	cfg := &types.AutomatonConfig{
+		MaxTokensPerTurn: 4096,
+	}
+	entry := &types.LLMModelEntry{
+		ID:       "ollama_llama3.1",
+		Provider: "ollama",
+		ModelID:  "llama3.1",
+		Enabled:  true,
+	}
+	c := NewClientForModelEntry(cfg, entry)
+	if c == nil {
+		t.Fatal("expected non-nil client for Ollama")
+	}
+	oc, ok := c.(*OpenAICompatibleClient)
+	if !ok {
+		t.Fatalf("expected OpenAICompatibleClient for Ollama, got %T", c)
+	}
+	if oc.BaseURL != "http://localhost:11434" {
+		t.Errorf("expected default Ollama URL, got %s", oc.BaseURL)
+	}
+}
+
 func TestLookupProvider(t *testing.T) {
 	tests := []struct {
 		key  string

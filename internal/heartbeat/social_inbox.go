@@ -3,6 +3,7 @@ package heartbeat
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
@@ -33,11 +34,13 @@ func ProcessInboxMessage(ctx context.Context, tc *TaskContext, m social.InboxMes
 				ParseMode: parseMode,
 			}
 			if _, err := ch.Send(ctx, outMsg); err != nil {
+				slog.Warn("social command send failed", "cmd", norm, "channel", m.Channel, "err", err)
 				return InboxResult{
 					Record:  map[string]any{"id": m.ID, "from": m.Sender, "content": m.Content, "channel": m.Channel, "command": true},
 					SendErr: err,
 				}
 			}
+			slog.Info("social command replied", "cmd", norm, "channel", m.Channel)
 			return InboxResult{
 				Record: map[string]any{"id": m.ID, "from": m.Sender, "content": m.Content, "channel": m.Channel, "command": true},
 			}
@@ -50,6 +53,8 @@ func ProcessInboxMessage(ctx context.Context, tc *TaskContext, m social.InboxMes
 		seen, _, _ := tc.DB.GetKV("inbox_seen_" + m.ID)
 		if seen == "" {
 			_ = db.InsertInboxMessage(m.ID, m.Sender, m.Content, "")
+			// Store route for fallback reply when LLM fails (channel|recipient)
+			_ = tc.DB.SetKV("inbox_route:"+m.ID, m.Channel+"|"+m.ReplyTarget)
 			_ = tc.DB.SetKV("inbox_seen_"+m.ID, "1")
 			if agentSleeping {
 				ack := &social.OutboundMessage{

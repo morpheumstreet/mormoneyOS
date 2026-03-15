@@ -381,11 +381,32 @@ export interface ModelProvider {
   key: string;
   displayName: string;
   local?: boolean;
+  isReseller?: boolean;
+  configKey?: string;
+  endpointConfigKey?: string;
+  endpointValue?: string;
+  hasKey?: boolean;
+}
+
+/** CanIRun.ai-style catalog entry for model picker */
+export interface ModelCatalogEntry {
+  provider: string;
+  modelId: string;
+  displayName: string;
+  params: string;
+  vramGb: number;
+  contextK: number;
+  arch: string;
+  useCases: string[];
+  tier: string;
+  description: string;
+  isViaReseller?: boolean;
 }
 
 export interface ModelsResponse {
   models: ModelItem[];
   providers: ModelProvider[];
+  catalog?: ModelCatalogEntry[];
 }
 
 export function getModels(): Promise<ModelsResponse> {
@@ -436,6 +457,20 @@ export function putModelsOrder(ids: string[]): Promise<void> {
     method: "PUT",
     body: JSON.stringify({ ids }),
   });
+}
+
+/** Update provider endpoint URL (Ollama, Conway, Azure, Vertex). For local LLMs like Ollama, allows custom base URL. */
+export function putProviderEndpoint(
+  provider: string,
+  url: string
+): Promise<{ ok: boolean; provider: string; url: string }> {
+  return apiFetch<{ ok: boolean; provider: string; url: string }>(
+    "/models/providers/" + encodeURIComponent(provider) + "/endpoint",
+    {
+      method: "PUT",
+      body: JSON.stringify({ url }),
+    }
+  );
 }
 
 /** Soul config (personality, system prompt, tone, behavioral constraints) */

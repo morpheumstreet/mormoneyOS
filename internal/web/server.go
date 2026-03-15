@@ -162,6 +162,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/models", s.handleAPIModelsList)
 	s.mux.HandleFunc("POST /api/models", s.handleAPIModelsPost)
 	s.mux.HandleFunc("PUT /api/models/order", s.handleAPIModelsOrder)
+	s.mux.HandleFunc("PUT /api/models/providers/{provider}/endpoint", s.handleAPIModelsProviderEndpointPut)
 	s.mux.HandleFunc("PATCH /api/models/{id}", s.handleAPIModelsPatch)
 	s.mux.HandleFunc("DELETE /api/models/{id}", s.handleAPIModelsDelete)
 
@@ -1626,19 +1627,53 @@ func (s *Server) handleAPIModelsList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providers := inference.ListProviders()
+	providerKeys := inference.ProvidersWithKeys(cfg, cfg.Models)
 	providerList := make([]map[string]any, 0, len(providers))
 	for _, p := range providers {
-		providerList = append(providerList, map[string]any{
-			"key":         p.Key,
-			"displayName": p.DisplayName,
-			"local":       p.Local,
+		configKey := inference.ProviderKeyConfigName(&p)
+		entry := map[string]any{
+			"key":              p.Key,
+			"displayName":      p.DisplayName,
+			"local":            p.Local,
+			"isReseller":       p.IsReseller,
+			"configKey":        configKey,
+			"endpointConfigKey": inference.EndpointConfigJSONKey(&p),
+			"hasKey":           providerKeys[p.Key],
+		}
+		if ep := inference.GetEndpointValue(cfg, &p); ep != "" {
+			entry["endpointValue"] = ep
+		}
+		providerList = append(providerList, entry)
+	}
+
+	catalog := inference.ModelCatalog()
+	providerReseller := make(map[string]bool)
+	for _, p := range providers {
+		providerReseller[p.Key] = p.IsReseller
+	}
+	catalogList := make([]map[string]any, 0, len(catalog))
+	for _, c := range catalog {
+		catalogList = append(catalogList, map[string]any{
+			"provider":      c.Provider,
+			"modelId":       c.ModelID,
+			"displayName":   c.DisplayName,
+			"params":        c.Params,
+			"vramGb":        c.VRAMGB,
+			"contextK":      c.ContextK,
+			"arch":          c.Arch,
+			"useCases":      c.UseCases,
+			"tier":          c.Tier,
+			"description":   c.Description,
+			"isViaReseller": providerReseller[c.Provider],
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"models":    out,
-		"providers": providerList,
+		"models":          out,
+		"providers":       providerList,
+		"providerKeys":    providerKeys,
+		"catalog":         catalogList,
 	})
 }
 
@@ -1912,6 +1947,72 @@ func (s *Server) handleAPIModelsOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAPIModelsProviderEndpointPut(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	provider := r.PathValue("provider")
+	if provider == "" {
+		http.Error(w, "provider required", http.StatusBadRequest)
+		return
+	}
+	spec := inference.LookupProvider(provider)
+	if spec == nil {
+		http.Error(w, "unknown provider: "+provider, http.StatusNotFound)
+		return
+	}
+	if spec.BaseURLConfigKey == "" {
+		http.Error(w, "provider does not support endpoint URL customization: "+provider, http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	url := strings.TrimSpace(body.URL)
+
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("models provider endpoint: config load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = &types.AutomatonConfig{}
+	}
+
+	switch spec.BaseURLConfigKey {
+	case "OllamaAPIURL":
+		cfg.OllamaAPIURL = url
+	case "ConwayAPIURL":
+		cfg.ConwayAPIURL = url
+	case "AzureOpenAIEndpoint":
+		cfg.AzureOpenAIEndpoint = url
+	case "VertexAPIURL":
+		cfg.VertexAPIURL = url
+	default:
+		http.Error(w, "provider endpoint not configurable", http.StatusBadRequest)
+		return
+	}
+
+	if err := config.Save(cfg); err != nil {
+		s.Log.Error("models provider endpoint: config save failed", "err", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":    true,
+		"provider": provider,
+		"url":   url,
+	})
 }
 
 // UpdateState updates runtime state from the agent loop.

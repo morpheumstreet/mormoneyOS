@@ -21,17 +21,19 @@ const (
 // OpenAICompatibleClient is a single implementation for all /v1/chat/completions APIs.
 // Used by OpenAI, Conway, Ollama, Groq, Mistral, DeepSeek, etc.
 type OpenAICompatibleClient struct {
-	Name      string
-	BaseURL   string
-	APIKey    string
-	AuthStyle AuthStyle
-	Model     string
-	MaxTokens int
-	HTTP      *http.Client
-	lowCompute bool
+	Name                 string
+	BaseURL              string
+	ChatCompletionsPath  string // e.g. /v1/chat/completions (default) or /chat/completions (Z.AI)
+	APIKey               string
+	AuthStyle            AuthStyle
+	Model                string
+	MaxTokens            int
+	HTTP                 *http.Client
+	lowCompute           bool
 }
 
 // NewOpenAICompatibleClient creates a client for any OpenAI-compatible endpoint.
+// chatCompletionsPath: when empty, uses /v1/chat/completions; else uses the given path (e.g. /chat/completions for Z.AI).
 func NewOpenAICompatibleClient(name, baseURL, apiKey string, auth AuthStyle, model string, maxTokens int) *OpenAICompatibleClient {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
@@ -39,17 +41,29 @@ func NewOpenAICompatibleClient(name, baseURL, apiKey string, auth AuthStyle, mod
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
+	path := "/v1/chat/completions"
 	return &OpenAICompatibleClient{
-		Name:      name,
-		BaseURL:   baseURL,
-		APIKey:    apiKey,
-		AuthStyle: auth,
-		Model:     model,
-		MaxTokens: maxTokens,
+		Name:                name,
+		BaseURL:             baseURL,
+		ChatCompletionsPath: path,
+		APIKey:              apiKey,
+		AuthStyle:           auth,
+		Model:               model,
+		MaxTokens:           maxTokens,
 		HTTP: &http.Client{
 			Timeout: 90 * time.Second,
 		},
 	}
+}
+
+// NewOpenAICompatibleClientWithPath creates a client with a custom chat completions path.
+func NewOpenAICompatibleClientWithPath(name, baseURL, chatPath, apiKey string, auth AuthStyle, model string, maxTokens int) *OpenAICompatibleClient {
+	if chatPath == "" {
+		chatPath = "/v1/chat/completions"
+	}
+	c := NewOpenAICompatibleClient(name, baseURL, apiKey, auth, model, maxTokens)
+	c.ChatCompletionsPath = chatPath
+	return c
 }
 
 // Chat implements inference.Client.
@@ -88,7 +102,11 @@ func (c *OpenAICompatibleClient) Chat(ctx context.Context, messages []ChatMessag
 	if len(url) > 0 && url[len(url)-1] == '/' {
 		url = url[:len(url)-1]
 	}
-	url += "/v1/chat/completions"
+	path := c.ChatCompletionsPath
+	if path == "" {
+		path = "/v1/chat/completions"
+	}
+	url += path
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
