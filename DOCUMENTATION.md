@@ -1,6 +1,6 @@
-# Conway Automaton Documentation
+# mormoneyOS (MoneyClaw) Documentation
 
-Complete reference for creating, configuring, funding, and operating autonomous AI agents on Conway Cloud.
+Complete reference for creating, configuring, funding, and operating autonomous AI agents on Conway Cloud. **mormoneyOS** is the runtime; **MoneyClaw** is the CLI binary (`moneyclaw`).
 
 ## Table of Contents
 
@@ -29,6 +29,7 @@ Complete reference for creating, configuring, funding, and operating autonomous 
 - [Backup and Recovery](#backup-and-recovery)
 - [Troubleshooting](#troubleshooting)
 - [FAQ](#faq)
+- [Further Reading](#further-reading)
 
 ---
 
@@ -197,6 +198,8 @@ moneyclaw [command]
 | `resume` | Resume agent via web API |
 | `provision` | SIWE API key provisioning (Conway) |
 | `test-api` | Verify inference API connectivity (ChatJimmy, etc.) |
+| `test-telegram` | Verify Telegram bot connectivity and message flow |
+| `wallet` | Wallet commands (when available) |
 | `--version`, `-v` | Show version |
 | `--help`, `-h` | Show help |
 
@@ -435,14 +438,14 @@ The heartbeat is a background daemon that runs scheduled tasks even while the ag
 | `heartbeat_ping` | Every 15 min | Publishes status to Conway. Sends distress on critical/dead. |
 | `check_credits` | Every 6 hours | Monitors credit tier. Manages 1-hour dead grace period. |
 | `check_usdc_balance` | Every 5 min | Checks USDC balance. Wakes agent if topup is possible. |
+| `check_social_inbox` | Every 10 s | Polls social relay (requires tick-interval 10s). 5min backoff on errors. |
 | `check_for_updates` | Every 4 hours | Checks git upstream for new commits. Wakes on new commits. |
+| `soul_reflection` | Every 12 hours | Checks soul alignment with genesis prompt. |
+| `refresh_models` | Every 6 hours | Refreshes available models from Conway API. |
+| `check_child_health` | Every 30 min | Monitors child automaton health. |
+| `prune_dead_children` | Every 6 hours | Cleans up dead child records and sandboxes. |
 | `health_check` | Every 30 min | Verifies sandbox is responsive (`echo alive`). |
-| `check_social_inbox` | Every 15 min | Polls social relay for new messages. 5min backoff on errors. |
-| `soul_reflection` | Configurable | Checks soul alignment with genesis prompt. |
-| `refresh_models` | Configurable | Refreshes available models from Conway API. |
-| `check_child_health` | Configurable | Monitors child automaton health. |
-| `prune_dead_children` | Configurable | Cleans up dead child records and sandboxes. |
-| `report_metrics` | Configurable | Saves metric snapshots and evaluates alert rules. |
+| `report_metrics` | Every hour | Saves metric snapshots and evaluates alert rules. |
 
 ### Heartbeat configuration
 
@@ -473,7 +476,7 @@ When a heartbeat task detects something actionable (low credits, new messages, u
 
 ## Tool Reference
 
-The automaton has **56+ built-in tools** (plus stubs for parity) organized into 10 categories. Each tool has a risk level that determines policy evaluation:
+The automaton has **built-in tools** (real implementations + stubs for TS parity) organized into categories. Each tool has a risk level that determines policy evaluation:
 
 - **safe** — Always allowed, no policy check needed
 - **caution** — Allowed but logged, may trigger rate limits
@@ -762,7 +765,7 @@ Per-entity records with trust scores, interaction counts, and notes. Tracks the 
 
 ### Memory retrieval
 
-Before each inference call, the memory system retrieves relevant entries across all 5 tiers within a token budget. Priority order: working > episodic > semantic > procedural > relationships. Retrieved memories are included in the agent's context.
+Before each inference call, the memory system retrieves relevant entries across all 5 tiers within a token budget (default 2000 tokens, `BudgetAllocator`). Priority order: working > episodic > semantic (facts) > goals > procedural > relationships. Retrieved memories are formatted and included in the agent's context.
 
 ### Memory ingestion
 
@@ -1194,7 +1197,7 @@ go build -o bin/moneyclaw ./cmd/moneyclaw
 # Restart the automaton
 ```
 
-Or use `./go.sh update` for git pull + build + restart.
+Or use `./go.sh update` for git pull + build + restart (when available).
 
 **What happens if the Conway API goes down?**
 
@@ -1207,3 +1210,11 @@ Yes, the agent can use `update_genesis_prompt`, but it requires a justification 
 **What chains does the wallet support?**
 
 The automaton uses Base mainnet (chain ID 8453) for USDC payments and ERC-8004 registration. Base Sepolia (84532) is supported for testing.
+
+---
+
+## Further Reading
+
+- **ARCHITECTURE.md** — System design, subsystems, data flow, module dependency graph
+- **docs/API_REFERENCE.md** — Web Dashboard API, Conway API, ChatJimmy, x402
+- **docs/TEST_PLAN.md** — Test report, traceability, acceptance criteria

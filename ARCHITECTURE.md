@@ -1,6 +1,6 @@
 # Architecture
 
-Conway Automaton is a sovereign AI agent runtime. An automaton owns an Ethereum wallet, pays for its own compute with USDC, and operates continuously inside a Linux VM (Conway sandbox) or locally. If it cannot pay, it dies. This document describes every subsystem, their interactions, and how data flows through the runtime.
+**mormoneyOS** (MoneyClaw) is a sovereign AI agent runtime. An automaton owns an Ethereum wallet, pays for its own compute with USDC, and operates continuously inside a Linux VM (Conway sandbox) or locally. If it cannot pay, it dies. This document describes every subsystem, their interactions, and how data flows through the runtime.
 
 ## Table of Contents
 
@@ -134,85 +134,126 @@ cmd/
   moneyclaw/main.go        Entry point
   run.go                   Run command (bootstrap, agent loop, heartbeat)
   setup.go                 Interactive setup wizard
-  status.go, init.go       Status and init commands
+  status.go, init.go      Status and init commands
   provision.go             SIWE API key provisioning
+  cost.go, wallet.go      Cost summary, wallet commands
+  strategies.go            List discovered strategies
+  pause.go, resume.go     Pause/resume via web API
   test_api.go              Inference API connectivity check
+  test_telegram.go         Telegram bot connectivity check
 
 internal/
   agent/                   Core agent intelligence
     loop.go                ReAct loop (think -> act -> observe -> persist)
     context.go             Inference message assembly + token budgeting
+    prompt.go              System prompt assembly
     policy.go              Centralized tool-call policy evaluation
     policy_rules.go        Rule implementations (authority, path, financial, etc.)
+    turn_result.go         Turn result types
 
   conway/                  Conway API integration
-    client.go              ConwayClient (sandbox ops, credits, domains)
+    client.go              ConwayClient (sandbox ops, credits, models)
     credits.go             Survival tier calculation
     usdc.go                USDC balance queries
-    x402.go                x402 payment protocol + USDC balance
+    x402.go                x402 payment protocol
+    topup.go               Bootstrap topup + TopupCredits (x402)
+    http.go                Resilient HTTP client
 
   heartbeat/               Background daemon
     daemon.go              Daemon lifecycle (start/stop/forceRun)
     scheduler.go           DurableScheduler (DB-backed, leased, cron)
     tasks.go               11 built-in heartbeat tasks
     context.go             Per-tick shared context builder
+    social_inbox.go        Inbox message processing (Type 1/2)
+    social_commands.go     Programmatic command handlers
 
   identity/                Agent identity
     wallet.go              Ethereum wallet generation/loading
-    provision.go            SIWE API key provisioning
+    provision.go           SIWE API key provisioning
     bootstrap.go           Bootstrap topup, first-run flow
+    chain.go               Chain resolution (Base, Base Sepolia)
+    derivation.go          HD wallet derivation
+    resolver.go            Address resolution
+    signverify/            Message signing/verification (Ethereum, Solana, Bitcoin, Morpheum)
+    keycache.go, nonce.go  Key cache, SIWE nonce
 
   inference/               Model strategy
     factory.go             Inference client factory (ChatJimmy, OpenAI, Anthropic)
     models.go              Model registry and routing
     chatjimmy.go           ChatJimmy/Conway inference client
+    catalog.go             Model catalog
+    config.go              Inference config
+    compatible.go           Provider-format adapter
+    registry.go            Model registry
+    stub.go                Stub client for tests
 
   memory/                  5-tier memory system
+    retriever.go           MemoryRetriever interface, MemoryBlock, FormatMemoryBlock
+    budget.go              BudgetAllocator (token budget across tiers)
     db_retriever.go        DBMemoryRetriever (cross-tier retrieval within budget)
 
   state/                   Persistence
-    schema.go              SQLite schema + migrations (v1-v13)
-    database.go            DB helper functions + AutomatonDatabase
+    schema.go              SQLite schema (SchemaV1, schemaVersion 13)
+    database.go            DB helper functions, migrations
 
   soul/                    Agent identity evolution
     reflection.go          Periodic alignment check + auto-update
 
   social/                  Agent-to-agent communication
+    channel.go             SocialChannel interface, InboxMessage
     conway.go              Conway social relay client
     factory.go             Social channel factory (Conway, Telegram, Discord)
+    telegram.go, discord.go Telegram/Discord channels
+    lifecycle.go           Channel lifecycle
+    fast_reply.go          Fast reply handling
+    stub.go                Stub channel for tests
 
   replication/             Child automaton management
-    spawn.go               Child creation (sandbox + genesis + funding)
     lifecycle.go           State machine (spawning->alive->..->dead)
     health.go              Child health monitoring
     cleanup.go             Dead child sandbox deletion
     lineage.go             Parent-child lineage tracking
+    types.go               Replication types
 
-  tools/                   Tool system (56+ real, 11 stubs for TS parity)
-    tools.go               Registry, executor, schemas
-    shell.go               exec/shell
-    file_read.go, file_write.go
+  tools/                   Tool system (real + stubs for TS parity)
+    tools.go               Registry, executor, schemas, RegistryOptions
+    shell.go, file_read.go, file_write.go
     git*.go                Git tools
     conway.go, conway_extended.go  Conway API tools
     memory.go              Memory tool implementations
+    children.go            Child management (spawn, fund, message, etc.)
     stubs.go               UnimplementedTool placeholders
+    plugin.go, plugin_linux.go  Plugin loader (.so)
+    config_tool.go         Config-driven tool definitions
+    mutating.go            Mutating-tool detection
 
-  tunnel/                  Port exposure (bore, custom providers)
+  tunnel/                  Port exposure (bore, cloudflare, ngrok, etc.)
     manager.go             Tunnel lifecycle
     bore.go, registry.go   Provider implementations
+    cloudflare.go, ngrok.go, localtunnel.go, tailscale.go
+    store.go, command.go   Tunnel config storage
 
   skills/                  Skill system
     loader.go              Load .md skills from directory
     format.go              Frontmatter serialization
+    fetcher.go             ClawHub skill fetcher
+    installer.go           Skill installation
+    registry.go            Skill registry
 
   config/                  Configuration
     config.go              Config load/save/merge
 
   types/                   Shared interfaces
-    types.go               AutomatonConfig, SurvivalTier, etc.
+    types.go               AutomatonConfig, SurvivalTier, TreasuryPolicy, etc.
 
   web/                     HTTP dashboard
+    server.go              HTTP server, REST API
+    wallet_api.go, heartbeat_api.go, skills_api.go
     static/index.html      Embedded Command Center UI
+
+docs/
+  API_REFERENCE.md         Web API, Conway, ChatJimmy, x402
+  TEST_PLAN.md             Test report, traceability
 ```
 
 ---
@@ -274,20 +315,23 @@ for each turn:
 
 **File:** `internal/tools/tools.go`
 
-The automaton has **56+ built-in tools** (plus 11 stubs for TS parity) organized into 10 categories:
+The automaton has **built-in tools** (real implementations + stubs for TS parity) organized into categories:
 
-| Category | Count | Tools |
+| Category | Implemented | Stubs |
 |---|---|---|
-| **vm** | 5 | `exec`, `write_file`, `read_file`, `expose_port`, `remove_port` |
-| **conway** | 12 | `check_credits`, `check_usdc_balance`, `topup_credits`, `create_sandbox`, `delete_sandbox`, `list_sandboxes`, `list_models`, `switch_model`, `check_inference_spending`, `search_domains`, `register_domain`, `manage_dns` |
-| **self_mod** | 6 | `edit_own_file`, `install_npm_package`, `review_upstream_changes`, `pull_upstream`, `modify_heartbeat`, `install_mcp_server` |
-| **survival** | 6 | `sleep`, `system_synopsis`, `heartbeat_ping`, `distress_signal`, `enter_low_compute`, `update_genesis_prompt` |
-| **financial** | 2 | `transfer_credits`, `x402_fetch` |
-| **skills** | 4 | `install_skill`, `list_skills`, `create_skill`, `remove_skill` |
-| **git** | 7 | `git_status`, `git_diff`, `git_commit`, `git_log`, `git_push`, `git_branch`, `git_clone` |
-| **registry** | 5 | `register_erc8004`, `update_agent_card`, `discover_agents`, `give_feedback`, `check_reputation` |
-| **replication** | 9 | `spawn_child`, `list_children`, `fund_child`, `check_child_status`, `start_child`, `message_child`, `verify_child_constitution`, `prune_dead_children`, `send_message` |
-| **memory** | 13 | `update_soul`, `reflect_on_soul`, `view_soul`, `view_soul_history`, `remember_fact`, `recall_facts`, `set_goal`, `complete_goal`, `save_procedure`, `recall_procedure`, `note_about_agent`, `review_memory`, `forget` |
+| **vm** | `exec` (shell), `write_file`, `read_file`, `expose_port`, `remove_port`, `tunnel_status` | — |
+| **conway** | `check_credits`, `check_usdc_balance`, `list_sandboxes`, `list_models`, `switch_model`, `create_sandbox`, `delete_sandbox`, `transfer_credits` | `topup_credits`, `search_domains`, `register_domain`, `manage_dns` |
+| **self_mod** | `edit_own_file`, `install_npm_package`, `review_upstream_changes`, `pull_upstream`, `modify_heartbeat` | `install_mcp_server` |
+| **survival** | `sleep`, `system_synopsis`, `heartbeat_ping`, `distress_signal`, `enter_low_compute`, `update_genesis_prompt` | — |
+| **financial** | `transfer_credits` (Conway) | `x402_fetch` |
+| **skills** | `install_skill`, `list_skills`, `create_skill`, `remove_skill` | — |
+| **git** | `git_status`, `git_diff`, `git_commit`, `git_log`, `git_push`, `git_branch`, `git_clone` | — |
+| **registry** | — | `register_erc8004`, `update_agent_card`, `discover_agents`, `give_feedback`, `check_reputation` |
+| **replication** | `spawn_child`, `list_children`, `fund_child`, `check_child_status`, `start_child`, `message_child`, `verify_child_constitution`, `prune_dead_children` | — |
+| **memory** | `update_soul`, `reflect_on_soul`, `view_soul`, `view_soul_history`, `remember_fact`, `recall_facts`, `set_goal`, `complete_goal`, `save_procedure`, `recall_procedure`, `note_about_agent`, `review_memory`, `forget` | — |
+| **social** | `send_message` (when Channels configured) | — |
+
+*Note: `transfer_credits` is implemented via Conway API. Stubs remain for tools not yet ported (domains, x402_fetch, ERC-8004, install_mcp_server).*
 
 Each tool has a `riskLevel`: `safe`, `caution`, `dangerous`, or `forbidden`. Every tool call flows through the policy engine before execution.
 
@@ -368,7 +412,7 @@ The automaton has a 5-tier hierarchical memory system:
 +-------------------+  Interaction history
 ```
 
-**Retrieval** (`DBMemoryRetriever`): Before each inference call, retrieves relevant memories within a token budget. Priority: working > episodic > semantic > procedural > relationships. Formatted into a memory block injected into context.
+**Retrieval** (`DBMemoryRetriever`): Before each inference call, retrieves relevant memories within a token budget (`BudgetAllocator`, default 2000 tokens). Priority: working > episodic > semantic (facts) > goals > procedural > relationships. Formatted via `FormatMemoryBlock` into a markdown block injected into context.
 
 **Ingestion:** After each turn, the agent loop persists turn data; memory tools (`remember_fact`, `save_procedure`, `note_about_agent`, etc.) allow explicit fact storage. Episodic/semantic/procedural tables are populated via tool calls and turn persistence.
 
@@ -401,14 +445,14 @@ Every tick (default 60s):
 | `heartbeat_ping` | `*/15 * * * *` | Ping Conway, distress on critical/dead |
 | `check_credits` | `0 */6 * * *` | Monitor tier, manage 1hr dead grace period |
 | `check_usdc_balance` | `*/5 * * * *` | Wake agent if USDC available for topup |
-| `check_for_updates` | `0 */4 * * *` | Git upstream monitoring (dedup: only new commits) |
-| `health_check` | `*/30 * * * *` | Sandbox liveness (dedup: only first failure) |
 | `check_social_inbox` | `*/10 * * * * *` | Poll social relay every 10s (requires tick-interval 10s) |
-| `soul_reflection` | configurable | Soul alignment check |
-| `refresh_models` | configurable | Model registry refresh from API |
-| `check_child_health` | configurable | Child sandbox health monitoring |
-| `prune_dead_children` | configurable | Cleanup dead child records/sandboxes |
-| `report_metrics` | configurable | Metrics snapshot + alert evaluation |
+| `check_for_updates` | `0 */4 * * *` | Git upstream monitoring (dedup: only new commits) |
+| `soul_reflection` | `0 */12 * * *` | Soul alignment check |
+| `refresh_models` | `0 */6 * * *` | Model registry refresh from API |
+| `check_child_health` | `*/30 * * * *` | Child sandbox health monitoring |
+| `prune_dead_children` | `0 */6 * * *` | Cleanup dead child records/sandboxes |
+| `health_check` | `*/30 * * * *` | Sandbox liveness (dedup: only first failure) |
+| `report_metrics` | `0 * * * *` | Metrics snapshot + alert evaluation (hourly) |
 
 **Wake events:** Tasks that detect actionable conditions insert atomic wake events into the `wake_events` table. The main run loop checks this table every 30 seconds during sleep.
 
@@ -457,17 +501,18 @@ Each automaton has a unique Ethereum identity:
 
 **File:** `internal/conway/client.go`
 
-The `ConwayClient` interface provides all Conway API operations:
+The `ConwayClient` interface provides Conway API operations:
 
-- **Sandbox ops:** `exec`, `writeFile`, `readFile`, `exposePort`, `removePort`
-- **Sandbox management:** `createSandbox`, `deleteSandbox`, `listSandboxes`
-- **Credits:** `getCreditsBalance`, `getCreditsPricing`, `transferCredits`
-- **Domains:** `searchDomains`, `registerDomain`, `listDnsRecords`, `addDnsRecord`, `deleteDnsRecord`
-- **Models:** `listModels`
+- **Sandbox ops:** `ExecInSandbox`, `WriteFileInSandbox`, `ReadFileInSandbox`
+- **Sandbox management:** `CreateSandbox`, `DeleteSandbox`, `ListSandboxes`
+- **Credits:** `GetCreditsBalance`, `GetCreditsPricing`, `TransferCredits`
+- **Models:** `ListModels`
 
-**Auto-routing:** When `sandboxId` is empty, all operations execute locally (shell exec, filesystem I/O). When set, routes through Conway API. On 403 errors (mismatched API key), falls back to local execution.
+**Topup** (`internal/conway/topup.go`): `BootstrapTopup` buys minimum $5 credits on startup when balance is low. `TopupCredits` executes x402 payment via GET /pay/{amountUsd}/{address}. Tiers: $5, $25, $100, $500, $1000, $2500.
 
-**Resilient HTTP** (in `client.go`): All API calls go through `ResilientHttpClient` with configurable retries (default 3 on 429/5xx), jittered exponential backoff, circuit breaker (5 failures -> 60s open), and idempotency key support for mutating operations.
+**Domains:** `search_domains`, `register_domain`, `manage_dns` are stubbed (not yet in Go API).
+
+**Resilient HTTP** (`internal/conway/http.go`): All API calls use retries (429/5xx), jittered exponential backoff, circuit breaker (5 failures -> 60s open), idempotency key support for mutating operations.
 
 ---
 
@@ -587,45 +632,38 @@ Step-by-step instructions for the agent...
 
 **Engine:** SQLite via `modernc.org/sqlite` (pure Go, WAL mode).
 
-**Schema version:** 13 (applied incrementally via migration runner)
+**Schema version:** 13 (SchemaV1 creates core tables; migrations add missing tables)
 
-**Tables (22):**
+**Tables (core + migrations):**
 
-| Table | Version | Purpose |
-|---|---|---|
-| `schema_version` | v1 | Migration tracking |
-| `identity` | v1 | Agent identity KV (name, address, creator, sandbox) |
-| `turns` | v1 | Agent reasoning log (thinking, tools, tokens, cost) |
-| `tool_calls` | v1 | Denormalized tool call results per turn |
-| `heartbeat_entries` | v1 | Legacy heartbeat config |
-| `transactions` | v1 | Financial transaction log |
-| `installed_tools` | v1 | Dynamically installed tool configs |
-| `modifications` | v1 | Self-modification audit trail (append-only) |
-| `kv` | v1 | General key-value store |
-| `skills` | v2 | Installed skill definitions |
-| `children` | v2 | Spawned child automaton records |
-| `registry` | v2 | ERC-8004 registration state |
-| `reputation` | v2 | Peer reputation scores |
-| `inbox_messages` | v3 | Social messages with processing state machine |
-| `policy_decisions` | v4 | Tool call policy audit trail |
-| `spend_tracking` | v4 | Financial spend by time window |
-| `heartbeat_schedule` | v4 | Durable scheduler config (cron, leases, tier minimums) |
-| `heartbeat_history` | v4 | Task execution history |
-| `wake_events` | v4 | Atomic wake signals (source, reason, consumed flag) |
-| `heartbeat_dedup` | v4 | Idempotency keys for heartbeat operations |
-| `soul_history` | v5 | Versioned SOUL.md history with content hashes |
-| `working_memory` | v5 | Session-scoped short-term memory |
-| `episodic_memory` | v5 | Event log with importance/classification |
-| `session_summaries` | v5 | Per-session outcome summaries |
-| `semantic_memory` | v5 | Categorized fact store |
-| `procedural_memory` | v5 | Named step procedures with outcomes |
-| `relationship_memory` | v5 | Per-entity trust/interaction tracking |
-| `inference_costs` | v6 | Per-call inference cost tracking |
-| `model_registry` | v6 | Available model catalog with pricing |
-| `child_lifecycle_events` | v7 | Child state machine audit trail |
-| `discovered_agents_cache` | v7 | Cached remote agent cards |
-| `onchain_transactions` | v7 | On-chain transaction records |
-| `metric_snapshots` | v8 | Periodic metrics + alert records |
+| Table | Purpose |
+|---|---|
+| `schema_version` | Migration tracking |
+| `identity` | Agent identity KV (name, address, creator, sandbox) |
+| `turns` | Agent reasoning log (thinking, tools, tokens, cost) |
+| `tool_calls` | Denormalized tool call results per turn |
+| `kv` | General key-value store |
+| `policy_decisions` | Tool call policy audit trail |
+| `spend_tracking` | Financial spend by time window |
+| `heartbeat_schedule` | Durable scheduler config (cron, leases, tier minimums) |
+| `heartbeat_history` | Task execution history |
+| `wake_events` | Atomic wake signals (source, reason, consumed_at, payload) |
+| `heartbeat_dedup` | Idempotency keys for heartbeat operations |
+| `inference_costs` | Per-call inference cost tracking |
+| `skills` | Installed skill definitions |
+| `children` | Spawned child automaton records |
+| `onchain_transactions` | On-chain transaction records |
+| `registry` | ERC-8004 registration state |
+| `installed_tools` | Dynamically installed tool configs |
+| `child_lifecycle_events` | Child state machine audit trail |
+| `transactions` | Application-level financial log |
+| `inbox_messages` | Social messages (processed_at for completion) |
+| `metric_snapshots` | Periodic metrics + alert records |
+| `working_memory` | Session-scoped short-term memory |
+| `episodic_memory` | Event log with importance/classification |
+| `semantic_memory` | Categorized fact store |
+| `procedural_memory` | Named step procedures with outcomes |
+| `relationship_memory` | Per-entity trust/interaction tracking |
 
 **`Database` struct** provides CRUD across all tables. The `database.go` file implements migrations and helper functions for schema management.
 
@@ -716,7 +754,7 @@ The automaton operates under a defense-in-depth security model:
 
 ## Build and CI
 
-**Build:** Go 1.21+, standard library + external deps.
+**Build:** Go 1.21+, module `github.com/morpheumlabs/mormoneyos-go`.
 
 ```
 go build -o bin/moneyclaw ./cmd/moneyclaw
@@ -725,7 +763,7 @@ go test ./...
 
 **CI** (`.github/workflows/ci.yml`):
 - Triggers on push and PR
-- Steps: checkout, setup Go 1.22, build, test
+- Steps: checkout, setup Go, build, test
 
 **Release** (`.github/workflows/release.yml`):
 - Triggers on `v*` tags
@@ -737,6 +775,8 @@ go test ./...
 - `scripts/backup-restore.sh` — database backup/restore
 - `scripts/soak-test.sh` — long-running stability test
 - `go.sh` — one-script control panel (build, start, stop, configure, provision, etc.)
+
+**Docs:** `docs/API_REFERENCE.md` (Web API, Conway, ChatJimmy, x402), `docs/TEST_PLAN.md` (test report).
 
 ---
 
@@ -760,7 +800,7 @@ cmd/moneyclaw/main.go
   +-> internal/state/       # Database, schema, migrations
   +-> internal/memory/      # 5-tier retrieval (DBMemoryRetriever)
   +-> internal/soul/        # Reflection pipeline
-  +-> internal/skills/     # Subconscious, prompt injection
+  +-> internal/skills/     # Skill loader, fetcher, installer
   +-> internal/social/      # Conway, Telegram, Discord channels
   +-> internal/replication/ # Child health, sandbox cleanup, lineage
   +-> internal/web/         # HTTP server, embedded static dashboard
