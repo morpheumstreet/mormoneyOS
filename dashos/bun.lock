@@ -7,6 +7,7 @@
       "dependencies": {
         "@tailwindcss/typography": "^0.5.19",
         "buffer": "^6.0.3",
+        "cronstrue": "^3.13.0",
         "lucide-react": "^0.468.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
@@ -357,6 +358,8 @@
     "create-hmac": ["create-hmac@1.1.7", "https://registry.npmmirror.com/create-hmac/-/create-hmac-1.1.7.tgz", { "dependencies": { "cipher-base": "^1.0.3", "create-hash": "^1.1.0", "inherits": "^2.0.1", "ripemd160": "^2.0.0", "safe-buffer": "^5.0.1", "sha.js": "^2.4.8" } }, "sha512-MJG9liiZ+ogc4TzUwuvbER1JRdgvUFSB5+VR/g5h82fGaIRWMWddtKBHi7/sVhfjQZ6SehlyhvQYrcYkaUIpLg=="],
 
     "create-require": ["create-require@1.1.1", "https://registry.npmmirror.com/create-require/-/create-require-1.1.1.tgz", {}, "sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ=="],
+
+    "cronstrue": ["cronstrue@3.13.0", "https://registry.npmmirror.com/cronstrue/-/cronstrue-3.13.0.tgz", { "bin": { "cronstrue": "bin/cli.js" } }, "sha512-M06cKwRIN46AyuM8BOmF1HUkBTkd3/h7uYImnrH1T3wtRKBGOibVo3jZ42VheEvx8LtgZbG/4GI35vfIxYxMug=="],
 
     "crypto-browserify": ["crypto-browserify@3.12.1", "https://registry.npmmirror.com/crypto-browserify/-/crypto-browserify-3.12.1.tgz", { "dependencies": { "browserify-cipher": "^1.0.1", "browserify-sign": "^4.2.3", "create-ecdh": "^4.0.4", "create-hash": "^1.2.0", "create-hmac": "^1.1.7", "diffie-hellman": "^5.0.3", "hash-base": "~3.0.4", "inherits": "^2.0.4", "pbkdf2": "^3.1.2", "public-encrypt": "^4.0.3", "randombytes": "^2.1.0", "randomfill": "^1.0.4" } }, "sha512-r4ESw/IlusD17lgQi1O20Fa3qNnsckR126TdUuBgAu7GBYSIPvdNyONd3Zrxh0xCwA4+6w/TDArBPsMvhur+KQ=="],
 

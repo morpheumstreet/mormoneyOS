@@ -1,15 +1,14 @@
 import { ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import type { HeartbeatScheduleItem } from "@/lib/api";
+import { CronScheduleInput } from "./CronScheduleInput";
+import { isValidCron } from "./cronUtils";
 
 const TOGGLE_CLASSES = `
   relative inline-flex h-7 w-12 shrink-0 items-center rounded-full
   transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#4f83ff] focus:ring-offset-2 focus:ring-offset-[#050d1f]
   disabled:opacity-50 disabled:cursor-not-allowed
 `;
-
-const INPUT_CLASSES =
-  "flex-1 rounded-lg border border-[#29509c] bg-[#071228]/90 px-3 py-2 text-sm text-white placeholder:text-[#6b8fcc] focus:border-[#4f83ff] focus:outline-none disabled:opacity-60";
 
 interface ScheduleItemRowProps {
   item: HeartbeatScheduleItem;
@@ -36,8 +35,10 @@ export function ScheduleItemRow({
   onScheduleChange,
   onSaveSchedule,
 }: ScheduleItemRowProps) {
-  const hasScheduleChanged = (scheduleEdit ?? item.schedule) !== item.schedule;
-  const canSave = hasWriteAccess && !saving && hasScheduleChanged;
+  const currentSchedule = scheduleEdit ?? item.schedule;
+  const hasScheduleChanged = currentSchedule !== item.schedule;
+  const isScheduleValid = isValidCron(currentSchedule);
+  const canSave = hasWriteAccess && !saving && hasScheduleChanged && isScheduleValid;
 
   return (
     <div className="px-4 py-3">
@@ -106,18 +107,26 @@ export function ScheduleItemRow({
             <label className="mb-1 block text-xs font-medium text-[#8aa8df]">
               Cron schedule
             </label>
-            <p className="mb-1 text-xs text-[#6b8fcc]">
-              Standard cron expression (e.g. 0 */6 * * * = every 6 hours)
+            <p className="mb-2 text-xs text-[#6b8fcc]">
+              Five fields: minute, hour, day of month, month, day of week.{" "}
+              <a
+                href="https://crontab.guru/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#7ea5eb] hover:underline"
+              >
+                crontab.guru
+              </a>{" "}
+              for examples.
             </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={scheduleEdit ?? item.schedule}
-                onChange={(e) => onScheduleChange(e.target.value)}
-                disabled={!hasWriteAccess}
-                placeholder="0 */6 * * *"
-                className={INPUT_CLASSES}
-              />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1">
+                <CronScheduleInput
+                  value={scheduleEdit ?? item.schedule}
+                  onChange={onScheduleChange}
+                  disabled={!hasWriteAccess}
+                />
+              </div>
               <button
                 type="button"
                 onClick={onSaveSchedule}

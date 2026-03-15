@@ -6,6 +6,7 @@ import {
   type HeartbeatScheduleItem,
 } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api-error";
+import { isValidCron } from "./cronUtils";
 
 export function useHeartbeatConfig(hasWriteAccess: boolean) {
   const [schedules, setSchedules] = useState<HeartbeatScheduleItem[]>([]);
@@ -65,6 +66,10 @@ export function useHeartbeatConfig(hasWriteAccess: boolean) {
         setError("Schedule cannot be empty");
         return;
       }
+      if (!isValidCron(schedule)) {
+        setError("Invalid cron expression");
+        return;
+      }
       setSavingSchedule((prev) => ({ ...prev, [item.name]: true }));
       setError(null);
       try {
@@ -88,7 +93,9 @@ export function useHeartbeatConfig(hasWriteAccess: boolean) {
   }, []);
 
   const toggleExpanded = useCallback((name: string) => {
-    setExpanded((prev) => ({ ...prev, [name]: !prev[name] }));
+    setExpanded((prev) =>
+      prev[name] ? {} : { [name]: true }
+    );
   }, []);
 
   return {
