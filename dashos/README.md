@@ -17,7 +17,7 @@ bun install
 bun run dev
 ```
 
-Dashboard runs at `http://localhost:5173` (or next available port). It proxies `/api` to `http://localhost:8080` (moneyclaw).
+Dashboard runs at `http://localhost:5174`. It proxies `/api` to `http://localhost:8080` (moneyclaw).
 
 ### Auth
 
@@ -32,11 +32,14 @@ VITE_AUTH_API_URL=https://api.conway.tech bun run dev
 
 ## Build
 
+Uses `bun scripts/build.js` (no bunx) — follows the prologue build pattern. Tailwind v4 via `@tailwindcss/cli` (standalone, no Vite plugin).
+
 ```bash
-bun run build
+bun run build          # Standalone (base /) — for preview or custom hosting
+bun run build:embed    # For mormoneyOS embed (base /static/) — use `make web` from repo root
 ```
 
-Output in `dist/`. Serve with any static host or copy into mormoneyOS `internal/web/static` to embed.
+Output in `dist/`. For embedding in mormoneyOS, run `make web` from the repo root (builds with `/static/` base and copies to `internal/web/static`).
 
 ## API Proxy
 

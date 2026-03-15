@@ -5,9 +5,12 @@
   "description": "MoneyClaw Dashboard - wallet-auth system UI",
   "type": "module",
   "scripts": {
-    "dev": "bunx --bun vite",
-    "build": "bunx --bun vite build",
-    "preview": "bunx --bun vite preview"
+    "dev": "bun scripts/dev.js",
+    "dev:vite": "bun ./node_modules/vite/bin/vite.js",
+    "build": "bun scripts/build.js",
+    "build:embed": "bun scripts/build.js --embed",
+    "build:tailwind": "bun scripts/build-tailwind.js",
+    "preview": "bun ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "cronstrue": "^3.13.0",
@@ -22,7 +25,7 @@
     "viem": "^2.21.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.0.0",
+    "@tailwindcss/cli": "^4.2.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

@@ -37,6 +37,7 @@ Thumbs.db
 node_modules/
 dist/
 packages/*/dist/
+dashos/public/styles.css
 mormoneyOS.wasm
 mormoneyOS
 

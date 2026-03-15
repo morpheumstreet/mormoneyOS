@@ -188,10 +188,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
+	// SPA fallback: serve index.html for all non-API, non-static paths so React Router handles client-side routes (e.g. /config/heartbeat, /reports)
 	data, err := staticFS.ReadFile("static/index.html")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
