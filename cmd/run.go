@@ -300,6 +300,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// Shutdown web server and all background threads when backend closes
 	defer func() {
+		identity.ClearDerivedKeys()
 		webState.UpdateState(false, "shutting_down", 0)
 		if webSrv != nil {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

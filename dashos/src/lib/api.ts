@@ -725,6 +725,65 @@ export function patchSkillDeactivate(name: string): Promise<{ name: string; enab
   });
 }
 
+/** Wallet (mnemonic-derived, multi-chain; no mnemonic/keys exposed) */
+export interface WalletResponse {
+  exists: boolean;
+  currentIndex?: number;
+  address?: string;
+  defaultChain?: string;
+  wordCount?: number;
+  error?: string;
+}
+
+export interface WalletAddressResponse {
+  chain: string;
+  index: number;
+  address: string;
+}
+
+export interface WalletRotateResponse {
+  currentIndex: number;
+  targetIndex: number;
+  currentAddresses: Record<string, string>;
+  newAddresses: Record<string, string>;
+  preview?: boolean;
+  confirmed?: boolean;
+  message?: string;
+}
+
+export function getWallet(): Promise<WalletResponse> {
+  return fetch(API + "/wallet").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Wallet API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getWalletAddress(chain: string, index?: number): Promise<WalletAddressResponse> {
+  const params = new URLSearchParams({ chain });
+  if (index != null && index > 0) params.set("index", String(index));
+  return fetch(`${API}/wallet/address?${params}`).then((r) => {
+    if (!r.ok) return r.json().then((d) => { throw new Error((d as { error?: string }).error || r.statusText); });
+    return r.json();
+  });
+}
+
+export function postWalletRotate(body: {
+  toIndex: number;
+  preview?: boolean;
+  confirm?: boolean;
+}): Promise<WalletRotateResponse> {
+  return apiFetch<WalletRotateResponse>("/wallet/rotate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function postWalletClearCache(): Promise<{ ok: boolean; message?: string }> {
+  return apiFetch<{ ok: boolean; message?: string }>("/wallet/clear-cache", {
+    method: "POST",
+  });
+}
+
 export async function putSocialConfig(
   name: string,
   config: Record<string, unknown>

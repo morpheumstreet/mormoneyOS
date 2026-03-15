@@ -76,10 +76,15 @@ mormoneyOS integrates with several API surfaces:
 | GET | `/api/heartbeat` | ✅ Implemented | List all heartbeat_schedule rows from DB | `{ schedules: [{ name, schedule, task, enabled, tierMinimum, lastRun, nextRun, leaseUntil, leaseOwner }] }` |
 | PATCH | `/api/heartbeat/{name}` | ✅ Implemented | Toggle heartbeat schedule enabled/disabled by name | `{ name, enabled }` |
 | PATCH | `/api/heartbeat/{name}/schedule` | ✅ Implemented | Update cron schedule for a heartbeat by name | `{ name, schedule }` |
+| GET | `/api/wallet` | ✅ Implemented | Wallet info (no mnemonic): current index, address, wordCount | `{ exists, currentIndex?, address?, defaultChain?, wordCount? }` |
+| GET | `/api/wallet/address` | ✅ Implemented | Derive address for chain (optional index) | `{ chain, index, address }` |
+| POST | `/api/wallet/rotate` | ✅ Implemented | Rotate HD account index (preview or confirm; auth required) | `{ currentIndex, targetIndex, currentAddresses, newAddresses, confirmed? }` |
+| POST | `/api/wallet/clear-cache` | ✅ Implemented | Clear derived keys cache (auth required) | `{ ok, message }` |
 
 ### 2.3 Query Parameters
 
 - **GET /api/status**: `?chain=<CAIP-2>` — Override chain for address resolution (e.g. `eip155:8453`).
+- **GET /api/wallet/address**: `?chain=<CAIP-2>` (required) — Chain for address derivation. `?index=<N>` (optional) — HD index; 0 or omit = use wallet's current index.
 - **GET /api/skills**: `?filter=all|enabled|disabled` — Filter by enabled state. `?trusted=all|trusted|untrusted` — Filter by trust (registry/builtin = trusted).
 - **GET /api/skills/discovery**: `?q=<query>` — Search ClawHub by query. `?limit=N` — Max results (default 20). `?cursor=<token>` — Pagination for list (when no q).
 
@@ -390,6 +395,37 @@ Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the Cla
 
 **Config:** Registry URL and timeout from `skills.registry` in automaton.json, or `SkillsConfigGetter` in ServerConfig. Default: `https://clawhub.ai`, 30s timeout.
 
+### 2.18 Wallet API
+
+Mnemonic wallet management: multi-chain address derivation, HD index rotation, cache clear. **Never exposes mnemonic or private keys.**
+
+**GET /api/wallet** — Wallet info (no secrets).
+
+- **Response (exists):** `{ exists: true, currentIndex, address, defaultChain, wordCount }`
+- **Response (no wallet):** `{ exists: false, error: "no wallet: run 'moneyclaw init' first" }`
+
+**GET /api/wallet/address** — Derive address for a chain.
+
+- **Query:** `chain` (required, CAIP-2 e.g. `eip155:8453`)
+- **Query:** `index` (optional; 0 or omit = use wallet's current HD index)
+- **Response:** `{ chain, index, address }`
+- **Errors:** `400` if chain missing or invalid; `400` if no wallet or derivation fails
+
+**POST /api/wallet/rotate** — Rotate HD account index. **Requires `Authorization: Bearer <token>`.**
+
+- **Content-Type:** `application/json`
+- **Body:** `{ "toIndex": N, "preview"?: bool, "confirm"?: bool }`
+  - `toIndex` — Target HD account index
+  - `preview` — If true, return current/new addresses without writing
+  - `confirm` — If true, write new index to wallet.json and clear cache
+- **Response:** `{ currentIndex, targetIndex, currentAddresses: { chain: address }, newAddresses: { chain: address }, preview, confirmed, message? }`
+- **Chains shown:** defaultChain + chainProviders from config
+- **Note:** Does not sweep funds; operator must migrate balances manually
+
+**POST /api/wallet/clear-cache** — Clear derived keys cache. **Requires `Authorization: Bearer <token>`.**
+
+- **Response:** `{ ok: true, message: "derived keys cache cleared" }`
+
 ---
 
 ## 3. Conway API (External Client)
@@ -472,7 +508,7 @@ Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the Cla
 
 | Category | Paths |
 |----------|-------|
-| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `GET /api/heartbeat`, `PATCH /api/heartbeat/{name}`, `PATCH /api/heartbeat/{name}/schedule`, `POST /api/auth/verify`, `GET /api/reports` |
+| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `GET /api/heartbeat`, `PATCH /api/heartbeat/{name}`, `PATCH /api/heartbeat/{name}/schedule`, `GET /api/wallet`, `GET /api/wallet/address`, `POST /api/wallet/rotate`, `POST /api/wallet/clear-cache`, `POST /api/auth/verify`, `GET /api/reports` |
 | **Conway** | `GET/POST /v1/credits/*`, `GET/POST /v1/sandboxes`, `POST /v1/sandboxes/{id}/exec`, `POST /v1/sandboxes/{id}/files/upload/json`, `GET /v1/sandboxes/{id}/files/read`, `GET /v1/models` |
 | **Conway Auth** | `POST /v1/auth/nonce`, `POST /v1/auth/verify`, `POST /v1/auth/api-keys`, `POST /v1/automaton/register-parent` |
 | **Conway x402** | `GET /pay/{amountUsd}/{address}` |
@@ -526,8 +562,12 @@ Skills are agent capabilities loaded from files (SKILL.md/SKILL.toml) or the Cla
 | `GET /api/heartbeat` | ✅ Full | List heartbeat_schedule rows from DB |
 | `PATCH /api/heartbeat/{name}` | ✅ Full | Toggle heartbeat enabled by name |
 | `PATCH /api/heartbeat/{name}/schedule` | ✅ Full | Update cron schedule by name |
+| `GET /api/wallet` | ✅ Full | Wallet info (no mnemonic); current index, address, wordCount |
+| `GET /api/wallet/address` | ✅ Full | Derive address for chain (query: chain, index?) |
+| `POST /api/wallet/rotate` | ✅ Full | Rotate HD index (preview/confirm; JWT required) |
+| `POST /api/wallet/clear-cache` | ✅ Full | Clear derived keys cache (JWT required) |
 
-**Auth:** None. Dashboard is unauthenticated. Anyone reaching the URL has full access. Write endpoints can optionally require auth via `POST /api/auth/verify` flow.
+**Auth:** None. Dashboard is unauthenticated. Wallet rotate and clear-cache require JWT (via `POST /api/auth/verify`). Anyone reaching the URL has full access. Write endpoints can optionally require auth via `POST /api/auth/verify` flow.
 
 ### 8.2 Implementable in internal/web
 

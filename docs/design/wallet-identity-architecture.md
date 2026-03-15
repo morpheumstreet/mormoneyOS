@@ -91,7 +91,7 @@ identity: address_eip155:10900 → "mr4m1..."  # Morpheum
 | Polkadot | Ed25519 or Sr25519 | Substrate key derivation | go-substrate-rpc-client |
 | Morpheum (eip155:10900) | ECDSA+ML-DSA-44 hybrid | Morpheum key derivation | standards `keys.MorpheumPrivateKey` |
 
-**HD wallet (optional):** BIP-39 mnemonic + BIP-44 paths per chain type for single-seed multi-chain. Phase 1 can use single EVM key; Phase 3+ adds HD and per-chain derivation. Morpheum requires mnemonic (standards `MultiChainKeyManager.DeriveKey(..., ChainTypeMorpheum, index)`).
+**HD wallet (implemented):** BIP-39 mnemonic + BIP-44/SLIP-0010 paths per chain type. See `docs/design/mnemonic-wallet-multichain.md`. New wallets store mnemonic only; keys derived on demand via `github.com/morpheum-labs/standards` MultiChainKeyManager. Supports EVM, Morpheum, Bitcoin (SegWit), Solana.
 
 ### 2.3 Default Chain
 

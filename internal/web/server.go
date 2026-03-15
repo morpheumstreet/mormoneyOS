@@ -181,6 +181,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/heartbeat", s.handleAPIHeartbeatList)
 	s.mux.HandleFunc("PATCH /api/heartbeat/{name}", s.handleAPIHeartbeatPatch)
 	s.mux.HandleFunc("PATCH /api/heartbeat/{name}/schedule", s.handleAPIHeartbeatSchedulePatch)
+
+	// Wallet API (mnemonic wallet, multi-chain derivation, rotate)
+	s.mux.HandleFunc("GET /api/wallet", s.handleAPIWalletGet)
+	s.mux.HandleFunc("GET /api/wallet/address", s.handleAPIWalletAddressGet)
+	s.mux.HandleFunc("POST /api/wallet/rotate", s.handleAPIWalletRotate)
+	s.mux.HandleFunc("POST /api/wallet/clear-cache", s.handleAPIWalletClearCache)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

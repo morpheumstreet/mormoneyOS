@@ -47,7 +47,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create wallet: %w", err)
 	}
 	if isNew {
-		fmt.Fprintf(os.Stderr, "Created new wallet at %s\n", identity.GetWalletPath())
+		fmt.Fprintf(os.Stderr, "Created new mnemonic wallet at %s\n", identity.GetWalletPath())
 	}
 
 	name := prompt("Agent name", "moneyclaw")

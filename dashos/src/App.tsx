@@ -12,6 +12,7 @@ import ConfigHeartbeat from "@/pages/config/ConfigHeartbeat";
 import ConfigTunnel from "@/pages/config/ConfigTunnel";
 import ConfigModelList from "@/pages/config/ConfigModelList";
 import ConfigEconomic from "@/pages/config/ConfigEconomic";
+import ConfigWallet from "@/pages/config/ConfigWallet";
 import ConfigSoul from "@/pages/config/ConfigSoul";
 import Skills from "@/pages/Skills";
 
@@ -38,6 +39,7 @@ function AppContent() {
           <Route path="tunnel" element={<ConfigTunnel />} />
           <Route path="model-list" element={<ConfigModelList />} />
           <Route path="economic" element={<ConfigEconomic />} />
+          <Route path="wallet" element={<ConfigWallet />} />
           <Route path="soul" element={<ConfigSoul />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

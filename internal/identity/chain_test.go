@@ -2,6 +2,7 @@ package identity
 
 import (
 	"math/big"
+	"os"
 	"testing"
 )
 
@@ -72,9 +73,15 @@ func TestAddressKeyForChain(t *testing.T) {
 }
 
 func TestDeriveAddress_NonEVM(t *testing.T) {
+	// Use temp dir with no wallet so we get "no wallet" error
+	dir := t.TempDir()
+	prev := os.Getenv("AUTOMATON_DIR")
+	os.Setenv("AUTOMATON_DIR", dir)
+	defer os.Setenv("AUTOMATON_DIR", prev)
+
 	_, err := DeriveAddress("bip122:000000000019d6689c085ae165831e93")
 	if err == nil {
-		t.Error("DeriveAddress(bip122) should error (non-EVM not implemented)")
+		t.Error("DeriveAddress(bip122) should error when no wallet")
 	}
 	_, err = DeriveAddress("unknown:1")
 	if err == nil {

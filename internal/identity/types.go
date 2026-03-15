@@ -1,10 +1,12 @@
 package identity
 
-// WalletData is the persisted wallet format (TS-aligned for EVM; extended for multi-chain).
+// WalletData is the persisted wallet format. Mnemonic-only; single source of truth.
+// No private keys stored; keys derived on demand via standards MultiChainKeyManager.
 type WalletData struct {
-	PrivateKey string `json:"privateKey"`           // 0x-prefixed hex (EVM/secp256k1)
-	Mnemonic   string `json:"mnemonic,omitempty"`   // BIP-39 seed for HD derivation (optional)
-	CreatedAt  string `json:"createdAt"`
+	Mnemonic       string `json:"mnemonic"`                 // BIP-39 phrase; only persisted secret
+	CreatedAt      string `json:"createdAt"`               // ISO 8601
+	HDAccountIndex uint32 `json:"hdAccountIndex,omitempty"` // Derivation index; default 0
+	WordCount      int    `json:"wordCount,omitempty"`     // 12|15|18|21|24 for validation
 }
 
 // ProvisionResult is returned by Provision (TS-aligned).
