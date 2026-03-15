@@ -51,20 +51,22 @@ export function ManageDetailScreen({
           <AlertMessage variant="error" message={error} className="max-w-md mx-auto mb-4" />
         )}
 
-        <div
-          className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4"
-          style={{ background: "linear-gradient(135deg, #3a6de0 0%, #00d4aa 100%)" }}
-        />
-        <InlineEdit
-          value={labelEdit?.trim() || ""}
-          onSave={onSaveLabel}
-          disabled={!hasWriteAccess || savingLabel}
-          placeholder={`Account #${detailIndex}`}
-          as="h2"
-          className="text-2xl font-bold text-white mb-2 inline-block"
-          inputClassName="text-2xl font-bold text-white"
-        />
-        <p className="text-[#8aa8df] mb-6">Identity #{detailIndex}</p>
+        <div className="flex flex-col items-center mb-6">
+          <div
+            className="flex-shrink-0 w-16 h-16 rounded-full mb-4"
+            style={{ background: "linear-gradient(135deg, #3a6de0 0%, #00d4aa 100%)" }}
+          />
+          <InlineEdit
+            value={labelEdit?.trim() || ""}
+            onSave={onSaveLabel}
+            disabled={!hasWriteAccess || savingLabel}
+            placeholder={`Account #${detailIndex}`}
+            as="h2"
+            className="text-2xl font-bold text-white mb-2 text-center"
+            inputClassName="text-2xl font-bold text-white text-center"
+          />
+          <p className="text-[#8aa8df]">Identity #{detailIndex}</p>
+        </div>
 
         {!isCurrent && (
           <div className="max-w-md mx-auto mb-6">
