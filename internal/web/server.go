@@ -185,6 +185,9 @@ func (s *Server) routes() {
 	// Wallet API (mnemonic wallet, multi-chain derivation, rotate)
 	s.mux.HandleFunc("GET /api/wallet", s.handleAPIWalletGet)
 	s.mux.HandleFunc("GET /api/wallet/address", s.handleAPIWalletAddressGet)
+	s.mux.HandleFunc("GET /api/wallet/identity-labels", s.handleAPIWalletIdentityLabelsGet)
+	s.mux.HandleFunc("PUT /api/wallet/identity-labels", s.handleAPIWalletIdentityLabelsPut)
+	s.mux.HandleFunc("PATCH /api/wallet/identity-labels", s.handleAPIWalletIdentityLabelsPatch)
 	s.mux.HandleFunc("POST /api/wallet/rotate", s.handleAPIWalletRotate)
 	s.mux.HandleFunc("POST /api/wallet/clear-cache", s.handleAPIWalletClearCache)
 }

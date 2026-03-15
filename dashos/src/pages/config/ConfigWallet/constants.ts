@@ -12,3 +12,7 @@ export const SUPPORTED_CHAINS = [
 ] as const;
 
 export const DEFAULT_CHAIN = "eip155:8453";
+
+export function chainName(caip2: string): string {
+  return SUPPORTED_CHAINS.find((c) => c.caip2 === caip2)?.name ?? caip2;
+}

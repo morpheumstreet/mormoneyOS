@@ -13,9 +13,10 @@
     "preview": "bun ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
-    "cronstrue": "^3.13.0",
+    "@forward-software/qrcodets": "^1.0.0",
     "@tailwindcss/typography": "^0.5.19",
     "buffer": "^6.0.3",
+    "cronstrue": "^3.13.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

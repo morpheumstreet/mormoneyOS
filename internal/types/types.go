@@ -78,8 +78,9 @@ type AutomatonConfig struct {
 	HeartbeatConfigPath string        `json:"heartbeatConfigPath"`
 	DBPath             string         `json:"dbPath"`
 	LogLevel           string         `json:"logLevel"`
-	WalletAddress      string         `json:"walletAddress"`
-	DefaultChain       string         `json:"defaultChain,omitempty"` // CAIP-2, e.g. "eip155:8453"
+	WalletAddress      string            `json:"walletAddress"`
+	DefaultChain       string            `json:"defaultChain,omitempty"` // CAIP-2, e.g. "eip155:8453"
+	IdentityLabels     map[string]string `json:"identityLabels,omitempty"` // HD index -> friendly name for wallet identities
 	ChainProviders     map[string]ChainProviderConfig `json:"chainProviders,omitempty"` // Override RPC+USDC per chain
 	SkillsDir          string         `json:"skillsDir"`
 	Skills             *SkillsConfig  `json:"skills,omitempty"` // Trusted roots, token budget for prompt injection

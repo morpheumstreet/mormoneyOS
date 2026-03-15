@@ -175,6 +175,14 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["defaultChain"].(string); ok && v != "" {
 		cfg.DefaultChain = v
 	}
+	if m, ok := raw["identityLabels"].(map[string]any); ok {
+		cfg.IdentityLabels = make(map[string]string)
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				cfg.IdentityLabels[k] = s
+			}
+		}
+	}
 	if prov, ok := raw["chainProviders"].(map[string]any); ok {
 		cfg.ChainProviders = make(map[string]types.ChainProviderConfig)
 		for chain, pv := range prov {
@@ -600,6 +608,11 @@ func LoadToolsFromFile(path string) ([]types.ConfigToolDef, error) {
 		}
 	}
 	return out, nil
+}
+
+// DefaultConfig returns a new config with default values. Used when no config file exists yet.
+func DefaultConfig() *types.AutomatonConfig {
+	return defaultConfig()
 }
 
 func defaultConfig() *types.AutomatonConfig {

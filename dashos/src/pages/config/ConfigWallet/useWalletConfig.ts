@@ -3,11 +3,13 @@ import {
   getWallet,
   getWalletAddress,
   postWalletRotate,
+  getWalletIdentityLabels,
+  patchWalletIdentityLabels,
   getConfig,
   putConfig,
 } from "@/lib/api";
-import type { WalletResponse, WalletAddressResponse } from "@/lib/api";
-import { SUPPORTED_CHAINS, DEFAULT_CHAIN } from "./constants";
+import type { WalletResponse } from "@/lib/api";
+import { SUPPORTED_CHAINS } from "./constants";
 
 export interface ChainAddress {
   chain: string;
@@ -20,9 +22,21 @@ export interface ChainAddress {
 
 export function useWalletConfig() {
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
+  const [identityLabels, setIdentityLabels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const loadIdentityLabels = useCallback(async () => {
+    try {
+      const res = await getWalletIdentityLabels();
+      setIdentityLabels(res.identityLabels ?? {});
+      return res.identityLabels ?? {};
+    } catch {
+      setIdentityLabels({});
+      return {};
+    }
+  }, []);
 
   const loadWallet = useCallback(async () => {
     setLoading(true);
@@ -39,6 +53,18 @@ export function useWalletConfig() {
       setLoading(false);
     }
   }, []);
+
+  const getPrimaryAddress = useCallback(
+    async (chain: string, index: number): Promise<string> => {
+      try {
+        const res = await getWalletAddress(chain, index);
+        return res.address ?? "";
+      } catch {
+        return "";
+      }
+    },
+    []
+  );
 
   const deriveAddressesForIndex = useCallback(
     async (index: number): Promise<ChainAddress[]> => {
@@ -88,35 +114,33 @@ export function useWalletConfig() {
 
   const updateConfigIdentity = useCallback(
     async (updates: { defaultChain?: string; identityLabel?: string; index?: number }) => {
-      let raw: string;
-      try {
-        raw = await getConfig();
-      } catch {
-        raw = "{}";
-      }
-      let obj: Record<string, unknown>;
-      try {
-        obj = typeof raw === "string" ? JSON.parse(raw || "{}") : (raw as Record<string, unknown>);
-      } catch {
-        obj = {};
-      }
-      if (updates.defaultChain) obj.defaultChain = updates.defaultChain;
       if (updates.identityLabel != null && updates.index != null) {
-        const labels = (obj.identityLabels as Record<string, string>) || {};
-        labels[String(updates.index)] = updates.identityLabel;
-        obj.identityLabels = labels;
+        await patchWalletIdentityLabels({ index: updates.index, label: updates.identityLabel });
       }
-      await putConfig(JSON.stringify(obj, null, 2));
+      if (updates.defaultChain) {
+        let raw: string;
+        try {
+          raw = await getConfig();
+        } catch {
+          raw = "{}";
+        }
+        let obj: Record<string, unknown>;
+        try {
+          obj = typeof raw === "string" ? JSON.parse(raw || "{}") : (raw as Record<string, unknown>);
+        } catch {
+          obj = {};
+        }
+        obj.defaultChain = updates.defaultChain;
+        await putConfig(JSON.stringify(obj, null, 2));
+      }
     },
     []
   );
 
   const getIdentityLabel = useCallback(async (index: number): Promise<string> => {
     try {
-      const raw = await getConfig();
-      const obj = typeof raw === "string" ? JSON.parse(raw || "{}") : (raw as Record<string, unknown>);
-      const labels = obj.identityLabels as Record<string, string> | undefined;
-      return labels?.[String(index)] ?? "";
+      const res = await getWalletIdentityLabels();
+      return res.identityLabels?.[String(index)] ?? "";
     } catch {
       return "";
     }
@@ -124,12 +148,15 @@ export function useWalletConfig() {
 
   return {
     wallet,
+    identityLabels,
     loading,
     error,
     success,
     setError,
     setSuccess,
     loadWallet,
+    loadIdentityLabels,
+    getPrimaryAddress,
     deriveAddressesForIndex,
     rotateToIndex,
     updateConfigIdentity,

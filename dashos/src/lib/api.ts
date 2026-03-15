@@ -75,6 +75,26 @@ async function apiFetch<T>(
   return response.json() as Promise<T>;
 }
 
+/** Read-only GET helper: parses JSON, handles 404 and error body. */
+async function fetchGet<T>(
+  path: string,
+  options?: { notFoundMsg?: string; parseErrorFromBody?: boolean }
+): Promise<T> {
+  const res = await fetch(API + path);
+  if (!res.ok) {
+    if (options?.parseErrorFromBody) {
+      const data = await res.json().catch(() => ({}));
+      const msg = (data as { error?: string }).error;
+      throw new Error(msg || res.statusText);
+    }
+    const msg = res.status === 404 && options?.notFoundMsg
+      ? options.notFoundMsg
+      : res.statusText;
+    throw new Error(msg);
+  }
+  return res.json() as Promise<T>;
+}
+
 /** Read-only endpoints (no auth required by mormoneyOS) */
 export function getStatus(): Promise<StatusResponse> {
   return fetch(API + "/status").then((r) => {
@@ -726,6 +746,8 @@ export function patchSkillDeactivate(name: string): Promise<{ name: string; enab
 }
 
 /** Wallet (mnemonic-derived, multi-chain; no mnemonic/keys exposed) */
+const WALLET_PATH = "/wallet";
+
 export interface WalletResponse {
   exists: boolean;
   currentIndex?: number;
@@ -751,19 +773,40 @@ export interface WalletRotateResponse {
   message?: string;
 }
 
+/** Identity labels (HD index → friendly name) stored in automaton.json */
+export interface WalletIdentityLabelsResponse {
+  identityLabels: Record<string, string>;
+}
+
+export interface WalletIdentityLabelsWriteResponse extends WalletIdentityLabelsResponse {
+  ok: boolean;
+}
+
+/** Single label update: set or remove (empty string) */
+export interface WalletIdentityLabelPatchSingle {
+  index: number;
+  label: string;
+}
+
+/** Merge multiple labels into existing */
+export interface WalletIdentityLabelPatchMerge {
+  identityLabels: Record<string, string>;
+}
+
+export type WalletIdentityLabelPatchBody =
+  | WalletIdentityLabelPatchSingle
+  | WalletIdentityLabelPatchMerge;
+
 export function getWallet(): Promise<WalletResponse> {
-  return fetch(API + "/wallet").then((r) => {
-    if (!r.ok) throw new Error(r.status === 404 ? "Wallet API not available" : r.statusText);
-    return r.json();
-  });
+  return fetchGet<WalletResponse>(WALLET_PATH, { notFoundMsg: "Wallet API not available" });
 }
 
 export function getWalletAddress(chain: string, index?: number): Promise<WalletAddressResponse> {
   const params = new URLSearchParams({ chain });
   if (index != null && index > 0) params.set("index", String(index));
-  return fetch(`${API}/wallet/address?${params}`).then((r) => {
-    if (!r.ok) return r.json().then((d) => { throw new Error((d as { error?: string }).error || r.statusText); });
-    return r.json();
+  return fetchGet<WalletAddressResponse>(`${WALLET_PATH}/address?${params}`, {
+    notFoundMsg: "Wallet address API not available",
+    parseErrorFromBody: true,
   });
 }
 
@@ -772,15 +815,39 @@ export function postWalletRotate(body: {
   preview?: boolean;
   confirm?: boolean;
 }): Promise<WalletRotateResponse> {
-  return apiFetch<WalletRotateResponse>("/wallet/rotate", {
+  return apiFetch<WalletRotateResponse>(`${WALLET_PATH}/rotate`, {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
 export function postWalletClearCache(): Promise<{ ok: boolean; message?: string }> {
-  return apiFetch<{ ok: boolean; message?: string }>("/wallet/clear-cache", {
+  return apiFetch<{ ok: boolean; message?: string }>(`${WALLET_PATH}/clear-cache`, {
     method: "POST",
+  });
+}
+
+export function getWalletIdentityLabels(): Promise<WalletIdentityLabelsResponse> {
+  return fetchGet<WalletIdentityLabelsResponse>(`${WALLET_PATH}/identity-labels`, {
+    notFoundMsg: "Wallet identity labels API not available",
+  });
+}
+
+export function putWalletIdentityLabels(
+  identityLabels: Record<string, string>
+): Promise<WalletIdentityLabelsWriteResponse> {
+  return apiFetch<WalletIdentityLabelsWriteResponse>(`${WALLET_PATH}/identity-labels`, {
+    method: "PUT",
+    body: JSON.stringify({ identityLabels }),
+  });
+}
+
+export function patchWalletIdentityLabels(
+  body: WalletIdentityLabelPatchBody
+): Promise<WalletIdentityLabelsWriteResponse> {
+  return apiFetch<WalletIdentityLabelsWriteResponse>(`${WALLET_PATH}/identity-labels`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
   });
 }
 

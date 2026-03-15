@@ -39,6 +39,7 @@ function AppContent() {
           <Route path="tunnel" element={<ConfigTunnel />} />
           <Route path="model-list" element={<ConfigModelList />} />
           <Route path="economic" element={<ConfigEconomic />} />
+          <Route path="wallet/:index" element={<ConfigWallet />} />
           <Route path="wallet" element={<ConfigWallet />} />
           <Route path="soul" element={<ConfigSoul />} />
         </Route>

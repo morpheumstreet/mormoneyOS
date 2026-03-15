@@ -224,6 +224,144 @@ func (s *Server) handleAPIWalletRotate(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// handleAPIWalletIdentityLabelsGet returns identity labels (index -> name) from automaton.json.
+// GET /api/wallet/identity-labels
+func (s *Server) handleAPIWalletIdentityLabelsGet(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load()
+	if err != nil || cfg == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"identityLabels": map[string]string{}})
+		return
+	}
+	labels := cfg.IdentityLabels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"identityLabels": labels})
+}
+
+// handleAPIWalletIdentityLabelsPut replaces identity labels in automaton.json.
+// PUT /api/wallet/identity-labels
+// Body: { "identityLabels": { "0": "Main", "1": "Trading", ... } }
+func (s *Server) handleAPIWalletIdentityLabelsPut(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, ok := s.validateJWT(r); !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		IdentityLabels map[string]string `json:"identityLabels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("identity-labels put: config load failed", "err", err)
+		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+
+	if body.IdentityLabels == nil {
+		cfg.IdentityLabels = map[string]string{}
+	} else {
+		cfg.IdentityLabels = body.IdentityLabels
+	}
+
+	if err := config.Save(cfg); err != nil {
+		s.Log.Error("identity-labels put: config save failed", "err", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"identityLabels": cfg.IdentityLabels,
+	})
+}
+
+// handleAPIWalletIdentityLabelsPatch updates one or more identity labels (merge).
+// PATCH /api/wallet/identity-labels
+// Body: { "index": 1, "label": "Trading" } for single, or { "identityLabels": { "1": "Trading" } } for merge
+func (s *Server) handleAPIWalletIdentityLabelsPatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, ok := s.validateJWT(r); !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		Index          *int              `json:"index"`
+		Label          string            `json:"label"`
+		IdentityLabels map[string]string `json:"identityLabels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("identity-labels patch: config load failed", "err", err)
+		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	if cfg.IdentityLabels == nil {
+		cfg.IdentityLabels = make(map[string]string)
+	}
+
+	if body.Index != nil {
+		// Single update: { "index": 1, "label": "Trading" }
+		k := strconv.Itoa(*body.Index)
+		if body.Label == "" {
+			delete(cfg.IdentityLabels, k)
+		} else {
+			cfg.IdentityLabels[k] = body.Label
+		}
+	} else if body.IdentityLabels != nil {
+		// Merge: { "identityLabels": { "1": "Trading", ... } }
+		for k, v := range body.IdentityLabels {
+			if v == "" {
+				delete(cfg.IdentityLabels, k)
+			} else {
+				cfg.IdentityLabels[k] = v
+			}
+		}
+	} else {
+		http.Error(w, "Provide index+label or identityLabels", http.StatusBadRequest)
+		return
+	}
+
+	if err := config.Save(cfg); err != nil {
+		s.Log.Error("identity-labels patch: config save failed", "err", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"identityLabels": cfg.IdentityLabels,
+	})
+}
+
 // handleAPIWalletClearCache clears derived keys cache.
 // POST /api/wallet/clear-cache
 func (s *Server) handleAPIWalletClearCache(w http.ResponseWriter, r *http.Request) {

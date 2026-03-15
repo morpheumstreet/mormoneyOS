@@ -39,7 +39,10 @@ export function AddressCard({ item, onCopy, onShowQr }: AddressCardProps) {
             <>
               <button
                 type="button"
-                onClick={() => onCopy(item.address)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCopy(item.address);
+                }}
                 className="rounded p-1.5 text-[#8aa8df] hover:bg-[#1a3670]/60 hover:text-white transition-colors"
                 title="Copy"
               >
@@ -48,7 +51,10 @@ export function AddressCard({ item, onCopy, onShowQr }: AddressCardProps) {
               {onShowQr && (
                 <button
                   type="button"
-                  onClick={() => onShowQr(item.address, item.name)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowQr(item.address, item.name);
+                  }}
                   className="rounded p-1.5 text-[#8aa8df] hover:bg-[#1a3670]/60 hover:text-white transition-colors"
                   title="QR code"
                 >

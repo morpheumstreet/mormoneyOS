@@ -19,7 +19,7 @@ const configNavItems = [
   { to: "/config/tunnel", icon: Network, label: "Tunnel" },
   { to: "/config/model-list", icon: Cpu, label: "Model List" },
   { to: "/config/economic", icon: Wallet, label: "Economic" },
-  { to: "/config/wallet", icon: Wallet2, label: "Wallet" },
+  { to: "/config/wallet", icon: Wallet2, label: "ID" },
   { to: "/config/soul", icon: Sparkles, label: "Soul" },
 ];
 

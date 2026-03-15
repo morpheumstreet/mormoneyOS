@@ -78,6 +78,9 @@ mormoneyOS integrates with several API surfaces:
 | PATCH | `/api/heartbeat/{name}/schedule` | ✅ Implemented | Update cron schedule for a heartbeat by name | `{ name, schedule }` |
 | GET | `/api/wallet` | ✅ Implemented | Wallet info (no mnemonic): current index, address, wordCount | `{ exists, currentIndex?, address?, defaultChain?, wordCount? }` |
 | GET | `/api/wallet/address` | ✅ Implemented | Derive address for chain (optional index) | `{ chain, index, address }` |
+| GET | `/api/wallet/identity-labels` | ✅ Implemented | Identity labels (HD index → name) from automaton.json | `{ identityLabels: Record<string, string> }` |
+| PUT | `/api/wallet/identity-labels` | ✅ Implemented | Replace identity labels (auth required) | `{ identityLabels }` → `{ ok, identityLabels }` |
+| PATCH | `/api/wallet/identity-labels` | ✅ Implemented | Update one or merge labels (auth required) | `{ index, label }` or `{ identityLabels }` → `{ ok, identityLabels }` |
 | POST | `/api/wallet/rotate` | ✅ Implemented | Rotate HD account index (preview or confirm; auth required) | `{ currentIndex, targetIndex, currentAddresses, newAddresses, confirmed? }` |
 | POST | `/api/wallet/clear-cache` | ✅ Implemented | Clear derived keys cache (auth required) | `{ ok, message }` |
 
@@ -411,6 +414,19 @@ Mnemonic wallet management: multi-chain address derivation, HD index rotation, c
 - **Response:** `{ chain, index, address }`
 - **Errors:** `400` if chain missing or invalid; `400` if no wallet or derivation fails
 
+**GET /api/wallet/identity-labels** — Identity labels (HD index → friendly name) from automaton.json.
+
+- **Response:** `{ identityLabels: { "0": "Main", "1": "Trading", ... } }`
+
+**PUT /api/wallet/identity-labels** — Replace all identity labels. **Requires `Authorization: Bearer <token>`.**
+- **Body:** `{ "identityLabels": { "0": "Main", "1": "Trading", ... } }`
+- **Response:** `{ ok: true, identityLabels: { ... } }`
+
+**PATCH /api/wallet/identity-labels** — Update one label or merge. **Requires `Authorization: Bearer <token>`.**
+- **Body (single):** `{ "index": 1, "label": "Trading" }` — empty label removes entry
+- **Body (merge):** `{ "identityLabels": { "1": "Trading" } }` — merge into existing
+- **Response:** `{ ok: true, identityLabels: { ... } }`
+
 **POST /api/wallet/rotate** — Rotate HD account index. **Requires `Authorization: Bearer <token>`.**
 
 - **Content-Type:** `application/json`
@@ -564,6 +580,9 @@ Mnemonic wallet management: multi-chain address derivation, HD index rotation, c
 | `PATCH /api/heartbeat/{name}/schedule` | ✅ Full | Update cron schedule by name |
 | `GET /api/wallet` | ✅ Full | Wallet info (no mnemonic); current index, address, wordCount |
 | `GET /api/wallet/address` | ✅ Full | Derive address for chain (query: chain, index?) |
+| `GET /api/wallet/identity-labels` | ✅ Full | Identity labels (index → name) from automaton.json |
+| `PUT /api/wallet/identity-labels` | ✅ Full | Replace identity labels (JWT required) |
+| `PATCH /api/wallet/identity-labels` | ✅ Full | Update/merge identity labels (JWT required) |
 | `POST /api/wallet/rotate` | ✅ Full | Rotate HD index (preview/confirm; JWT required) |
 | `POST /api/wallet/clear-cache` | ✅ Full | Clear derived keys cache (JWT required) |
 
