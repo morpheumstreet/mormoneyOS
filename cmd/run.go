@@ -30,36 +30,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func tokenLimitsFromConfig(cfg *types.AutomatonConfig) *agent.TokenLimits {
-	if cfg == nil {
-		return nil
-	}
-	limits := agent.DefaultTokenLimits().WithOverrides(cfg.MaxInputTokens, cfg.MaxHistoryTurns, cfg.WarnAtTokens)
-	// Enable rule-based history compression when we have many turns (full last 6, summarize 7–20)
-	compressCfg := agent.DefaultHistoryTrimmerConfig()
-	compressCfg.HistoryBudget = limits.MaxInputTokens - 800 // reserve for system, memory, input, tools
-	limits.HistoryCompress = &compressCfg
-	return &limits
-}
-
-func contextLimitForModelFromConfig(cfg *types.AutomatonConfig) agent.ContextLimitForModel {
-	if cfg == nil || len(cfg.Models) == 0 {
-		return nil
-	}
-	models := cfg.Models
-	return func(modelID string) int {
-		for _, m := range models {
-			if m.ModelID == modelID || strings.HasSuffix(modelID, "/"+m.ModelID) || strings.HasSuffix(modelID, m.ModelID) {
-				if m.ContextLimit > 0 {
-					return m.ContextLimit
-				}
-				break
-			}
-		}
-		return 0
-	}
-}
-
 // agentMemoryMetrics bridges memory ingestion to agent expvar metrics.
 type agentMemoryMetrics struct{}
 
@@ -235,20 +205,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			_ = json.Unmarshal([]byte(raw), &list)
 			return list
 		},
-		Config: &agent.LoopConfig{
-			Name:                   cfg.Name,
-			GenesisPrompt:          cfg.GenesisPrompt,
-			CreatorMsg:             cfg.CreatorAddress,
-			InferenceModel:         cfg.InferenceModel,
-			LowComputeModel:        cfg.LowComputeModel,
-			ResourceConstraintMode: cfg.ResourceConstraintMode,
-			WalletAddress:          primaryAddr,
-			SkillsConfig:           cfg.Skills,
-			TokenLimits:            tokenLimitsFromConfig(cfg),
-			ContextLimitForModel:   contextLimitForModelFromConfig(cfg),
-			PromptVersion:          cfg.PromptVersion,
-			Routing:                cfg.Routing,
-		},
+		Config: agent.BuildLoopConfig(cfg, &agent.BuildLoopConfigOpts{WalletAddress: primaryAddr}),
 		CreditsFn: creditsFn,
 		FallbackSender: func(ctx context.Context, claimedIds []string) {
 			for _, id := range claimedIds {

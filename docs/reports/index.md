@@ -4,7 +4,7 @@
 
 ## Summary
 
-mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), **model routing & reflection** (ModelRouter, ReflectionEngine, token cap guard, IsMoneyMovingTool), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression, **factory** BuildLoopConfig), **prompts** (versioned templates, CoT forcing), **model routing & reflection** (ModelRouter, ReflectionEngine, token cap guard, IsMoneyMovingTool), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, **simulation** (Simulator, ChaosInjector, Reporter), and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
@@ -146,7 +146,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ### 1.7 Agent Loop & Context (`internal/agent`)
 
-**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`, `internal/agent/trim_test.go`, `internal/agent/prompts_integration_test.go`
+**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`, `internal/agent/trim_test.go`, `internal/agent/prompts_integration_test.go`, `internal/agent/factory_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -181,8 +181,12 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | A29 | `TestMessageTrimmer_Trim_WithTieredRetriever` | token-caps-truncation | PASS |
 | A30 | `TestBuildMessagesFromPrompts_NoMemory` | prompts-integration | PASS |
 | A31 | `TestBuildMessagesFromPrompts_UnsupportedVersion` | prompts-integration | PASS |
+| A32 | `TestTokenLimitsFromConfig` | agent-factory | PASS |
+| A33 | `TestTokenLimitsFromConfig_Nil` | agent-factory | PASS |
+| A34 | `TestBuildLoopConfig` | agent-factory | PASS |
+| A35 | `TestBuildLoopConfig_Overrides` | agent-factory | PASS |
 
-**Total: 31 passed, 0 failed**
+**Total: 35 passed, 0 failed**
 
 ---
 
@@ -343,7 +347,21 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ---
 
-### 1.15 CLI Commands (`cmd`)
+### 1.15 Simulation (`internal/simulation`)
+
+**File:** `internal/simulation/simulation_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| SIM1 | `TestSimulation_Run_NoCrashes` | simulation-backtesting | PASS |
+| SIM2 | `TestChaosInjector_Levels` | simulation-backtesting | PASS |
+| SIM3 | `TestReporter_Generate` | simulation-backtesting | PASS |
+
+**Total: 3 passed, 0 failed**
+
+---
+
+### 1.16 CLI Commands (`cmd`)
 
 **Files:** `cmd/init_test.go`, `cmd/status_test.go`, `cmd/run_test.go`, `cmd/test_api_test.go`
 
@@ -361,7 +379,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ---
 
-### 1.16 Aggregate
+### 1.17 Aggregate
 
 | Suite | Passed | Failed | Total |
 |-------|--------|--------|-------|
@@ -371,7 +389,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | agent (policy) | 21 | 0 | 21 |
 | state | 17 | 0 | 17 |
 | heartbeat | 3 | 0 | 3 |
-| agent (loop, context, prompt, token, trim, prompts-integration) | 31 | 0 | 31 |
+| agent (loop, context, prompt, token, trim, prompts-integration, factory) | 35 | 0 | 35 |
 | prompts | 7 | 0 | 7 |
 | tools | 11 | 0 | 11 |
 | inference | 18 | 0 | 18 |
@@ -380,8 +398,9 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | skills | 1 | 0 | 1 |
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
+| simulation | 3 | 0 | 3 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **174** | **0** | **174** |
+| **Total** | **181** | **0** | **181** |
 
 ---
 
@@ -401,9 +420,9 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ```bash
 $ go test ./... -count=1
-ok  	github.com/morpheumlabs/mormoneyos-go/cmd	0.127s
+ok  	github.com/morpheumlabs/mormoneyos-go/cmd	0.057s
 ?   	github.com/morpheumlabs/mormoneyos-go/cmd/moneyclaw	[no test files]
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	0.091s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	0.068s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/config	0.041s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/conway	0.025s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/heartbeat	0.146s
@@ -417,14 +436,16 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/ratelimit	2.130s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/skills	0.031s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/social	0.016s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/soul	0.112s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	0.612s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	0.057s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/simulation	0.147s
+?   	github.com/morpheumlabs/mormoneyos-go/internal/simulation/mock	[no test files]
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	0.437s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	0.058s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	0.012s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	0.012s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.032s
 ```
 
-**Aggregate:** 174 tests passed, 0 failed.
+**Aggregate:** 181 tests passed, 0 failed.
 
 ---
 
@@ -454,6 +475,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.032s
 | **heartbeat** | H1–H3 |
 | **agent-loop** | A1–A6 |
 | **token-caps-truncation** | A7–A29 |
+| **agent-factory** | A32–A35 |
 | **prompts-integration** | A30–A31 |
 | **prompts-templates** | PR1–PR7 |
 | **model-routing-reflection** | PR7, TO8, INF17, INF18 |
@@ -465,6 +487,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.032s
 | **skills-design** | SK1 |
 | **soul** | SO1–SO4 |
 | **tunnel** | TN1 |
+| **simulation-backtesting** | SIM1–SIM3 |
 | **cli** | CLI1–CLI7 |
 
 ---
@@ -487,6 +510,9 @@ make test-coverage
 # CLI smoke
 ./bin/moneyclaw --help && ./bin/moneyclaw init && ./bin/moneyclaw status
 
+# Simulation smoke
+./bin/moneyclaw sim --days=1 --report=json
+
 # E2E (manual)
 AUTOMATON_DIR=/tmp/moneyclaw-test ./bin/moneyclaw init && echo "agent\nprompt\n0x0\n\n" | ./bin/moneyclaw setup && ./bin/moneyclaw run
 
@@ -508,4 +534,5 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [prompt-templates-cot.md](./design/prompt-templates-cot.md) — Versioned prompt templates (v1), Chain-of-Thought forcing
 - [model-routing-reflection-step5.md](./design/model-routing-reflection-step5.md) — Model routing, self-critique, Reflexion-style improvement
 - [model-routing-reflexion.md](./design/model-routing-reflexion.md) — Model routing & Reflexion layer (token cap, reflection triggers)
+- [simulation-backtesting.md](./design/simulation-backtesting.md) — Simulation / backtest mode
 - [skills-design.md](./design/skills-design.md) — Skills loader

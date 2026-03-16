@@ -65,6 +65,7 @@ func init() {
 	_ = viper.BindEnv("conwayApiKey", envConwayKey)
 
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(simCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(strategiesCmd)
