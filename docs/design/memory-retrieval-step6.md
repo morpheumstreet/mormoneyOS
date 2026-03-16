@@ -36,7 +36,7 @@ Higher-priority tiers get token budget first; unused budget rolls to the next ti
 - **Phase 3 (implemented):** 5-tier tables (schema v13); `DBMemoryRetriever` (DB-only); `BudgetAllocator`; memory block injected at index 1
 - **DB-only:** No KV fallback; all five tables read from DB
 - **Tools:** `remember_fact`, `recall_facts`, `forget`, `set_goal`, `complete_goal`, `save_procedure`, `recall_procedure`, `review_memory` (KV-backed)
-- **Pending (Phase 3):** Memory ingestion pipeline to populate working/episodic/relationship from turns
+- **Memory ingestion:** Implemented. See [memory-auto-ingestion.md](./memory-auto-ingestion.md). Opt-in via `memory.autoIngest.enabled`.
 
 ---
 

@@ -4,7 +4,7 @@
 
 ## Summary
 
-mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
@@ -277,7 +277,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ### 1.11 Memory (`internal/memory`)
 
-**Files:** `internal/memory/retriever_test.go`, `internal/memory/select_test.go`
+**Files:** `internal/memory/retriever_test.go`, `internal/memory/select_test.go`, `internal/memory/ingestion_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -291,8 +291,11 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | M8 | `TestDefaultTierConfig` | memory-retrieval | PASS |
 | M9 | `TestTieredMemoryRetriever_Retrieve` | memory-retrieval | PASS |
 | M10 | `TestTieredMemoryRetriever_RetrieveWithBudget` | memory-retrieval | PASS |
+| M11 | `TestParseExtraction` | memory-auto-ingestion | PASS |
+| M12 | `TestParseExtraction_WithMarkdown` | memory-auto-ingestion | PASS |
+| M13 | `TestInsertIngestCandidate_Integration` | memory-auto-ingestion | PASS |
 
-**Total: 10 passed, 0 failed**
+**Total: 13 passed, 0 failed**
 
 ---
 
@@ -368,12 +371,12 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | tools | 10 | 0 | 10 |
 | inference | 16 | 0 | 16 |
 | identity | 14 | 0 | 14 |
-| memory | 10 | 0 | 10 |
+| memory | 13 | 0 | 13 |
 | skills | 1 | 0 | 1 |
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **166** | **0** | **166** |
+| **Total** | **169** | **0** | **169** |
 
 ---
 
@@ -416,7 +419,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	0.013s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 ```
 
-**Aggregate:** 166 tests passed, 0 failed.
+**Aggregate:** 169 tests passed, 0 failed.
 
 ---
 
@@ -452,6 +455,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 | **inference** | INF1–INF16 |
 | **identity** | ID1–ID14 |
 | **memory-retrieval** | M1–M10 |
+| **memory-auto-ingestion** | M11–M13 |
 | **skills-design** | SK1 |
 | **soul** | SO1–SO4 |
 | **tunnel** | TN1 |
@@ -492,6 +496,7 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [ARCHITECTURE.md](../ARCHITECTURE.md) — System architecture
 - [API_REFERENCE.md](./API_REFERENCE.md) — API documentation
 - [memory-retrieval-step6.md](./design/memory-retrieval-step6.md) — Memory retrieval
+- [memory-auto-ingestion.md](./design/memory-auto-ingestion.md) — Automatic memory ingestion & consolidation
 - [token-caps-truncation.md](./design/token-caps-truncation.md) — Token caps, truncation, prefill limit avoidance
 - [context-trimming-stage2.md](./design/context-trimming-stage2.md) — HistoryTrimmer, TieredMemorySelector, MessageTrimmer
 - [prompt-templates-cot.md](./design/prompt-templates-cot.md) — Versioned prompt templates (v1), Chain-of-Thought forcing
