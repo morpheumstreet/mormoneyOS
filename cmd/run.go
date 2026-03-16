@@ -60,6 +60,12 @@ func contextLimitForModelFromConfig(cfg *types.AutomatonConfig) agent.ContextLim
 	}
 }
 
+// agentMemoryMetrics bridges memory ingestion to agent expvar metrics.
+type agentMemoryMetrics struct{}
+
+func (agentMemoryMetrics) RecordIngestTurn() { agent.RecordMemoryIngestTurn() }
+func (agentMemoryMetrics) RecordLatencyMs(ms int64) { agent.RecordMemoryExtractionLatency(ms) }
+
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start runtime (agent loop + heartbeat)",
@@ -169,6 +175,25 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}()
 	}
 
+	// 5e. Memory service (auto-ingestion when enabled)
+	var memSvc *memory.MemoryService
+	if cfg.Memory != nil && cfg.Memory.AutoIngest != nil && cfg.Memory.AutoIngest.Enabled {
+		memCfg := memory.MemoryConfig{
+			AutoIngestEnabled:       true,
+			CheapModel:              cfg.Memory.AutoIngest.CheapModel,
+			ConsolidationIntervalMin: cfg.Memory.AutoIngest.ConsolidationIntervalMinutes,
+			MaxCandidatesPerBatch:   cfg.Memory.AutoIngest.MaxCandidatesPerBatch,
+		}
+		if memCfg.ConsolidationIntervalMin <= 0 {
+			memCfg.ConsolidationIntervalMin = 12
+		}
+		if memCfg.MaxCandidatesPerBatch <= 0 {
+			memCfg.MaxCandidatesPerBatch = 40
+		}
+		memSvc = memory.NewMemoryService(memCfg, db, infClient, slog.Default())
+		memSvc.SetMetrics(&agentMemoryMetrics{})
+	}
+
 	// 6. Agent loop (full ReAct when inference+store configured)
 	reg := tools.NewRegistryWithOptions(&tools.RegistryOptions{
 		Store:          db,
@@ -191,6 +216,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Tools:           reg,
 		LineageStore:    db,
 		MemoryRetriever: memory.NewTieredMemoryRetriever(db, memory.DefaultTierConfig()),
+		MemoryIngester:  memSvc,
 		DisabledToolsGetter: func() []string {
 			raw, ok, _ := db.GetKV("disabled_tools")
 			if !ok || raw == "" {
@@ -333,6 +359,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		slog.Info("shutdown signal received")
 		cancel()
 	}()
+
+	if memSvc != nil {
+		_ = memSvc.StartBackground(ctx)
+		defer memSvc.Stop()
+	}
 
 	channelMgr.Start(ctx)
 	defer channelMgr.Close()

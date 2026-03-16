@@ -473,6 +473,34 @@ func Load() (*types.AutomatonConfig, error) {
 		cfg.PromptVersion = v
 	}
 
+	// Memory config (auto-ingestion, consolidation)
+	if mc, ok := raw["memory"].(map[string]any); ok {
+		if cfg.Memory == nil {
+			cfg.Memory = &types.MemoryConfig{}
+		}
+		if ai, ok := mc["autoIngest"].(map[string]any); ok {
+			if cfg.Memory.AutoIngest == nil {
+				cfg.Memory.AutoIngest = &types.MemoryAutoIngestConfig{}
+			}
+			if v, ok := ai["enabled"].(bool); ok {
+				cfg.Memory.AutoIngest.Enabled = v
+			}
+			if v, ok := ai["cheapModel"].(string); ok && v != "" {
+				cfg.Memory.AutoIngest.CheapModel = v
+			}
+			if v, ok := ai["consolidationIntervalMinutes"].(float64); ok && v > 0 {
+				cfg.Memory.AutoIngest.ConsolidationIntervalMinutes = int(v)
+			} else if v, ok := ai["consolidationIntervalMinutes"].(int); ok && v > 0 {
+				cfg.Memory.AutoIngest.ConsolidationIntervalMinutes = v
+			}
+			if v, ok := ai["maxCandidatesPerBatch"].(float64); ok && v > 0 {
+				cfg.Memory.AutoIngest.MaxCandidatesPerBatch = int(v)
+			} else if v, ok := ai["maxCandidatesPerBatch"].(int); ok && v > 0 {
+				cfg.Memory.AutoIngest.MaxCandidatesPerBatch = v
+			}
+		}
+	}
+
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
 		cfg.Skills = &types.SkillsConfig{TokenBudgetMax: 2000}

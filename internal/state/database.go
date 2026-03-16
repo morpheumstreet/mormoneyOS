@@ -72,6 +72,9 @@ func (d *Database) migrate() error {
 	if err := d.migrateMemory5Tier(); err != nil {
 		return fmt.Errorf("migrate memory_5tier: %w", err)
 	}
+	if err := d.migrateIngestCandidates(); err != nil {
+		return fmt.Errorf("migrate ingest_candidates: %w", err)
+	}
 	_, err := d.db.Exec("INSERT OR IGNORE INTO schema_version (version) VALUES (?)", schemaVersion)
 	return err
 }
@@ -290,6 +293,24 @@ func (d *Database) migrateMemory5Tier() error {
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE INDEX IF NOT EXISTS idx_relationship_trust ON relationship_memory(trust_score DESC);
+	`)
+	return err
+}
+
+// migrateIngestCandidates creates ingest_candidates table for automatic memory ingestion pipeline.
+func (d *Database) migrateIngestCandidates() error {
+	_, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS ingest_candidates (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			turn_id TEXT NOT NULL,
+			extraction_json TEXT NOT NULL,
+			importance REAL NOT NULL DEFAULT 0,
+			processed INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_ingest_candidates_processed ON ingest_candidates(processed);
+		CREATE INDEX IF NOT EXISTS idx_ingest_candidates_created ON ingest_candidates(created_at);
 	`)
 	return err
 }
@@ -1457,6 +1478,158 @@ func (d *Database) Has5TierMemoryTables() bool {
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('working_memory','episodic_memory','semantic_memory','procedural_memory','relationship_memory')`,
 	).Scan(&n)
 	return err == nil && n == 5
+}
+
+// InsertIngestCandidate inserts a raw extraction for background consolidation.
+func (d *Database) InsertIngestCandidate(sessionID, turnID, extractionJSON string, importance float64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`INSERT INTO ingest_candidates (session_id, turn_id, extraction_json, importance, processed, created_at)
+		 VALUES (?, ?, ?, ?, 0, datetime('now'))`,
+		sessionID, turnID, extractionJSON, importance,
+	)
+	return err
+}
+
+// GetUnprocessedIngestCandidates returns up to limit unprocessed candidates, oldest first.
+func (d *Database) GetUnprocessedIngestCandidates(limit int) ([]struct {
+	ID             int64
+	SessionID      string
+	TurnID         string
+	ExtractionJSON string
+	Importance    float64
+}, error) {
+	if limit <= 0 {
+		limit = 40
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, session_id, turn_id, extraction_json, importance FROM ingest_candidates
+		 WHERE processed = 0 ORDER BY id ASC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []struct {
+		ID             int64
+		SessionID      string
+		TurnID         string
+		ExtractionJSON string
+		Importance    float64
+	}
+	for rows.Next() {
+		var r struct {
+			ID             int64
+			SessionID      string
+			TurnID         string
+			ExtractionJSON string
+			Importance    float64
+		}
+		if err := rows.Scan(&r.ID, &r.SessionID, &r.TurnID, &r.ExtractionJSON, &r.Importance); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// MarkIngestCandidatesProcessed marks the given candidate IDs as processed.
+func (d *Database) MarkIngestCandidatesProcessed(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, id := range ids {
+		_, err := d.db.Exec("UPDATE ingest_candidates SET processed = 1 WHERE id = ?", id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InsertWorkingMemory inserts a working memory entry.
+func (d *Database) InsertWorkingMemory(sessionID, content, contentType, sourceTurn string, priority, tokenCount int, expiresAt *string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var exp interface{}
+	if expiresAt != nil && *expiresAt != "" {
+		exp = *expiresAt
+	}
+	_, err := d.db.Exec(
+		`INSERT INTO working_memory (session_id, content, content_type, priority, token_count, expires_at, source_turn, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		sessionID, content, contentType, priority, tokenCount, exp, sourceTurn,
+	)
+	return err
+}
+
+// InsertEpisodicMemory inserts an episodic memory entry.
+func (d *Database) InsertEpisodicMemory(sessionID, eventType, summary, detail, outcome string, importance float64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`INSERT INTO episodic_memory (session_id, event_type, summary, detail, outcome, importance, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+		sessionID, eventType, summary, detail, outcome, importance,
+	)
+	return err
+}
+
+// InsertSemanticMemory inserts or updates a semantic memory entry (UPSERT by category+key).
+func (d *Database) InsertSemanticMemory(category, key, value string, confidence float64, source string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`INSERT INTO semantic_memory (category, key, value, confidence, source, created_at)
+		 VALUES (?, ?, ?, ?, ?, datetime('now'))
+		 ON CONFLICT(category, key) DO UPDATE SET value = excluded.value, confidence = excluded.confidence, source = excluded.source`,
+		category, key, value, confidence, source,
+	)
+	return err
+}
+
+// InsertProceduralMemory inserts or updates a procedural memory entry (UPSERT by name).
+func (d *Database) InsertProceduralMemory(name, description, steps string, successCount, failureCount int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := d.db.Exec(
+		`INSERT INTO procedural_memory (name, description, steps, success_count, failure_count, last_used_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+		 ON CONFLICT(name) DO UPDATE SET
+		   description = excluded.description,
+		   steps = excluded.steps,
+		   success_count = procedural_memory.success_count + excluded.success_count,
+		   failure_count = procedural_memory.failure_count + excluded.failure_count,
+		   last_used_at = excluded.last_used_at`,
+		name, description, steps, successCount, failureCount, now,
+	)
+	return err
+}
+
+// InsertRelationshipMemory inserts or updates a relationship memory entry (UPSERT by entity_address).
+func (d *Database) InsertRelationshipMemory(entityAddress, entityName, relType string, trustScore float64, interactionCount int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := d.db.Exec(
+		`INSERT INTO relationship_memory (entity_address, entity_name, relationship_type, trust_score, interaction_count, last_interaction_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+		 ON CONFLICT(entity_address) DO UPDATE SET
+		   entity_name = COALESCE(excluded.entity_name, entity_name),
+		   relationship_type = COALESCE(excluded.relationship_type, relationship_type),
+		   trust_score = excluded.trust_score,
+		   interaction_count = relationship_memory.interaction_count + excluded.interaction_count,
+		   last_interaction_at = excluded.last_interaction_at`,
+		entityAddress, entityName, relType, trustScore, interactionCount, now,
+	)
+	return err
 }
 
 // GetInferenceCostSummary returns today_cost, today_calls, total_cost from inference_costs if table exists.

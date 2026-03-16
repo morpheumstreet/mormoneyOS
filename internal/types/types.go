@@ -131,6 +131,22 @@ type AutomatonConfig struct {
 
 	// PromptVersion: "v1" = versioned templates + CoT forcing; empty = legacy ad-hoc prompts.
 	PromptVersion string `json:"promptVersion,omitempty"`
+
+	// Memory: auto-ingestion and consolidation (5-tier memory pipeline).
+	Memory *MemoryConfig `json:"memory,omitempty"`
+}
+
+// MemoryConfig holds automatic memory ingestion settings.
+type MemoryConfig struct {
+	AutoIngest *MemoryAutoIngestConfig `json:"autoIngest,omitempty"`
+}
+
+// MemoryAutoIngestConfig configures the per-turn extraction and background consolidation.
+type MemoryAutoIngestConfig struct {
+	Enabled                     bool   `json:"enabled"`
+	CheapModel                  string `json:"cheapModel,omitempty"`
+	ConsolidationIntervalMinutes int    `json:"consolidationIntervalMinutes,omitempty"`
+	MaxCandidatesPerBatch       int    `json:"maxCandidatesPerBatch,omitempty"`
 }
 
 // TelegramGroupCfg is per-group Telegram config (OpenClaw-style).

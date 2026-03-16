@@ -56,20 +56,26 @@ type ToolExecutor interface {
 // Called with ctx and claimed message IDs; implementation looks up route and sends via channels.
 type FallbackSender func(ctx context.Context, claimedIds []string)
 
+// MemoryIngester ingests turn data into memory (optional, for automatic memory pipeline).
+type MemoryIngester interface {
+	IngestTurn(ctx context.Context, turn *memory.TurnData) error
+}
+
 // Loop implements the ReAct cycle per mormoneyOS design.
 type Loop struct {
-	policy               *PolicyEngine
-	persister            TurnPersister
-	store                AgentStore
-	inference            inference.Client
-	tools                ToolExecutor
-	config               *LoopConfig
-	creditsFn            func(ctx context.Context) int64
-	lineageStore         replication.LineageStore
-	memoryRetriever      memory.MemoryRetriever
-	disabledToolsGetter  func() []string
-	fallbackSender       FallbackSender
-	log                  *slog.Logger
+	policy              *PolicyEngine
+	persister           TurnPersister
+	store               AgentStore
+	inference           inference.Client
+	tools               ToolExecutor
+	config              *LoopConfig
+	creditsFn           func(ctx context.Context) int64
+	lineageStore        replication.LineageStore
+	memoryRetriever     memory.MemoryRetriever
+	memoryIngester      MemoryIngester
+	disabledToolsGetter func() []string
+	fallbackSender      FallbackSender
+	log                 *slog.Logger
 }
 
 // NewLoop creates an agent loop.
@@ -87,17 +93,18 @@ func NewLoopWithPersister(policy *PolicyEngine, persister TurnPersister, log *sl
 
 // LoopOptions configures the full ReAct loop (TS AgentLoopOptions-aligned).
 type LoopOptions struct {
-	Policy               *PolicyEngine
-	Store                AgentStore
-	Inference            inference.Client
-	Tools                ToolExecutor
-	Config               *LoopConfig
-	CreditsFn            func(ctx context.Context) int64
-	LineageStore         replication.LineageStore   // optional; for GetLineageSummary in system prompt
-	MemoryRetriever      memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
-	DisabledToolsGetter  func() []string           // optional; when set, filters tool schemas (tools disabled via dashboard)
-	FallbackSender       FallbackSender            // optional; when LLM fails with claimed inbox, send "Sorry, having trouble" to user
-	Log                  *slog.Logger
+	Policy              *PolicyEngine
+	Store               AgentStore
+	Inference           inference.Client
+	Tools               ToolExecutor
+	Config              *LoopConfig
+	CreditsFn           func(ctx context.Context) int64
+	LineageStore        replication.LineageStore   // optional; for GetLineageSummary in system prompt
+	MemoryRetriever     memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
+	MemoryIngester      MemoryIngester             // optional; automatic memory ingestion from turns
+	DisabledToolsGetter func() []string            // optional; when set, filters tool schemas (tools disabled via dashboard)
+	FallbackSender      FallbackSender            // optional; when LLM fails with claimed inbox, send "Sorry, having trouble" to user
+	Log                 *slog.Logger
 }
 
 // NewLoopWithOptions creates a loop with full ReAct support.
@@ -115,6 +122,7 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		creditsFn:           opts.CreditsFn,
 		lineageStore:        opts.LineageStore,
 		memoryRetriever:     opts.MemoryRetriever,
+		memoryIngester:      opts.MemoryIngester,
 		disabledToolsGetter: opts.DisabledToolsGetter,
 		fallbackSender:      opts.FallbackSender,
 		log:                 opts.Log,
@@ -334,6 +342,12 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		ts := time.Now().UTC().Format(time.RFC3339)
 		tokenUsage := jsonObject("prompt_tokens", resp.InputTokens, "completion_tokens", resp.OutputTokens)
 		_ = l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, resp.Content, "[]", tokenUsage, resp.CostCents)
+		if l.memoryIngester != nil {
+			_ = l.memoryIngester.IngestTurn(ctx, &memory.TurnData{
+				TurnID: turnID, Timestamp: ts, SessionID: "", Input: pendingInput, InputSource: inputSource,
+				Thinking: resp.Content, ToolCalls: "[]",
+			})
+		}
 		if len(claimedIds) > 0 {
 			// Inbox messages claimed but model stopped without acting; stay running to process them next turn
 			return TurnResult{State: types.AgentStateRunning, WasIdle: false}
@@ -404,6 +418,12 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 
 	if err := l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, thinking, toolCallsJSON, tokenUsage, resp.CostCents); err != nil {
 		l.log.Warn("insert turn failed", "err", err)
+	}
+	if l.memoryIngester != nil {
+		_ = l.memoryIngester.IngestTurn(ctx, &memory.TurnData{
+			TurnID: turnID, Timestamp: ts, SessionID: "", Input: pendingInput, InputSource: inputSource,
+			Thinking: thinking, ToolCalls: toolCallsJSON,
+		})
 	}
 
 	// TS step 2: mark claimed inbox messages as processed (atomic with turn persistence)
