@@ -28,9 +28,12 @@ Many providers (Groq, some OpenRouter models) enforce prefill caps (~6k–8k tok
 |------|---------|
 | `internal/agent/token.go` | `Tokenizer` interface, `NaiveTokenizer`, `TokenLimits` |
 | `internal/agent/prompt.go` | `BuildMessagesSafe` — cap enforcement + truncation |
-| `internal/agent/loop.go` | Integration: fetch history, call `BuildMessagesSafe`, inference |
+| `internal/agent/trim.go` | `HistoryTrimmer`, `MessageTrimmer`, `CompressedTurn` |
+| `internal/agent/loop.go` | Integration: `MessageTrimmer.Trim` or `BuildMessagesSafe` |
+| `internal/memory/select.go` | `TieredMemorySelector`, `TieredMemoryRetriever` |
 | `internal/agent/token_test.go` | Tokenizer and limits tests |
 | `internal/agent/prompt_test.go` | `BuildMessagesSafe` tests |
+| `internal/agent/trim_test.go` | HistoryTrimmer, MessageTrimmer tests |
 
 ### 3.2 Tokenizer Interface
 
@@ -47,13 +50,14 @@ type Tokenizer interface {
 
 ```go
 type TokenLimits struct {
-    MaxInputTokens  int  // Safe threshold before truncation (default 5500)
-    MaxHistoryTurns int  // Max history turns to keep when truncating (default 12)
-    WarnAtTokens    int  // Log warning when input exceeds this (default 4500)
+    MaxInputTokens   int                   // Safe threshold before truncation (default 5500)
+    MaxHistoryTurns int                    // Max history turns to keep when truncating (default 12)
+    WarnAtTokens    int                    // Log warning when input exceeds this (default 4500)
+    HistoryCompress *HistoryTrimmerConfig  // Optional; rule-based history compression
 }
 ```
 
-Defaults target Groq and similar providers. Override via config.
+Defaults target Groq and similar providers. Override via config. When `HistoryCompress` is set and `len(turns) > FullTurns`, history is compressed before truncation (see [context-trimming-stage2.md](./context-trimming-stage2.md)).
 
 ### 3.4 BuildMessagesSafe Flow
 
@@ -163,3 +167,14 @@ Populated in `cmd/run.go` via `tokenLimitsFromConfig(cfg)`.
 - **Summarization:** When truncating with remaining budget ≥ 800 tokens, inserts heuristic summary of dropped turns (`buildDroppedTurnsSummary`) before history.
 - **Tier-aware pruning:** `ContextLimitForModel` in `LoopConfig`; per-model `ContextLimit` from `cfg.Models`; `effectiveCap` passed to `BuildMessagesSafe`.
 - **expvar:** `agent_input_tokens_total`, `agent_truncations_total` published via `internal/agent/metrics.go`.
+
+---
+
+## 9. Phase 3 — Context Trimming Stage 2 (Implemented)
+
+See [context-trimming-stage2.md](./context-trimming-stage2.md) for full design.
+
+- **HistoryTrimmer:** Rule-based compression — full last 6 turns, summarize turns 7–20, drop older. Heuristic summaries from tool results or thinking.
+- **TieredMemorySelector:** Per-tier soft/hard caps (working 1800/2200, episodic 1500/2000, etc.). `TieredMemoryRetriever` implements `MemoryRetrieverWithBudget`.
+- **MessageTrimmer:** Orchestrator — estimates memory budget, calls `RetrieveWithBudget` when supported, then `BuildMessagesSafe`. Returns `TrimStats` for observability.
+- **Loop:** Uses `MessageTrimmer.Trim` when `memoryRetriever` is set; `cmd/run.go` uses `TieredMemoryRetriever` for budget-aware memory.

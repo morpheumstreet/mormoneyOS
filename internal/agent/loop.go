@@ -245,16 +245,6 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	}
 	recentTurnsForContext, _ := l.store.GetRecentTurns(historyLimit)
 
-	// Step 6: memory retrieval
-	memoryBlock := ""
-	if l.memoryRetriever != nil {
-		var err error
-		memoryBlock, err = l.memoryRetriever.Retrieve(ctx, "", pendingInput)
-		if err != nil {
-			l.log.Debug("memory retrieval failed", "err", err)
-		}
-	}
-
 	// Inference options with tool definitions (from registry when available)
 	toolDefs := getToolSchemas(l.tools)
 	if l.disabledToolsGetter != nil {
@@ -272,6 +262,7 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	}
 
 	// Build messages with token cap and truncation (avoids prefill limit errors)
+	// Step 6: MessageTrimmer orchestrates memory retrieval (with budget when supported) + BuildMessagesSafe
 	limits := DefaultTokenLimits()
 	if l.config != nil && l.config.TokenLimits != nil {
 		limits = *l.config.TokenLimits
@@ -284,7 +275,13 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	if l.config != nil && l.config.ContextLimitForModel != nil {
 		effectiveCap = l.config.ContextLimitForModel(model)
 	}
-	messages := BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, memoryBlock, toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+	var messages []inference.ChatMessage
+	if l.memoryRetriever != nil {
+		trimmer := NewMessageTrimmer(DefaultTokenizer)
+		messages, _ = trimmer.Trim(ctx, systemPrompt, recentTurnsForContext, pendingInput, l.memoryRetriever, toolDefs, limits, effectiveCap, l.log)
+	} else {
+		messages = BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, "", toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+	}
 	opts := &inference.InferenceOptions{
 		Model:      model,
 		MaxTokens:  4096,

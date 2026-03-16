@@ -12,6 +12,52 @@ type MemoryRetriever interface {
 	Retrieve(ctx context.Context, sessionID string, currentInput string) (block string, err error)
 }
 
+// MemoryRetrieverWithBudget extends MemoryRetriever with budget-aware retrieval.
+// When the agent has limited context budget, RetrieveWithBudget selects memory within that budget.
+type MemoryRetrieverWithBudget interface {
+	MemoryRetriever
+	RetrieveWithBudget(ctx context.Context, sessionID, currentInput string, budget int) (block string, stats map[string]int, err error)
+}
+
+// TieredMemoryRetriever uses TieredMemorySelector for budget-aware retrieval.
+// Implements both MemoryRetriever and MemoryRetrieverWithBudget.
+type TieredMemoryRetriever struct {
+	selector *TieredMemorySelector
+	defaultBudget int
+}
+
+// NewTieredMemoryRetriever creates a retriever with tiered selection.
+func NewTieredMemoryRetriever(store Memory5TierStore, config TierConfig) *TieredMemoryRetriever {
+	if config == nil {
+		config = DefaultTierConfig()
+	}
+	return &TieredMemoryRetriever{
+		selector:      NewTieredMemorySelector(store, config),
+		defaultBudget: DefaultTokenBudget,
+	}
+}
+
+// Retrieve fetches memory using the default budget.
+func (r *TieredMemoryRetriever) Retrieve(ctx context.Context, sessionID, currentInput string) (string, error) {
+	res, err := r.selector.Select(ctx, sessionID, currentInput, r.defaultBudget)
+	if err != nil {
+		return "", err
+	}
+	return res.Block, nil
+}
+
+// RetrieveWithBudget fetches memory within the given token budget.
+func (r *TieredMemoryRetriever) RetrieveWithBudget(ctx context.Context, sessionID, currentInput string, budget int) (string, map[string]int, error) {
+	if budget <= 0 {
+		budget = r.defaultBudget
+	}
+	res, err := r.selector.Select(ctx, sessionID, currentInput, budget)
+	if err != nil {
+		return "", nil, err
+	}
+	return res.Block, res.Stats, nil
+}
+
 // MemoryBlock holds sections for formatting (TS formatMemoryBlock-aligned).
 // Phase 1: Known Facts, Active Goals, Known Procedures.
 // Phase 2: extended with Working, Episodic, Relationship.

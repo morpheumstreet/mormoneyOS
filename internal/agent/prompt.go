@@ -158,8 +158,19 @@ func BuildMessagesSafe(
 		cap = effectiveCap
 	}
 
-	// Phase 1: Build full (unconstrained) messages
-	baseMsgs := BuildContextMessages(systemPrompt, recentTurns, pendingInput)
+	// Phase 1: Build messages (with optional history compression)
+	var baseMsgs []inference.ChatMessage
+	var compressedTurns []CompressedTurn
+	if limits.HistoryCompress != nil && len(recentTurns) > limits.HistoryCompress.FullTurns {
+		cfg := *limits.HistoryCompress
+		if cfg.HistoryBudget <= 0 {
+			cfg.HistoryBudget = cap - 800 // reserve for system, memory, input, tools
+		}
+		compressedTurns = NewHistoryTrimmer(tok).Compress(recentTurns, cfg)
+		baseMsgs = BuildContextMessagesFromCompressed(systemPrompt, compressedTurns, pendingInput)
+	} else {
+		baseMsgs = BuildContextMessages(systemPrompt, recentTurns, pendingInput)
+	}
 	msgs := make([]inference.ChatMessage, 0, len(baseMsgs)+1)
 	msgs = append(msgs, baseMsgs[0]) // system
 	if memoryBlock != "" {
@@ -189,50 +200,78 @@ func BuildMessagesSafe(
 		log.Warn("input too large, truncating", "tokens", total, "cap", cap)
 	}
 
-	// Try keeping fewer history turns (newest first). recentTurns is chronological (oldest first).
-	maxN := limits.MaxHistoryTurns
-	if maxN > len(recentTurns) {
-		maxN = len(recentTurns)
-	}
-	for n := maxN; n >= 0; n-- {
-		subset := recentTurns[len(recentTurns)-n:]
-		truncated := BuildContextMessages(systemPrompt, subset, pendingInput)
-		out := make([]inference.ChatMessage, 0, len(truncated)+1)
-		out = append(out, truncated[0])
-		if memoryBlock != "" {
-			out = append(out, inference.ChatMessage{Role: "system", Content: memoryBlock})
-		}
-		for i := 1; i < len(truncated); i++ {
-			out = append(out, truncated[i])
-		}
-
-		sum := toolTokens + fixedOverheadTokens
-		for _, m := range out {
-			sum += tok.CountTokens(m.Content)
-		}
-		if sum <= cap {
-			remaining := cap - sum
-			droppedTurns := recentTurns[:len(recentTurns)-n]
-			if remaining >= summaryBudgetMinTokens && len(droppedTurns) > 0 {
-				summary := buildDroppedTurnsSummary(droppedTurns, remaining, tok)
-				if summary != "" {
-					summaryMsg := inference.ChatMessage{Role: "system", Content: "--- Earlier context (truncated) ---\n" + summary}
-					insertIdx := 1
-					if memoryBlock != "" {
-						insertIdx = 2
-					}
-					out = append(out[:insertIdx], append([]inference.ChatMessage{summaryMsg}, out[insertIdx:]...)...)
+	if len(compressedTurns) > 0 {
+		// Already compressed: drop oldest until under cap
+		for len(compressedTurns) > 0 {
+			truncated := BuildContextMessagesFromCompressed(systemPrompt, compressedTurns, pendingInput)
+			out := make([]inference.ChatMessage, 0, len(truncated)+1)
+			out = append(out, truncated[0])
+			if memoryBlock != "" {
+				out = append(out, inference.ChatMessage{Role: "system", Content: memoryBlock})
+			}
+			for i := 1; i < len(truncated); i++ {
+				out = append(out, truncated[i])
+			}
+			sum := toolTokens + fixedOverheadTokens
+			for _, m := range out {
+				sum += tok.CountTokens(m.Content)
+			}
+			if sum <= cap {
+				RecordInputTokens(int64(sum))
+				RecordTruncation()
+				if log != nil {
+					log.Info("truncated input (compressed)", "original_tokens", total, "final_tokens", sum, "kept_compressed", len(compressedTurns))
 				}
+				return out
 			}
-			RecordInputTokens(int64(sum))
-			RecordTruncation()
-			if log != nil {
-				log.Info("truncated input", "original_tokens", total, "final_tokens", sum, "kept_turns", n)
-			}
-			return out
+			compressedTurns = compressedTurns[1:]
 		}
-		if n == 0 {
-			break
+	} else {
+		// Not compressed: try keeping fewer history turns (newest first)
+		maxN := limits.MaxHistoryTurns
+		if maxN > len(recentTurns) {
+			maxN = len(recentTurns)
+		}
+		for n := maxN; n >= 0; n-- {
+			subset := recentTurns[len(recentTurns)-n:]
+			truncated := BuildContextMessages(systemPrompt, subset, pendingInput)
+			out := make([]inference.ChatMessage, 0, len(truncated)+1)
+			out = append(out, truncated[0])
+			if memoryBlock != "" {
+				out = append(out, inference.ChatMessage{Role: "system", Content: memoryBlock})
+			}
+			for i := 1; i < len(truncated); i++ {
+				out = append(out, truncated[i])
+			}
+
+			sum := toolTokens + fixedOverheadTokens
+			for _, m := range out {
+				sum += tok.CountTokens(m.Content)
+			}
+			if sum <= cap {
+				remaining := cap - sum
+				droppedTurns := recentTurns[:len(recentTurns)-n]
+				if remaining >= summaryBudgetMinTokens && len(droppedTurns) > 0 {
+					summary := buildDroppedTurnsSummary(droppedTurns, remaining, tok)
+					if summary != "" {
+						summaryMsg := inference.ChatMessage{Role: "system", Content: "--- Earlier context (truncated) ---\n" + summary}
+						insertIdx := 1
+						if memoryBlock != "" {
+							insertIdx = 2
+						}
+						out = append(out[:insertIdx], append([]inference.ChatMessage{summaryMsg}, out[insertIdx:]...)...)
+					}
+				}
+				RecordInputTokens(int64(sum))
+				RecordTruncation()
+				if log != nil {
+					log.Info("truncated input", "original_tokens", total, "final_tokens", sum, "kept_turns", n)
+				}
+				return out
+			}
+			if n == 0 {
+				break
+			}
 		}
 	}
 

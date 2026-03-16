@@ -4,7 +4,7 @@
 
 ## Summary
 
-mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop, tools, inference, identity, memory, skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
@@ -145,7 +145,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ### 1.7 Agent Loop & Context (`internal/agent`)
 
-**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`
+**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`, `internal/agent/trim_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -169,8 +169,17 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | A18 | `TestTokenLimits_WithOverrides` | token-caps-truncation | PASS |
 | A19 | `TestTokenLimits_WithOverrides_ZeroPreservesDefault` | token-caps-truncation | PASS |
 | A20 | `TestTiktokenTokenizer` | token-caps-truncation | PASS |
+| A21 | `TestHistoryTrimmer_Compress_ShortHistory` | token-caps-truncation | PASS |
+| A22 | `TestHistoryTrimmer_Compress_LongHistory` | token-caps-truncation | PASS |
+| A23 | `TestHistoryTrimmer_SummarizeTurn_ToolCalls` | token-caps-truncation | PASS |
+| A24 | `TestHistoryTrimmer_SummarizeTurn_ThinkingOnly` | token-caps-truncation | PASS |
+| A25 | `TestBuildContextMessagesFromCompressed` | token-caps-truncation | PASS |
+| A26 | `TestBuildMessagesSafe_WithHistoryCompression` | token-caps-truncation | PASS |
+| A27 | `TestMessageTrimmer_Trim` | token-caps-truncation | PASS |
+| A28 | `TestMessageTrimmer_Trim_NoMemoryRetriever` | token-caps-truncation | PASS |
+| A29 | `TestMessageTrimmer_Trim_WithTieredRetriever` | token-caps-truncation | PASS |
 
-**Total: 20 passed, 0 failed**
+**Total: 29 passed, 0 failed**
 
 ---
 
@@ -249,7 +258,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ### 1.11 Memory (`internal/memory`)
 
-**File:** `internal/memory/retriever_test.go`
+**Files:** `internal/memory/retriever_test.go`, `internal/memory/select_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -257,8 +266,14 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | M2 | `TestFormatMemoryBlock_Facts` | memory-retrieval | PASS |
 | M3 | `TestFormatMemoryBlock_GoalsAndProcedures` | memory-retrieval | PASS |
 | M4 | `TestFormatMemoryBlock_FiveTier` | memory-retrieval | PASS |
+| M5 | `TestTieredMemorySelector_Select_Empty` | memory-retrieval | PASS |
+| M6 | `TestTieredMemorySelector_Select_WithData` | memory-retrieval | PASS |
+| M7 | `TestTieredMemorySelector_Select_RespectsBudget` | memory-retrieval | PASS |
+| M8 | `TestDefaultTierConfig` | memory-retrieval | PASS |
+| M9 | `TestTieredMemoryRetriever_Retrieve` | memory-retrieval | PASS |
+| M10 | `TestTieredMemoryRetriever_RetrieveWithBudget` | memory-retrieval | PASS |
 
-**Total: 4 passed, 0 failed**
+**Total: 10 passed, 0 failed**
 
 ---
 
@@ -329,16 +344,16 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | agent (policy) | 21 | 0 | 21 |
 | state | 17 | 0 | 17 |
 | heartbeat | 3 | 0 | 3 |
-| agent (loop, context, prompt, token) | 20 | 0 | 20 |
+| agent (loop, context, prompt, token, trim) | 29 | 0 | 29 |
 | tools | 10 | 0 | 10 |
 | inference | 16 | 0 | 16 |
 | identity | 14 | 0 | 14 |
-| memory | 4 | 0 | 4 |
+| memory | 10 | 0 | 10 |
 | skills | 1 | 0 | 1 |
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **144** | **0** | **144** |
+| **Total** | **159** | **0** | **159** |
 
 ---
 
@@ -375,7 +390,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	(cached)
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
 ```
 
-**Aggregate:** 144+ tests passed, 0 failed.
+**Aggregate:** 159+ tests passed, 0 failed.
 
 ---
 
@@ -404,11 +419,11 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
 | **state** | S1–S17 |
 | **heartbeat** | H1–H3 |
 | **agent-loop** | A1–A6 |
-| **token-caps-truncation** | A7–A20 |
+| **token-caps-truncation** | A7–A29 |
 | **tools** | TO1–TO10 |
 | **inference** | INF1–INF16 |
 | **identity** | ID1–ID14 |
-| **memory-retrieval** | M1–M4 |
+| **memory-retrieval** | M1–M10 |
 | **skills-design** | SK1 |
 | **soul** | SO1–SO4 |
 | **tunnel** | TN1 |
@@ -450,4 +465,5 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [API_REFERENCE.md](./API_REFERENCE.md) — API documentation
 - [memory-retrieval-step6.md](./design/memory-retrieval-step6.md) — Memory retrieval
 - [token-caps-truncation.md](./design/token-caps-truncation.md) — Token caps, truncation, prefill limit avoidance
+- [context-trimming-stage2.md](./design/context-trimming-stage2.md) — HistoryTrimmer, TieredMemorySelector, MessageTrimmer
 - [skills-design.md](./design/skills-design.md) — Skills loader

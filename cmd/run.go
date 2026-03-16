@@ -35,6 +35,10 @@ func tokenLimitsFromConfig(cfg *types.AutomatonConfig) *agent.TokenLimits {
 		return nil
 	}
 	limits := agent.DefaultTokenLimits().WithOverrides(cfg.MaxInputTokens, cfg.MaxHistoryTurns, cfg.WarnAtTokens)
+	// Enable rule-based history compression when we have many turns (full last 6, summarize 7–20)
+	compressCfg := agent.DefaultHistoryTrimmerConfig()
+	compressCfg.HistoryBudget = limits.MaxInputTokens - 800 // reserve for system, memory, input, tools
+	limits.HistoryCompress = &compressCfg
 	return &limits
 }
 
@@ -186,7 +190,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Inference:       infClient,
 		Tools:           reg,
 		LineageStore:    db,
-		MemoryRetriever: memory.NewDBMemoryRetriever(db, memory.NewBudgetAllocator(memory.DefaultTokenBudget)),
+		MemoryRetriever: memory.NewTieredMemoryRetriever(db, memory.DefaultTierConfig()),
 		DisabledToolsGetter: func() []string {
 			raw, ok, _ := db.GetKV("disabled_tools")
 			if !ok || raw == "" {
