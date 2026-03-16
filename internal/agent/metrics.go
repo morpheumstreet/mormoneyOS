@@ -18,7 +18,13 @@ var (
 	// Model routing and critique
 	routingStrongTotal atomic.Int64
 	routingFastTotal   atomic.Int64
+	routingStrongReasonTokens atomic.Int64
+	routingStrongReasonMoney  atomic.Int64
+	routingStrongReasonRisk   atomic.Int64
 	critiqueTotal      atomic.Int64
+	// critique_success_score_avg: rolling average (sum/count)
+	critiqueSuccessScoreSum   atomic.Int64
+	critiqueSuccessScoreCount  atomic.Int64
 )
 
 func init() {
@@ -30,7 +36,16 @@ func init() {
 	expvar.Publish("memory_extraction_latency_ms", expvar.Func(func() any { return memoryExtractionLatencyMs.Load() }))
 	expvar.Publish("routing_strong_total", expvar.Func(func() any { return routingStrongTotal.Load() }))
 	expvar.Publish("routing_fast_total", expvar.Func(func() any { return routingFastTotal.Load() }))
+	expvar.Publish("routing_strong_reason_tokens", expvar.Func(func() any { return routingStrongReasonTokens.Load() }))
+	expvar.Publish("routing_strong_reason_money", expvar.Func(func() any { return routingStrongReasonMoney.Load() }))
+	expvar.Publish("routing_strong_reason_risk", expvar.Func(func() any { return routingStrongReasonRisk.Load() }))
 	expvar.Publish("critique_total", expvar.Func(func() any { return critiqueTotal.Load() }))
+	expvar.Publish("critique_success_score_avg", expvar.Func(func() any {
+		if count := critiqueSuccessScoreCount.Load(); count > 0 {
+			return float64(critiqueSuccessScoreSum.Load()) / 100.0 / float64(count) // sum stored as int (score*100)
+		}
+		return float64(0)
+	}))
 }
 
 // RecordRoutingStrong increments the strong-tier routing counter.
@@ -60,6 +75,29 @@ func (*routingMetricsImpl) RecordTier(tier inference.ModelTier) {
 	case inference.TierFast:
 		routingFastTotal.Add(1)
 	}
+}
+
+func (*routingMetricsImpl) RecordTierWithReason(tier inference.ModelTier, reason inference.RoutingEscalationReason) {
+	switch tier {
+	case inference.TierStrong:
+		switch reason {
+		case inference.EscalationReasonTokens:
+			routingStrongReasonTokens.Add(1)
+		case inference.EscalationReasonMoney:
+			routingStrongReasonMoney.Add(1)
+		case inference.EscalationReasonRisk:
+			routingStrongReasonRisk.Add(1)
+		}
+	}
+}
+
+// RecordCritiqueSuccessScore records a success_score for rolling average (0–1).
+func RecordCritiqueSuccessScore(score float64) {
+	if score < 0 || score > 1 {
+		return
+	}
+	critiqueSuccessScoreSum.Add(int64(score * 100))
+	critiqueSuccessScoreCount.Add(1)
 }
 
 // RecordInputTokens adds to the input tokens counter (call before each inference).

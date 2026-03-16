@@ -63,21 +63,22 @@ type MemoryIngester interface {
 
 // Loop implements the ReAct cycle per mormoneyOS design.
 type Loop struct {
-	policy              *PolicyEngine
-	persister           TurnPersister
-	store               AgentStore
-	inference           inference.Client
-	tools               ToolExecutor
-	config              *LoopConfig
-	creditsFn           func(ctx context.Context) int64
-	lineageStore        replication.LineageStore
-	memoryRetriever     memory.MemoryRetriever
-	memoryIngester      MemoryIngester
-	modelRouter         *inference.ModelRouter
-	reflectionEngine    *ReflectionEngine
-	disabledToolsGetter func() []string
-	fallbackSender      FallbackSender
-	log                 *slog.Logger
+	policy                   *PolicyEngine
+	persister                TurnPersister
+	store                    AgentStore
+	inference                inference.Client
+	tools                    ToolExecutor
+	config                   *LoopConfig
+	creditsFn                func(ctx context.Context) int64
+	lineageStore             replication.LineageStore
+	memoryRetriever          memory.MemoryRetriever
+	memoryIngester           MemoryIngester
+	modelRouter              *inference.ModelRouter
+	reflectionEngine         *ReflectionEngine
+	reflectionTurnsSinceLast int // for reflectionFrequencyCap
+	disabledToolsGetter      func() []string
+	fallbackSender           FallbackSender
+	log                      *slog.Logger
 }
 
 // NewLoop creates an agent loop.
@@ -116,6 +117,10 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
 	}
+	reflectionTurnsSinceLast := 0
+	if opts.ReflectionEngine != nil && opts.Config != nil && opts.Config.Routing != nil && opts.Config.Routing.ReflectionFrequencyCap > 0 {
+		reflectionTurnsSinceLast = opts.Config.Routing.ReflectionFrequencyCap
+	}
 	return &Loop{
 		policy:              opts.Policy,
 		persister:           opts.Store,
@@ -127,9 +132,10 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		lineageStore:        opts.LineageStore,
 		memoryRetriever:     opts.MemoryRetriever,
 		memoryIngester:      opts.MemoryIngester,
-		modelRouter:        opts.ModelRouter,
-		reflectionEngine:   opts.ReflectionEngine,
-		disabledToolsGetter: opts.DisabledToolsGetter,
+		modelRouter:             opts.ModelRouter,
+		reflectionEngine:        opts.ReflectionEngine,
+		reflectionTurnsSinceLast: reflectionTurnsSinceLast,
+		disabledToolsGetter:     opts.DisabledToolsGetter,
 		fallbackSender:      opts.FallbackSender,
 		log:                 opts.Log,
 	}
@@ -164,6 +170,10 @@ func (l *Loop) RunOneTurn(ctx context.Context, agentState types.AgentState) Turn
 }
 
 func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult {
+	// Increment turns since last critique (for reflectionFrequencyCap)
+	if l.reflectionEngine != nil {
+		l.reflectionTurnsSinceLast++
+	}
 	turnCount, _ := l.store.GetTurnCount()
 	agentState, _, _ := l.store.GetAgentState()
 	if agentState == "" {
@@ -452,11 +462,19 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	}
 
 	// Self-critique on impactful turns (Reflexion-style improvement)
-	if l.reflectionEngine != nil && anyMutatingToolExecuted {
+	reflectionOnAllTurns := l.config != nil && l.config.Routing != nil && l.config.Routing.ReflectionOnAllTurns
+	reflectionFrequencyCap := 0
+	if l.config != nil && l.config.Routing != nil && l.config.Routing.ReflectionFrequencyCap > 0 {
+		reflectionFrequencyCap = l.config.Routing.ReflectionFrequencyCap
+	}
+	shouldReflect := (anyMutatingToolExecuted || reflectionOnAllTurns) &&
+		(reflectionFrequencyCap == 0 || l.reflectionTurnsSinceLast >= reflectionFrequencyCap)
+	if l.reflectionEngine != nil && shouldReflect {
 		ref, err := l.reflectionEngine.CritiqueTurn(ctx, &CritiqueTurnData{
 			TurnID: turnID, Input: pendingInput, Thinking: thinking, ToolCalls: toolCallsJSON,
 		})
 		if err == nil && ref != nil {
+			l.reflectionTurnsSinceLast = 0 // reset for frequency cap
 			rd := &memory.ReflectionData{
 				TurnID:                turnID,
 				SuccessScore:          ref.SuccessScore,

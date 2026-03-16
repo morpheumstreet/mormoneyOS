@@ -141,10 +141,13 @@ type AutomatonConfig struct {
 
 // RoutingConfig configures model routing and self-critique.
 type RoutingConfig struct {
-	DefaultTier            string `json:"defaultTier,omitempty"`            // "fast", "normal", "strong"; default "normal"
-	StrongThresholdTokens  int    `json:"strongThresholdTokens,omitempty"`  // use strong model when tokens > this (default 3500)
-	ForceStrongOnMoneyMove bool   `json:"forceStrongOnMoneyMove,omitempty"` // use strong model for transfer_credits, fund_child
-	ReflectionTier         string `json:"reflectionTier,omitempty"`         // tier for critique calls (default "fast")
+	DefaultTier             string `json:"defaultTier,omitempty"`             // "fast", "normal", "strong"; default "normal"
+	StrongThresholdTokens   int    `json:"strongThresholdTokens,omitempty"`   // use strong model when tokens > this (default 3500)
+	ForceStrongOnMoneyMove  bool   `json:"forceStrongOnMoneyMove,omitempty"`  // use strong model for transfer_credits, fund_child
+	ReflectionTier          string `json:"reflectionTier,omitempty"`          // tier for critique calls (default "fast")
+	TokenCapForStrong       int    `json:"tokenCapForStrong,omitempty"`      // never route Strong above this (default 5500); merge blocker
+	ReflectionOnAllTurns    bool   `json:"reflectionOnAllTurns,omitempty"`    // run critique on every turn (debugging/learning); default false
+	ReflectionFrequencyCap int    `json:"reflectionFrequencyCap,omitempty"`   // max 1 critique per N turns; 0 = no cap
 }
 
 // MemoryConfig holds automatic memory ingestion settings.

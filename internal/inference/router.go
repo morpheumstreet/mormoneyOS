@@ -11,10 +11,13 @@ import (
 
 // RoutingConfig holds routing parameters (from types.AutomatonConfig.Routing).
 type RoutingConfig struct {
-	DefaultTier            string // "fast", "normal", "strong"
-	StrongThresholdTokens  int    // use strong when tokens > this
-	ForceStrongOnMoneyMove bool
-	ReflectionTier         string
+	DefaultTier             string // "fast", "normal", "strong"
+	StrongThresholdTokens   int    // use strong when tokens > this
+	ForceStrongOnMoneyMove  bool
+	ReflectionTier          string
+	TokenCapForStrong       int  // never route Strong above this (merge blocker)
+	ReflectionOnAllTurns    bool // run critique on every turn
+	ReflectionFrequencyCap  int  // max 1 critique per N turns; 0 = no cap
 }
 
 // DefaultRoutingConfig returns sensible defaults.
@@ -24,12 +27,25 @@ func DefaultRoutingConfig() RoutingConfig {
 		StrongThresholdTokens:  3500,
 		ForceStrongOnMoneyMove: true,
 		ReflectionTier:         "fast",
+		TokenCapForStrong:      5500,
+		ReflectionOnAllTurns:   false,
+		ReflectionFrequencyCap: 0,
 	}
 }
+
+// RoutingEscalationReason is the reason Strong tier was selected (for metrics).
+type RoutingEscalationReason string
+
+const (
+	EscalationReasonTokens RoutingEscalationReason = "tokens"
+	EscalationReasonMoney  RoutingEscalationReason = "money"
+	EscalationReasonRisk   RoutingEscalationReason = "risk"
+)
 
 // RoutingMetricsRecorder records routing decisions (optional, avoids import cycles).
 type RoutingMetricsRecorder interface {
 	RecordTier(tier ModelTier)
+	RecordTierWithReason(tier ModelTier, reason RoutingEscalationReason)
 }
 
 // ModelRouter selects the best inference client for a turn based on DecisionContext.
@@ -59,6 +75,15 @@ func NewModelRouter(cfg *types.AutomatonConfig, holder *InferenceClientHolder, m
 		if cfg.Routing.ReflectionTier != "" {
 			routing.ReflectionTier = cfg.Routing.ReflectionTier
 		}
+		if cfg.Routing.TokenCapForStrong > 0 {
+			routing.TokenCapForStrong = cfg.Routing.TokenCapForStrong
+		} else if routing.TokenCapForStrong == 0 {
+			routing.TokenCapForStrong = 5500
+		}
+		routing.ReflectionOnAllTurns = cfg.Routing.ReflectionOnAllTurns
+		if cfg.Routing.ReflectionFrequencyCap > 0 {
+			routing.ReflectionFrequencyCap = cfg.Routing.ReflectionFrequencyCap
+		}
 	}
 	if log == nil {
 		log = slog.Default()
@@ -68,9 +93,10 @@ func NewModelRouter(cfg *types.AutomatonConfig, holder *InferenceClientHolder, m
 
 // Select returns the best client for this turn. Thread-safe.
 func (r *ModelRouter) Select(ctx context.Context, dc DecisionContext) (Client, error) {
-	tier := r.decideTier(dc)
+	tier, reason := r.decideTier(dc)
 	if r.metrics != nil {
 		r.metrics.RecordTier(tier)
+		r.metrics.RecordTierWithReason(tier, reason)
 	}
 	client := r.clientForTier(tier)
 	if client == nil {
@@ -89,23 +115,41 @@ func (r *ModelRouter) ClientForReflection(ctx context.Context) (Client, error) {
 	return client, nil
 }
 
-func (r *ModelRouter) decideTier(dc DecisionContext) ModelTier {
-	// High token usage → strong model
+func (r *ModelRouter) decideTier(dc DecisionContext) (ModelTier, RoutingEscalationReason) {
+	fallbackTier := r.parseTier(r.routing.DefaultTier)
+	cap := r.routing.TokenCapForStrong
+	if cap <= 0 {
+		cap = 5500
+	}
+
+	// High token usage → strong model (unless over cap)
 	if r.routing.StrongThresholdTokens > 0 && dc.TokensUsed >= r.routing.StrongThresholdTokens {
+		if dc.TokensUsed > cap {
+			r.log.Debug("routing: strong blocked by token cap", "tokens", dc.TokensUsed, "cap", cap)
+			return fallbackTier, ""
+		}
 		r.log.Debug("routing: strong (tokens)", "tokens", dc.TokensUsed, "threshold", r.routing.StrongThresholdTokens)
-		return TierStrong
+		return TierStrong, EscalationReasonTokens
 	}
-	// Money impact → strong model
+	// Money impact → strong model (unless over cap)
 	if r.routing.ForceStrongOnMoneyMove && dc.HasMoneyImpact {
+		if dc.TokensUsed > cap {
+			r.log.Debug("routing: strong blocked by token cap (money)", "tokens", dc.TokensUsed, "cap", cap)
+			return fallbackTier, ""
+		}
 		r.log.Debug("routing: strong (money impact)")
-		return TierStrong
+		return TierStrong, EscalationReasonMoney
 	}
-	// High risk → strong model
+	// High risk → strong model (unless over cap)
 	if dc.RiskLevel == RiskHigh {
+		if dc.TokensUsed > cap {
+			r.log.Debug("routing: strong blocked by token cap (risk)", "tokens", dc.TokensUsed, "cap", cap)
+			return fallbackTier, ""
+		}
 		r.log.Debug("routing: strong (risk)")
-		return TierStrong
+		return TierStrong, EscalationReasonRisk
 	}
-	return r.parseTier(r.routing.DefaultTier)
+	return fallbackTier, ""
 }
 
 func (r *ModelRouter) parseTier(s string) ModelTier {

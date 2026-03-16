@@ -78,6 +78,9 @@ func (re *ReflectionEngine) CritiqueTurn(ctx context.Context, turn *CritiqueTurn
 	}
 	RecordCritique()
 	ref := parseCritiqueResponse(resp.Content)
+	if ref != nil {
+		RecordCritiqueSuccessScore(ref.SuccessScore)
+	}
 	if ref == nil {
 		return nil, nil
 	}

@@ -4,7 +4,7 @@
 
 ## Summary
 
-mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), **model routing & reflection** (ModelRouter, ReflectionEngine, IsMoneyMovingTool), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), **model routing & reflection** (ModelRouter, ReflectionEngine, token cap guard, IsMoneyMovingTool), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
@@ -249,8 +249,9 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | INF15 | `TestChatJimmyClient_Models` | inference | PASS |
 | INF16 | `TestChatJimmyClient_ChatWithStats` | inference | PASS |
 | INF17 | `TestModelRouter_Select` | model-routing-reflection | PASS |
+| INF18 | `TestModelRouter_TokenCapBlocksStrong` | model-routing-reflection | PASS |
 
-**Total: 17 passed, 0 failed**
+**Total: 18 passed, 0 failed**
 
 ---
 
@@ -373,14 +374,14 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | agent (loop, context, prompt, token, trim, prompts-integration) | 31 | 0 | 31 |
 | prompts | 7 | 0 | 7 |
 | tools | 11 | 0 | 11 |
-| inference | 17 | 0 | 17 |
+| inference | 18 | 0 | 18 |
 | identity | 14 | 0 | 14 |
 | memory | 13 | 0 | 13 |
 | skills | 1 | 0 | 1 |
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **173** | **0** | **173** |
+| **Total** | **174** | **0** | **174** |
 
 ---
 
@@ -400,30 +401,30 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ```bash
 $ go test ./... -count=1
-ok  	github.com/morpheumlabs/mormoneyos-go/cmd	0.140s
+ok  	github.com/morpheumlabs/mormoneyos-go/cmd	0.127s
 ?   	github.com/morpheumlabs/mormoneyos-go/cmd/moneyclaw	[no test files]
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	0.101s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/config	0.050s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/conway	0.029s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/heartbeat	0.168s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity	0.237s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify	0.037s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/inference	0.045s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/memory	0.037s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/prompts	0.034s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/ratelimit	2.111s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	0.091s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/config	0.041s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/conway	0.025s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/heartbeat	0.146s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity	0.209s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify	0.041s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/inference	0.050s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/memory	0.106s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/prompts	0.042s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/ratelimit	2.130s
 ?   	github.com/morpheumlabs/mormoneyos-go/internal/replication	[no test files]
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/skills	0.040s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/social	0.017s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/soul	0.111s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	0.526s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	0.064s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	0.010s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	0.013s
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/skills	0.031s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/social	0.016s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/soul	0.112s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	0.612s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	0.057s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	0.012s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	0.012s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.032s
 ```
 
-**Aggregate:** 173 tests passed, 0 failed.
+**Aggregate:** 174 tests passed, 0 failed.
 
 ---
 
@@ -455,9 +456,9 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 | **token-caps-truncation** | A7–A29 |
 | **prompts-integration** | A30–A31 |
 | **prompts-templates** | PR1–PR7 |
-| **model-routing-reflection** | PR7, TO8, INF17 |
+| **model-routing-reflection** | PR7, TO8, INF17, INF18 |
 | **tools** | TO1–TO11 |
-| **inference** | INF1–INF17 |
+| **inference** | INF1–INF18 |
 | **identity** | ID1–ID14 |
 | **memory-retrieval** | M1–M10 |
 | **memory-auto-ingestion** | M11–M13 |
@@ -506,4 +507,5 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [context-trimming-stage2.md](./design/context-trimming-stage2.md) — HistoryTrimmer, TieredMemorySelector, MessageTrimmer
 - [prompt-templates-cot.md](./design/prompt-templates-cot.md) — Versioned prompt templates (v1), Chain-of-Thought forcing
 - [model-routing-reflection-step5.md](./design/model-routing-reflection-step5.md) — Model routing, self-critique, Reflexion-style improvement
+- [model-routing-reflexion.md](./design/model-routing-reflexion.md) — Model routing & Reflexion layer (token cap, reflection triggers)
 - [skills-design.md](./design/skills-design.md) — Skills loader

@@ -28,6 +28,7 @@ type LoopConfig struct {
 	TokenLimits             *TokenLimits       // Optional; when nil uses DefaultTokenLimits()
 	ContextLimitForModel    ContextLimitForModel // Optional; per-model cap from registry (0 = use MaxInputTokens)
 	PromptVersion           string              // Optional; "v1" = versioned templates + CoT; empty = legacy BuildSystemPrompt
+	Routing                 *types.RoutingConfig // Optional; for reflectionOnAllTurns, reflectionFrequencyCap
 }
 
 // BuildSystemPrompt builds the system prompt (TS buildSystemPrompt-aligned, simplified).

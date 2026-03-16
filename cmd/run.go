@@ -247,6 +247,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			TokenLimits:            tokenLimitsFromConfig(cfg),
 			ContextLimitForModel:   contextLimitForModelFromConfig(cfg),
 			PromptVersion:          cfg.PromptVersion,
+			Routing:                cfg.Routing,
 		},
 		CreditsFn: creditsFn,
 		FallbackSender: func(ctx context.Context, claimedIds []string) {
