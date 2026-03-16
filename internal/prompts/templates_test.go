@@ -84,6 +84,27 @@ func TestRenderReactCoT(t *testing.T) {
 	}
 }
 
+func TestBuildCritiquePrompt(t *testing.T) {
+	data := CritiquePromptData{
+		Input:     "User asked to transfer credits",
+		Thinking:  "I will use transfer_credits tool",
+		ToolCalls: `[{"name":"transfer_credits","result":"ok"}]`,
+	}
+	out, err := BuildCritiquePrompt(data)
+	if err != nil {
+		t.Fatalf("BuildCritiquePrompt: %v", err)
+	}
+	if !strings.Contains(out, "User asked to transfer credits") {
+		t.Error("expected input in output")
+	}
+	if !strings.Contains(out, "transfer_credits") {
+		t.Error("expected tool calls in output")
+	}
+	if !strings.Contains(out, "success_score") {
+		t.Error("expected format instructions in output")
+	}
+}
+
 func TestFormatHistoryForReAct(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		out := FormatHistoryForReAct(nil)

@@ -34,6 +34,14 @@ type TurnData struct {
 	ToolCalls   string // JSON array of {name, result, error}
 }
 
+// ReflectionData holds critique output for ingestion (from ReflectionEngine).
+type ReflectionData struct {
+	TurnID               string
+	SuccessScore         float64
+	Lessons              []string
+	MemoryRecommendations []string
+}
+
 // IngestMetricsRecorder records ingestion metrics (optional, avoids import cycles).
 type IngestMetricsRecorder interface {
 	RecordIngestTurn()

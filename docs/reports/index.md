@@ -4,7 +4,7 @@
 
 ## Summary
 
-mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), **model routing & reflection** (ModelRouter, ReflectionEngine, IsMoneyMovingTool), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever, **auto-ingestion** extraction + ingest_candidates), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
@@ -29,9 +29,10 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | C11 | `TestSave_RoundTrip` | config | PASS |
 | C12 | `TestLoadToolsFromFile_JSON` | config | PASS |
 | C13 | `TestLoadToolsFromFile_YAML` | config | PASS |
-| C14 | `TestLoad_WithTools` | config | PASS |
+| C14 | `TestLoad_SoulMerge` | config | PASS |
+| C15 | `TestLoad_WithTools` | config | PASS |
 
-**Total: 14 passed, 0 failed**
+**Total: 15 passed, 0 failed**
 
 ---
 
@@ -197,8 +198,9 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | PR4 | `TestRenderReactCoT` | prompts-templates | PASS |
 | PR5 | `TestFormatHistoryForReAct/empty` | prompts-templates | PASS |
 | PR6 | `TestFormatHistoryForReAct/with_turns` | prompts-templates | PASS |
+| PR7 | `TestBuildCritiquePrompt` | model-routing-reflection | PASS |
 
-**Total: 6 passed, 0 failed**
+**Total: 7 passed, 0 failed**
 
 ---
 
@@ -215,17 +217,18 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | TO5 | `TestShellTool_Execute_EmptyCommand` | tools | PASS |
 | TO6 | `TestRegistry_Execute` | tools | PASS |
 | TO7 | `TestRegistry_Execute_ExecAlias` | tools | PASS |
-| TO8 | `TestIsMutatingTool` | tools | PASS |
-| TO9 | `TestCheckCreditsTool_Execute` | tools | PASS |
-| TO10 | `TestListSandboxesTool_Execute` | tools | PASS |
+| TO8 | `TestIsMoneyMovingTool` | model-routing-reflection | PASS |
+| TO9 | `TestIsMutatingTool` | tools | PASS |
+| TO10 | `TestCheckCreditsTool_Execute` | tools | PASS |
+| TO11 | `TestListSandboxesTool_Execute` | tools | PASS |
 
-**Total: 10 passed, 0 failed**
+**Total: 11 passed, 0 failed**
 
 ---
 
 ### 1.9 Inference (`internal/inference`)
 
-**Files:** `internal/inference/factory_test.go`, `internal/inference/chatjimmy_test.go`
+**Files:** `internal/inference/factory_test.go`, `internal/inference/chatjimmy_test.go`, `internal/inference/router_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -245,8 +248,9 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | INF14 | `TestChatJimmyClient_Health_Unhealthy` | inference | PASS |
 | INF15 | `TestChatJimmyClient_Models` | inference | PASS |
 | INF16 | `TestChatJimmyClient_ChatWithStats` | inference | PASS |
+| INF17 | `TestModelRouter_Select` | model-routing-reflection | PASS |
 
-**Total: 16 passed, 0 failed**
+**Total: 17 passed, 0 failed**
 
 ---
 
@@ -360,23 +364,23 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 | Suite | Passed | Failed | Total |
 |-------|--------|--------|-------|
-| config | 14 | 0 | 14 |
+| config | 15 | 0 | 15 |
 | types | 4 | 0 | 4 |
 | conway | 8 | 0 | 8 |
 | agent (policy) | 21 | 0 | 21 |
 | state | 17 | 0 | 17 |
 | heartbeat | 3 | 0 | 3 |
 | agent (loop, context, prompt, token, trim, prompts-integration) | 31 | 0 | 31 |
-| prompts | 6 | 0 | 6 |
-| tools | 10 | 0 | 10 |
-| inference | 16 | 0 | 16 |
+| prompts | 7 | 0 | 7 |
+| tools | 11 | 0 | 11 |
+| inference | 17 | 0 | 17 |
 | identity | 14 | 0 | 14 |
 | memory | 13 | 0 | 13 |
 | skills | 1 | 0 | 1 |
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **169** | **0** | **169** |
+| **Total** | **173** | **0** | **173** |
 
 ---
 
@@ -419,7 +423,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	0.013s
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 ```
 
-**Aggregate:** 169 tests passed, 0 failed.
+**Aggregate:** 173 tests passed, 0 failed.
 
 ---
 
@@ -441,7 +445,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 
 | Design Doc | Coverage |
 |------------|----------|
-| **config** | C1–C14 |
+| **config** | C1–C15 |
 | **types** | T1–T4 |
 | **conway-credits** | CR1–CR8 |
 | **policy-engine** | P1–P21 |
@@ -450,9 +454,10 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 | **agent-loop** | A1–A6 |
 | **token-caps-truncation** | A7–A29 |
 | **prompts-integration** | A30–A31 |
-| **prompts-templates** | PR1–PR6 |
-| **tools** | TO1–TO10 |
-| **inference** | INF1–INF16 |
+| **prompts-templates** | PR1–PR7 |
+| **model-routing-reflection** | PR7, TO8, INF17 |
+| **tools** | TO1–TO11 |
+| **inference** | INF1–INF17 |
 | **identity** | ID1–ID14 |
 | **memory-retrieval** | M1–M10 |
 | **memory-auto-ingestion** | M11–M13 |
@@ -500,4 +505,5 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [token-caps-truncation.md](./design/token-caps-truncation.md) — Token caps, truncation, prefill limit avoidance
 - [context-trimming-stage2.md](./design/context-trimming-stage2.md) — HistoryTrimmer, TieredMemorySelector, MessageTrimmer
 - [prompt-templates-cot.md](./design/prompt-templates-cot.md) — Versioned prompt templates (v1), Chain-of-Thought forcing
+- [model-routing-reflection-step5.md](./design/model-routing-reflection-step5.md) — Model routing, self-critique, Reflexion-style improvement
 - [skills-design.md](./design/skills-design.md) — Skills loader

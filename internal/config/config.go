@@ -501,6 +501,27 @@ func Load() (*types.AutomatonConfig, error) {
 		}
 	}
 
+	// Inference routing (model tier selection, self-critique)
+	if rc, ok := raw["routing"].(map[string]any); ok {
+		if cfg.Routing == nil {
+			cfg.Routing = &types.RoutingConfig{}
+		}
+		if v, ok := rc["defaultTier"].(string); ok && v != "" {
+			cfg.Routing.DefaultTier = v
+		}
+		if v, ok := rc["strongThresholdTokens"].(float64); ok && v > 0 {
+			cfg.Routing.StrongThresholdTokens = int(v)
+		} else if v, ok := rc["strongThresholdTokens"].(int); ok && v > 0 {
+			cfg.Routing.StrongThresholdTokens = v
+		}
+		if v, ok := rc["forceStrongOnMoneyMove"].(bool); ok {
+			cfg.Routing.ForceStrongOnMoneyMove = v
+		}
+		if v, ok := rc["reflectionTier"].(string); ok && v != "" {
+			cfg.Routing.ReflectionTier = v
+		}
+	}
+
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
 		cfg.Skills = &types.SkillsConfig{TokenBudgetMax: 2000}

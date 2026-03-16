@@ -53,3 +53,23 @@ Risk:
 Plan: 
 Action: `
 }
+
+// CritiquePromptData holds turn content for the critique template.
+type CritiquePromptData struct {
+	Input     string
+	Thinking  string
+	ToolCalls string
+}
+
+// BuildCritiquePrompt renders the critique prompt from the template.
+func BuildCritiquePrompt(data CritiquePromptData) (string, error) {
+	tmpls, err := loadV1Templates()
+	if err != nil {
+		return "", fmt.Errorf("load templates: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := tmpls.ExecuteTemplate(&buf, "critique", data); err != nil {
+		return "", fmt.Errorf("render critique template: %w", err)
+	}
+	return buf.String(), nil
+}

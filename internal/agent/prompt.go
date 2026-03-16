@@ -131,6 +131,18 @@ func EstimateToolTokens(toolDefs []inference.ToolDefinition) int {
 	return (total / 4) * 13 / 10 // ~1.3x
 }
 
+// CountMessagesTokens returns total token count for messages. Uses tok when non-nil, else DefaultTokenizer.
+func CountMessagesTokens(msgs []inference.ChatMessage, toolDefs []inference.ToolDefinition, tok Tokenizer) int {
+	if tok == nil {
+		tok = DefaultTokenizer
+	}
+	total := fixedOverheadTokens + EstimateToolTokens(toolDefs)
+	for _, m := range msgs {
+		total += tok.CountTokens(m.Content)
+	}
+	return total
+}
+
 const fixedOverheadTokens = 50  // Padding for message boundaries, etc.
 const summaryBudgetMinTokens = 800 // Min remaining budget to insert summary of dropped turns
 

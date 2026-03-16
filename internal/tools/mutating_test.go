@@ -2,6 +2,25 @@ package tools
 
 import "testing"
 
+func TestIsMoneyMovingTool(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"transfer_credits", true},
+		{"fund_child", true},
+		{"shell", false},
+		{"send_message", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsMoneyMovingTool(tt.name); got != tt.want {
+				t.Errorf("IsMoneyMovingTool(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsMutatingTool(t *testing.T) {
 	tests := []struct {
 		name string

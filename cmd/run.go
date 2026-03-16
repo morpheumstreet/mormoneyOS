@@ -114,6 +114,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 	infHolder := inference.NewInferenceClientHolder(cfg)
 	infClient := infHolder.LiveClient()
 
+	// 4b. Model router (optional; routes to fast/normal/strong per turn)
+	var modelRouter *inference.ModelRouter
+	if cfg.Routing != nil || len(cfg.Models) > 0 {
+		modelRouter = inference.NewModelRouter(cfg, infHolder, agent.RoutingMetrics, slog.Default())
+	}
+
 	// 5. Conway client (when configured) — shared by agent, heartbeat, web
 	var conwayClient conway.Client
 	if cfg.ConwayAPIURL != "" && cfg.ConwayAPIKey != "" {
@@ -209,6 +215,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		TunnelManager:  tunnelMgr,
 		TunnelRegistry: tunnelReg,
 	})
+	reflectionEngine := agent.NewReflectionEngine(modelRouter, slog.Default())
 	loop := agent.NewLoopWithOptions(agent.LoopOptions{
 		Policy:          policy,
 		Store:           db,
@@ -217,6 +224,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 		LineageStore:    db,
 		MemoryRetriever: memory.NewTieredMemoryRetriever(db, memory.DefaultTierConfig()),
 		MemoryIngester:  memSvc,
+		ModelRouter:     modelRouter,
+		ReflectionEngine: reflectionEngine,
 		DisabledToolsGetter: func() []string {
 			raw, ok, _ := db.GetKV("disabled_tools")
 			if !ok || raw == "" {
@@ -337,7 +346,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 			ToolsLister:        reg,
 			TunnelManager:      tunnelMgr,
 			TunnelReloader:     func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
-			InferenceReloader:  func(cfg *types.AutomatonConfig) { infHolder.Reload(cfg) },
+			InferenceReloader: func(cfg *types.AutomatonConfig) {
+				infHolder.Reload(cfg)
+				if modelRouter != nil {
+					modelRouter.Reload()
+				}
+			},
 			SkillsConfigGetter: func() *types.SkillsConfig { return cfg.Skills },
 			LatencyProber:      inference.NewLatencyProber(),
 			TestLatencyRL:      ratelimit.NewMemoryRateLimiter(cooldown),

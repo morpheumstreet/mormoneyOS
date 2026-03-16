@@ -134,6 +134,17 @@ type AutomatonConfig struct {
 
 	// Memory: auto-ingestion and consolidation (5-tier memory pipeline).
 	Memory *MemoryConfig `json:"memory,omitempty"`
+
+	// Inference routing: model tier selection (fast/normal/strong).
+	Routing *RoutingConfig `json:"routing,omitempty"`
+}
+
+// RoutingConfig configures model routing and self-critique.
+type RoutingConfig struct {
+	DefaultTier            string `json:"defaultTier,omitempty"`            // "fast", "normal", "strong"; default "normal"
+	StrongThresholdTokens  int    `json:"strongThresholdTokens,omitempty"`  // use strong model when tokens > this (default 3500)
+	ForceStrongOnMoneyMove bool   `json:"forceStrongOnMoneyMove,omitempty"` // use strong model for transfer_credits, fund_child
+	ReflectionTier         string `json:"reflectionTier,omitempty"`         // tier for critique calls (default "fast")
 }
 
 // MemoryConfig holds automatic memory ingestion settings.

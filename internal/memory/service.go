@@ -2,7 +2,9 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
@@ -72,6 +74,34 @@ func (s *MemoryService) IngestTurn(ctx context.Context, turn *TurnData) error {
 		return err
 	}
 	return nil
+}
+
+// IngestReflection feeds critique output into the ingestion pipeline. Non-blocking; logs errors.
+func (s *MemoryService) IngestReflection(ctx context.Context, r *ReflectionData) error {
+	if !s.config.AutoIngestEnabled || r == nil {
+		return nil
+	}
+	turn := &TurnData{
+		TurnID:      r.TurnID + ":reflection",
+		SessionID:   "default",
+		Thinking:    formatReflectionForIngestion(r),
+	}
+	if err := s.ingester.Ingest(ctx, turn); err != nil {
+		s.log.Warn("reflection ingestion failed (non-blocking)", "err", err)
+		return err
+	}
+	return nil
+}
+
+func formatReflectionForIngestion(r *ReflectionData) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Critique (success_score=%.1f). Lessons: ", r.SuccessScore))
+	b.WriteString(strings.Join(r.Lessons, "; "))
+	if len(r.MemoryRecommendations) > 0 {
+		b.WriteString(". Memory recommendations: ")
+		b.WriteString(strings.Join(r.MemoryRecommendations, "; "))
+	}
+	return b.String()
 }
 
 // StartBackground starts the consolidation worker.

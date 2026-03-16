@@ -15,6 +15,9 @@ var v1ReactCoTTmpl string
 //go:embed templates/v1/output_format.tmpl
 var v1OutputFormatTmpl string
 
+//go:embed templates/v1/critique.tmpl
+var v1CritiqueTmpl string
+
 var (
 	loadOnce sync.Once
 	v1Tmpls  *template.Template
@@ -33,6 +36,10 @@ func loadV1Templates() (*template.Template, error) {
 			return
 		}
 		_, err = v1Tmpls.New("output_format").Parse(v1OutputFormatTmpl)
+		if err != nil {
+			return
+		}
+		_, err = v1Tmpls.New("critique").Parse(v1CritiqueTmpl)
 	})
 	return v1Tmpls, err
 }

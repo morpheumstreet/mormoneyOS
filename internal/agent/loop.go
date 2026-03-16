@@ -73,6 +73,8 @@ type Loop struct {
 	lineageStore        replication.LineageStore
 	memoryRetriever     memory.MemoryRetriever
 	memoryIngester      MemoryIngester
+	modelRouter         *inference.ModelRouter
+	reflectionEngine    *ReflectionEngine
 	disabledToolsGetter func() []string
 	fallbackSender      FallbackSender
 	log                 *slog.Logger
@@ -102,6 +104,8 @@ type LoopOptions struct {
 	LineageStore        replication.LineageStore   // optional; for GetLineageSummary in system prompt
 	MemoryRetriever     memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
 	MemoryIngester      MemoryIngester             // optional; automatic memory ingestion from turns
+	ModelRouter         *inference.ModelRouter    // optional; when set, routes to fast/normal/strong model per turn
+	ReflectionEngine    *ReflectionEngine          // optional; when set, runs self-critique on impactful turns
 	DisabledToolsGetter func() []string            // optional; when set, filters tool schemas (tools disabled via dashboard)
 	FallbackSender      FallbackSender            // optional; when LLM fails with claimed inbox, send "Sorry, having trouble" to user
 	Log                 *slog.Logger
@@ -123,6 +127,8 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		lineageStore:        opts.LineageStore,
 		memoryRetriever:     opts.MemoryRetriever,
 		memoryIngester:      opts.MemoryIngester,
+		modelRouter:        opts.ModelRouter,
+		reflectionEngine:   opts.ReflectionEngine,
 		disabledToolsGetter: opts.DisabledToolsGetter,
 		fallbackSender:      opts.FallbackSender,
 		log:                 opts.Log,
@@ -312,6 +318,25 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 			messages = BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, "", toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
 		}
 	}
+	// Route model when router is configured
+	client := l.inference
+	if l.modelRouter != nil {
+		tokensUsed := CountMessagesTokens(messages, toolDefs, DefaultTokenizer)
+		hasMoneyImpact := strings.Contains(strings.ToLower(pendingInput), "transfer") ||
+			strings.Contains(strings.ToLower(pendingInput), "fund") ||
+			strings.Contains(strings.ToLower(pendingInput), "send")
+		dc := inference.DecisionContext{
+			TokensUsed:     tokensUsed,
+			RiskLevel:      inference.RiskLow,
+			HasMoneyImpact: hasMoneyImpact,
+			TurnPhase:      "action",
+		}
+		if routed, err := l.modelRouter.Select(ctx, dc); err == nil && routed != nil {
+			client = routed
+			model = client.GetDefaultModel()
+		}
+	}
+
 	opts := &inference.InferenceOptions{
 		Model:      model,
 		MaxTokens:  4096,
@@ -321,7 +346,7 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 
 	// Call inference
 	l.log.Debug("inference call", "model", model, "messages", len(messages))
-	resp, err := l.inference.Chat(ctx, messages, opts)
+	resp, err := client.Chat(ctx, messages, opts)
 	if err != nil {
 		l.log.Warn("inference failed", "err", err)
 		// Persist error turn
@@ -424,6 +449,24 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 			TurnID: turnID, Timestamp: ts, SessionID: "", Input: pendingInput, InputSource: inputSource,
 			Thinking: thinking, ToolCalls: toolCallsJSON,
 		})
+	}
+
+	// Self-critique on impactful turns (Reflexion-style improvement)
+	if l.reflectionEngine != nil && anyMutatingToolExecuted {
+		ref, err := l.reflectionEngine.CritiqueTurn(ctx, &CritiqueTurnData{
+			TurnID: turnID, Input: pendingInput, Thinking: thinking, ToolCalls: toolCallsJSON,
+		})
+		if err == nil && ref != nil {
+			rd := &memory.ReflectionData{
+				TurnID:                turnID,
+				SuccessScore:          ref.SuccessScore,
+				Lessons:               ref.Lessons,
+				MemoryRecommendations: ref.MemoryRecommendations,
+			}
+			if ri, ok := l.memoryIngester.(ReflectionIngester); ok {
+				_ = ri.IngestReflection(ctx, rd)
+			}
+		}
 	}
 
 	// TS step 2: mark claimed inbox messages as processed (atomic with turn persistence)

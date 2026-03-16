@@ -3,6 +3,8 @@ package agent
 import (
 	"expvar"
 	"sync/atomic"
+
+	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 )
 
 var (
@@ -13,6 +15,10 @@ var (
 	memoryConsolidatedItems   atomic.Int64
 	memoryPrunedCount         atomic.Int64
 	memoryExtractionLatencyMs atomic.Int64
+	// Model routing and critique
+	routingStrongTotal atomic.Int64
+	routingFastTotal   atomic.Int64
+	critiqueTotal      atomic.Int64
 )
 
 func init() {
@@ -22,6 +28,38 @@ func init() {
 	expvar.Publish("memory_consolidated_items", expvar.Func(func() any { return memoryConsolidatedItems.Load() }))
 	expvar.Publish("memory_pruned_count", expvar.Func(func() any { return memoryPrunedCount.Load() }))
 	expvar.Publish("memory_extraction_latency_ms", expvar.Func(func() any { return memoryExtractionLatencyMs.Load() }))
+	expvar.Publish("routing_strong_total", expvar.Func(func() any { return routingStrongTotal.Load() }))
+	expvar.Publish("routing_fast_total", expvar.Func(func() any { return routingFastTotal.Load() }))
+	expvar.Publish("critique_total", expvar.Func(func() any { return critiqueTotal.Load() }))
+}
+
+// RecordRoutingStrong increments the strong-tier routing counter.
+func RecordRoutingStrong() {
+	routingStrongTotal.Add(1)
+}
+
+// RecordRoutingFast increments the fast-tier routing counter.
+func RecordRoutingFast() {
+	routingFastTotal.Add(1)
+}
+
+// RecordCritique increments the critique counter.
+func RecordCritique() {
+	critiqueTotal.Add(1)
+}
+
+// RoutingMetrics implements inference.RoutingMetricsRecorder for the model router.
+var RoutingMetrics inference.RoutingMetricsRecorder = &routingMetricsImpl{}
+
+type routingMetricsImpl struct{}
+
+func (*routingMetricsImpl) RecordTier(tier inference.ModelTier) {
+	switch tier {
+	case inference.TierStrong:
+		routingStrongTotal.Add(1)
+	case inference.TierFast:
+		routingFastTotal.Add(1)
+	}
 }
 
 // RecordInputTokens adds to the input tokens counter (call before each inference).
