@@ -40,14 +40,14 @@ Higher-priority tiers get token budget first; unused budget rolls to the next ti
 
 ---
 
-## 3. Design Principles
+## 3. Architecture
 
-| Principle | Application |
-|-----------|-------------|
+| Aspect | Application |
+|--------|-------------|
 | **Single Responsibility** | `MemoryRetriever` retrieves; `FormatMemoryBlock` formats; loop injects |
 | **Interface Segregation** | Narrow `MemoryRetriever` interface; optional in loop |
 | **Open/Closed** | Add new tiers or backends without changing loop |
-| **DRY** | One retrieval path, one format function; tools and retriever share KV keys |
+| **Single path** | One retrieval path, one format function; tools and retriever share KV keys |
 | **Dependency Inversion** | Loop depends on `MemoryRetriever` interface, not concrete store |
 
 ---
@@ -218,7 +218,7 @@ TS has `MemoryIngestionPipeline` that extracts from turns into tiers. Go could a
 
 ---
 
-## 9. Shared Constants (DRY)
+## 9. Shared Constants
 
 Keys used by both tools and retriever should live in one place:
 

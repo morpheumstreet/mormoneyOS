@@ -17,7 +17,7 @@ Prevent prefill/token-limit crashes in a production-useful way (not just hard-cu
 |-----------|-------------|
 | **Fail-safe first** | Never send > 5500 tokens (safety margin under ~6k prefill) |
 | **Prioritize usefulness** | Preserve signal (recent decisions, open positions, risk rules, learned facts) over noise (old chit-chat) |
-| **Dry & predictable** | Deterministic rules + minimal LLM calls |
+| **Deterministic & predictable** | Deterministic rules + minimal LLM calls |
 | **Observable** | Every truncation/summary logs what was kept/dropped + approximate tokens saved |
 | **Composable** | Builds on Step #1 (token counting exists) |
 

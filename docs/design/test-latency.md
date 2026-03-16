@@ -1,7 +1,7 @@
 # Test-Latency API Design
 
 **Date:** 2026-03-16  
-**Purpose:** API endpoint for local models to measure response wait time. Auth-required, rate-limited, configurable cooldown. Follows SOLID principles.
+**Purpose:** API endpoint for local models to measure response wait time. Auth-required, rate-limited, configurable cooldown.
 
 ---
 
@@ -12,7 +12,7 @@
 | Bearer token required | `validateJWT(r)`; `401 Unauthorized` if missing/invalid |
 | 120s cooldown per model | Rate limiter key = (user, provider, url, model); testing model A does not block testing model B |
 | Configurable cooldown | `testLatencyCooldownSeconds` in `automaton.json`, default 120 |
-| SOLID | Separate interfaces and single responsibilities |
+| Modularity | Separate interfaces and single responsibilities |
 
 ---
 
@@ -54,15 +54,14 @@ Default: 120 when omitted.
 
 ---
 
-## 4. SOLID Design
+## 4. Component Responsibilities
 
-| Principle | Application |
-|-----------|-------------|
-| **S**ingle Responsibility | Auth, rate limit, probe, handler each have one job |
-| **O**pen/Closed | New rate-limit or probe strategies without changing handler |
-| **L**iskov Substitution | Any `RateLimiter` or `LatencyProber` implementation works |
-| **I**nterface Segregation | `RateLimiter.Allow()`, `LatencyProber.Probe()` minimal surfaces |
-| **D**ependency Inversion | Handler depends on interfaces; implementations injected |
+| Component | Responsibility |
+|-----------|----------------|
+| Auth | Validate JWT; reject invalid requests |
+| Rate limit | Enforce cooldown per (user, provider, url, model) |
+| Probe | Measure latency; return ms or error |
+| Handler | Orchestrate auth → rate limit → probe; return JSON |
 
 ---
 

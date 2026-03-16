@@ -150,14 +150,14 @@ Populated in `cmd/run.go` via `tokenLimitsFromConfig(cfg)`.
 
 ---
 
-## 7. Design Principles
+## 7. Architecture Notes
 
-| Principle | Application |
-|-----------|-------------|
-| **DRY** | Single `BuildMessagesSafe`; one token counting path |
-| **Clean** | No duplication; centralize in agent package |
-| **Solid** | Defensive (nil tok → DefaultTokenizer), configurable, testable |
-| **Observable** | Logs at warn/info/debug for truncation and cap proximity |
+| Aspect | Application |
+|--------|-------------|
+| Single path | Single `BuildMessagesSafe`; one token counting path |
+| Centralized | No duplication; centralize in agent package |
+| Defensive | nil tok → DefaultTokenizer; configurable, testable |
+| Observable | Logs at warn/info/debug for truncation and cap proximity |
 
 ---
 

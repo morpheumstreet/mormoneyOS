@@ -13,7 +13,7 @@
 | **Explicit CoT** | Force structured reasoning: Thought → Risk → Plan → Action in every turn |
 | **Token safety** | Keep total input under the cap enforced by `token.go` / `trim.go` |
 | **Zero-downtime switching** | Allow prompt version switching via config (hot-reload friendly) |
-| **DRY & testable** | Single source of truth, full test coverage, no duplication |
+| **Single source & testable** | Single source of truth, full test coverage, no duplication |
 
 ---
 
@@ -189,14 +189,14 @@ See [reports/index.md](../reports/index.md) for full traceability (PR1–PR6, A3
 
 ---
 
-## 8. Design Rationale
+## 8. Rationale
 
-| Principle | Application |
-|-----------|-------------|
-| **Solid** | Versioned, templated, token-safe, CoT-forced → predictable reasoning |
-| **DRY** | Single source of truth (templates), reuses token, trim, memory, context |
-| **Clean** | Small package, clear public API, embed-based, follows Go layout |
-| **Future-proof** | Adding v2 or self-critique = new template folder + one line in registry |
+| Aspect | Application |
+|--------|-------------|
+| Predictable | Versioned, templated, token-safe, CoT-forced → predictable reasoning |
+| Single source | Single source of truth (templates), reuses token, trim, memory, context |
+| Structure | Small package, clear public API, embed-based, follows Go layout |
+| Future-proof | Adding v2 or self-critique = new template folder + one line in registry |
 
 ---
 

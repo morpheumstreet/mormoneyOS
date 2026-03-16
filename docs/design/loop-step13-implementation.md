@@ -5,11 +5,11 @@
 
 ---
 
-## 1. Design Principles
+## 1. Architecture Notes
 
-- **Clean:** Single responsibility; TurnResult encapsulates turn outcome; main loop stays simple.
-- **DRY:** Mutating tools list defined once in `internal/tools`; idle logic in one place.
-- **Solid:** Explicit return types; no hidden state; testable.
+- Single responsibility; TurnResult encapsulates turn outcome; main loop stays simple.
+- Mutating tools list defined once in `internal/tools`; idle logic in one place.
+- Explicit return types; no hidden state; testable.
 
 ---
 
