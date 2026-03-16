@@ -130,6 +130,9 @@ func (s *Server) routes() {
 	staticSub, _ := fs.Sub(staticFS, "static")
 	s.mux.Handle("/static/", http.StripPrefix("/static", http.FileServer(http.FS(staticSub))))
 
+	// Well-known: agent card for ERC-8004 discovery (must be before / catch-all)
+	s.mux.HandleFunc("/.well-known/agent-card.json", s.handleWellKnownAgentCard)
+
 	// Dashboard
 	s.mux.HandleFunc("/", s.handleIndex)
 
