@@ -117,8 +117,8 @@ func TestEstimateToolTokens(t *testing.T) {
 			},
 		},
 	}
-	got := estimateToolTokens(defs)
+	got := EstimateToolTokens(defs)
 	if got < 1 {
-		t.Errorf("estimateToolTokens should return > 0 for non-empty defs, got %d", got)
+		t.Errorf("EstimateToolTokens should return > 0 for non-empty defs, got %d", got)
 	}
 }

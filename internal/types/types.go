@@ -128,6 +128,9 @@ type AutomatonConfig struct {
 	MaxInputTokens  int `json:"maxInputTokens,omitempty"`  // Safe threshold before truncation
 	MaxHistoryTurns int `json:"maxHistoryTurns,omitempty"` // Max history turns when truncating
 	WarnAtTokens    int `json:"warnAtTokens,omitempty"`    // Log warning when input exceeds this
+
+	// PromptVersion: "v1" = versioned templates + CoT forcing; empty = legacy ad-hoc prompts.
+	PromptVersion string `json:"promptVersion,omitempty"`
 }
 
 // TelegramGroupCfg is per-group Telegram config (OpenClaw-style).

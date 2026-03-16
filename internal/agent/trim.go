@@ -275,7 +275,7 @@ func (tm *MessageTrimmer) Trim(
 	}
 
 	// Estimate memory budget: cap - system - history - input - tools - overhead
-	toolTokens := estimateToolTokens(toolDefs)
+	toolTokens := EstimateToolTokens(toolDefs)
 	systemTokens := tm.tokenizer.CountTokens(systemPrompt)
 	inputTokens := tm.tokenizer.CountTokens(pendingInput)
 	historyEst := tm.estimateHistoryTokens(recentTurns, limits)

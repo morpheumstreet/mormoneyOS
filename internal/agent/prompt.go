@@ -27,6 +27,7 @@ type LoopConfig struct {
 	SkillsConfig            *types.SkillsConfig  // Optional; for skill injection
 	TokenLimits             *TokenLimits       // Optional; when nil uses DefaultTokenLimits()
 	ContextLimitForModel    ContextLimitForModel // Optional; per-model cap from registry (0 = use MaxInputTokens)
+	PromptVersion           string              // Optional; "v1" = versioned templates + CoT; empty = legacy BuildSystemPrompt
 }
 
 // BuildSystemPrompt builds the system prompt (TS buildSystemPrompt-aligned, simplified).
@@ -116,8 +117,9 @@ func buildDroppedTurnsSummary(dropped []state.Turn, maxTokens int, tok Tokenizer
 	return s
 }
 
-// estimateToolTokens returns approximate token count for tool schemas (JSON overhead ~1.3x).
-func estimateToolTokens(toolDefs []inference.ToolDefinition) int {
+// EstimateToolTokens returns approximate token count for tool schemas (JSON overhead ~1.3x).
+// Exported for use by prompts package.
+func EstimateToolTokens(toolDefs []inference.ToolDefinition) int {
 	if len(toolDefs) == 0 {
 		return 0
 	}
@@ -181,7 +183,7 @@ func BuildMessagesSafe(
 	}
 
 	// Phase 2: Count tokens
-	toolTokens := estimateToolTokens(toolDefs)
+	toolTokens := EstimateToolTokens(toolDefs)
 	total := toolTokens + fixedOverheadTokens
 	for _, m := range msgs {
 		total += tok.CountTokens(m.Content)

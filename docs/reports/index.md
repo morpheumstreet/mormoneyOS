@@ -4,7 +4,7 @@
 
 ## Summary
 
-mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
+mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cover config, types, Conway credits, policy engine, state/database, heartbeat, agent loop (HistoryTrimmer, MessageTrimmer, history compression), **prompts** (versioned templates, CoT forcing), tools, inference, identity, memory (TieredMemorySelector, TieredMemoryRetriever), skills, soul, tunnel, and CLI commands. Includes race-detector verification and acceptance criteria.
 
 ---
 
@@ -145,7 +145,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ### 1.7 Agent Loop & Context (`internal/agent`)
 
-**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`, `internal/agent/trim_test.go`
+**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`, `internal/agent/trim_test.go`, `internal/agent/prompts_integration_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -178,8 +178,27 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | A27 | `TestMessageTrimmer_Trim` | token-caps-truncation | PASS |
 | A28 | `TestMessageTrimmer_Trim_NoMemoryRetriever` | token-caps-truncation | PASS |
 | A29 | `TestMessageTrimmer_Trim_WithTieredRetriever` | token-caps-truncation | PASS |
+| A30 | `TestBuildMessagesFromPrompts_NoMemory` | prompts-integration | PASS |
+| A31 | `TestBuildMessagesFromPrompts_UnsupportedVersion` | prompts-integration | PASS |
 
-**Total: 29 passed, 0 failed**
+**Total: 31 passed, 0 failed**
+
+---
+
+### 1.7a Prompts (`internal/prompts`)
+
+**File:** `internal/prompts/templates_test.go`
+
+| ID | Test | Spec / Traceability | Status |
+|----|------|---------------------|--------|
+| PR1 | `TestBuildSystemPrompt_V1` | prompts-templates | PASS |
+| PR2 | `TestBuildSystemPrompt_UnsupportedVersion` | prompts-templates | PASS |
+| PR3 | `TestGetCoTFooter` | prompts-templates | PASS |
+| PR4 | `TestRenderReactCoT` | prompts-templates | PASS |
+| PR5 | `TestFormatHistoryForReAct/empty` | prompts-templates | PASS |
+| PR6 | `TestFormatHistoryForReAct/with_turns` | prompts-templates | PASS |
+
+**Total: 6 passed, 0 failed**
 
 ---
 
@@ -344,7 +363,8 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | agent (policy) | 21 | 0 | 21 |
 | state | 17 | 0 | 17 |
 | heartbeat | 3 | 0 | 3 |
-| agent (loop, context, prompt, token, trim) | 29 | 0 | 29 |
+| agent (loop, context, prompt, token, trim, prompts-integration) | 31 | 0 | 31 |
+| prompts | 6 | 0 | 6 |
 | tools | 10 | 0 | 10 |
 | inference | 16 | 0 | 16 |
 | identity | 14 | 0 | 14 |
@@ -353,7 +373,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **159** | **0** | **159** |
+| **Total** | **166** | **0** | **166** |
 
 ---
 
@@ -372,25 +392,31 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 ### 2.2 Test Run Output (Last Verified: 17 Mar 2026)
 
 ```bash
-$ make test
-go test ./...
-ok  	github.com/morpheumlabs/mormoneyos-go/cmd	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/config	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/conway	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/heartbeat	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/inference	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/memory	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/skills	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/soul	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	(cached)
-ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
+$ go test ./... -count=1
+ok  	github.com/morpheumlabs/mormoneyos-go/cmd	0.140s
+?   	github.com/morpheumlabs/mormoneyos-go/cmd/moneyclaw	[no test files]
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/agent	0.101s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/config	0.050s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/conway	0.029s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/heartbeat	0.168s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity	0.237s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify	0.037s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/inference	0.045s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/memory	0.037s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/prompts	0.034s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/ratelimit	2.111s
+?   	github.com/morpheumlabs/mormoneyos-go/internal/replication	[no test files]
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/skills	0.040s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/social	0.017s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/soul	0.111s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/state	0.526s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tools	0.064s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	0.010s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	0.013s
+ok  	github.com/morpheumlabs/mormoneyos-go/internal/web	0.025s
 ```
 
-**Aggregate:** 159+ tests passed, 0 failed.
+**Aggregate:** 166 tests passed, 0 failed.
 
 ---
 
@@ -420,6 +446,8 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
 | **heartbeat** | H1–H3 |
 | **agent-loop** | A1–A6 |
 | **token-caps-truncation** | A7–A29 |
+| **prompts-integration** | A30–A31 |
+| **prompts-templates** | PR1–PR6 |
 | **tools** | TO1–TO10 |
 | **inference** | INF1–INF16 |
 | **identity** | ID1–ID14 |
@@ -466,4 +494,5 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [memory-retrieval-step6.md](./design/memory-retrieval-step6.md) — Memory retrieval
 - [token-caps-truncation.md](./design/token-caps-truncation.md) — Token caps, truncation, prefill limit avoidance
 - [context-trimming-stage2.md](./design/context-trimming-stage2.md) — HistoryTrimmer, TieredMemorySelector, MessageTrimmer
+- [prompt-templates-cot.md](./design/prompt-templates-cot.md) — Versioned prompt templates (v1), Chain-of-Thought forcing
 - [skills-design.md](./design/skills-design.md) — Skills loader

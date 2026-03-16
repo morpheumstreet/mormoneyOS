@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
+	"github.com/morpheumlabs/mormoneyos-go/internal/prompts"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/skills"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
@@ -234,7 +236,6 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 			skillList = skills.LoadAllFromStore(store, l.config.SkillsConfig)
 		}
 	}
-	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary, skillList)
 
 	// Fetch more turns for truncation (start generous; BuildMessagesSafe will cap)
 	historyLimit := 50
@@ -276,11 +277,32 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		effectiveCap = l.config.ContextLimitForModel(model)
 	}
 	var messages []inference.ChatMessage
-	if l.memoryRetriever != nil {
-		trimmer := NewMessageTrimmer(DefaultTokenizer)
-		messages, _ = trimmer.Trim(ctx, systemPrompt, recentTurnsForContext, pendingInput, l.memoryRetriever, toolDefs, limits, effectiveCap, l.log)
+	if l.config != nil && l.config.PromptVersion != "" {
+		// Versioned prompts: template-based system + CoT forcing
+		credits := float64(creditsCents) / 100
+		if creditsCents < 0 {
+			credits = 0
+		}
+		systemData := prompts.SystemPromptData{
+			State:          agentState,
+			Credits:        fmt.Sprintf("%.2f", credits),
+			Tier:           string(tier),
+			TurnCount:      turnCount,
+			Model:          model,
+			LineageSummary: lineageSummary,
+			SkillsBlock:    skills.FormatForPrompt(skillList, tokenBudgetFromConfig(l.config)),
+			GenesisPrompt:  truncateGenesis(l.config.GenesisPrompt, 2000),
+		}
+		messages, _ = BuildMessagesFromPrompts(ctx, prompts.Version(l.config.PromptVersion), systemData, recentTurnsForContext, pendingInput, l.memoryRetriever, toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
 	} else {
-		messages = BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, "", toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+		// Legacy: ad-hoc prompt building
+		systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary, skillList)
+		if l.memoryRetriever != nil {
+			trimmer := NewMessageTrimmer(DefaultTokenizer)
+			messages, _ = trimmer.Trim(ctx, systemPrompt, recentTurnsForContext, pendingInput, l.memoryRetriever, toolDefs, limits, effectiveCap, l.log)
+		} else {
+			messages = BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, "", toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+		}
 	}
 	opts := &inference.InferenceOptions{
 		Model:      model,
@@ -425,6 +447,20 @@ func jsonObject(kv ...interface{}) string {
 // ShouldSleep returns true if agent should sleep (idle or explicit sleep).
 func (l *Loop) ShouldSleep(idleTurns int) bool {
 	return idleTurns >= 3
+}
+
+func tokenBudgetFromConfig(cfg *LoopConfig) int {
+	if cfg == nil || cfg.SkillsConfig == nil {
+		return 2000
+	}
+	return cfg.SkillsConfig.TokenBudgetMax
+}
+
+func truncateGenesis(s string, maxLen int) string {
+	if s == "" || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // tierToAgentState maps SurvivalTier to agent state string for prompt/observability.

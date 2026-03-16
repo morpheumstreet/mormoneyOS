@@ -469,6 +469,9 @@ func Load() (*types.AutomatonConfig, error) {
 	} else if v, ok := raw["warn_at_tokens"].(int); ok && v > 0 {
 		cfg.WarnAtTokens = v
 	}
+	if v, ok := raw["promptVersion"].(string); ok && v != "" {
+		cfg.PromptVersion = v
+	}
 
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
