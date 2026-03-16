@@ -27,6 +27,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify"
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
+	"github.com/morpheumlabs/mormoneyos-go/internal/ratelimit"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tunnel"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
@@ -72,7 +73,10 @@ type ServerConfig struct {
 	ToolsLister    ToolsLister       // Optional; when set, GET /api/tools and PATCH /api/tools/:name work
 	TunnelManager  *tunnel.TunnelManager // Optional; when set, GET /api/tunnels returns active tunnels
 	TunnelReloader      func(cfg *types.TunnelConfig) // Optional; when set, POST /api/tunnels/providers/{name}/restart reloads providers
+	InferenceReloader  func(cfg *types.AutomatonConfig) // Optional; when set, config save triggers inference client reload (no restart)
 	SkillsConfigGetter func() *types.SkillsConfig     // Optional; when set, skills API uses this for registry config (DI)
+	LatencyProber      inference.LatencyProber        // Optional; when set, POST /api/models/test-latency measures response time (auth + rate limit required)
+	TestLatencyRL      ratelimit.RateLimiter         // Optional; when set, enforces cooldown between test-latency requests
 }
 
 // RuntimeState holds shared runtime state for the web API.
@@ -160,11 +164,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/economic", s.handleAPIEconomicGet)
 	s.mux.HandleFunc("PUT /api/economic", s.handleAPIEconomicPut)
 	s.mux.HandleFunc("GET /api/models", s.handleAPIModelsList)
+	s.mux.HandleFunc("GET /api/models/local-provider-models", s.handleAPIModelsLocalProviderModels)
 	s.mux.HandleFunc("POST /api/models", s.handleAPIModelsPost)
 	s.mux.HandleFunc("PUT /api/models/order", s.handleAPIModelsOrder)
 	s.mux.HandleFunc("PUT /api/models/providers/{provider}/endpoint", s.handleAPIModelsProviderEndpointPut)
 	s.mux.HandleFunc("PATCH /api/models/{id}", s.handleAPIModelsPatch)
 	s.mux.HandleFunc("DELETE /api/models/{id}", s.handleAPIModelsDelete)
+	s.mux.HandleFunc("POST /api/models/test-latency", s.handleAPIModelsTestLatency)
 
 	// Skills API (list, CRUD, discovery, recommended, activate/deactivate)
 	s.mux.HandleFunc("GET /api/skills", s.handleAPISkillsList)
@@ -510,6 +516,9 @@ func (s *Server) handleAPIConfigPut(w http.ResponseWriter, r *http.Request) {
 		s.Log.Error("config save failed", "err", err)
 		http.Error(w, "Failed to save config", http.StatusInternalServerError)
 		return
+	}
+	if s.Cfg != nil && s.Cfg.InferenceReloader != nil {
+		s.Cfg.InferenceReloader(&cfg)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1955,6 +1964,191 @@ func (s *Server) handleAPIModelsOrder(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleAPIModelsTestLatency(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// 1. Auth: Bearer token required
+	addr, ok := s.validateJWT(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// 2. Parse params early (needed for rate-limit key)
+	provider := r.URL.Query().Get("provider")
+	baseURL := strings.TrimSuffix(strings.TrimSpace(r.URL.Query().Get("url")), "/")
+	modelID := strings.TrimSpace(r.URL.Query().Get("model"))
+	if provider == "" || baseURL == "" || modelID == "" {
+		http.Error(w, "provider, url, and model query params required", http.StatusBadRequest)
+		return
+	}
+	// 3. Rate limit: cooldown per (user, provider, url, model) — not per API path
+	if s.Cfg != nil && s.Cfg.TestLatencyRL != nil {
+		rlKey := "test-latency:" + addr + ":" + provider + ":" + baseURL + ":" + modelID
+		allowed, retryAfter := s.Cfg.TestLatencyRL.Allow(r.Context(), rlKey)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error":       "rate limited",
+				"retryAfter":  retryAfter,
+			})
+			return
+		}
+	}
+	// 4. LatencyProber: must be configured
+	if s.Cfg == nil || s.Cfg.LatencyProber == nil {
+		http.Error(w, "Test latency not configured", http.StatusInternalServerError)
+		return
+	}
+	latencyMs, err := s.Cfg.LatencyProber.Probe(r.Context(), provider, baseURL, modelID)
+	if err != nil {
+		s.Log.Warn("test-latency probe failed", "provider", provider, "url", baseURL, "model", modelID, "err", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"latencyMs": latencyMs})
+}
+
+func (s *Server) handleAPIModelsLocalProviderModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	provider := r.URL.Query().Get("provider")
+	baseURL := strings.TrimSuffix(strings.TrimSpace(r.URL.Query().Get("url")), "/")
+	if provider == "" || baseURL == "" {
+		http.Error(w, "provider and url query params required", http.StatusBadRequest)
+		return
+	}
+	spec := inference.LookupProvider(provider)
+	if spec == nil || !spec.Local {
+		http.Error(w, "provider must be a local provider (ollama, localai, llamacpp, lmstudio, vllm, janai, g4f)", http.StatusBadRequest)
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	var activeModels, availableModels []string
+
+	// fetchOpenAIModels fetches model IDs from GET /v1/models (OpenAI-compatible).
+	fetchOpenAIModels := func(url string) []string {
+		var ids []string
+		if resp, err := client.Get(url); err == nil && resp.StatusCode == 200 {
+			var m struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&m) == nil {
+				for _, d := range m.Data {
+					if d.ID != "" {
+						ids = append(ids, d.ID)
+					}
+				}
+			}
+			resp.Body.Close()
+		}
+		return ids
+	}
+
+	switch provider {
+	case "ollama":
+		// Active/loaded: GET /api/ps
+		if resp, err := client.Get(baseURL + "/api/ps"); err == nil && resp.StatusCode == 200 {
+			var ps struct {
+				Models []struct {
+					Name  string `json:"name"`
+					Model string `json:"model"`
+				} `json:"models"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&ps) == nil {
+				for _, m := range ps.Models {
+					id := m.Name
+					if id == "" {
+						id = m.Model
+					}
+					if id != "" {
+						activeModels = append(activeModels, id)
+					}
+				}
+			}
+			resp.Body.Close()
+		}
+		// Available: GET /api/tags
+		if resp, err := client.Get(baseURL + "/api/tags"); err == nil && resp.StatusCode == 200 {
+			var tags struct {
+				Models []struct {
+					Name string `json:"name"`
+				} `json:"models"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&tags) == nil {
+				for _, m := range tags.Models {
+					if m.Name != "" {
+						availableModels = append(availableModels, m.Name)
+					}
+				}
+			}
+			resp.Body.Close()
+		}
+	case "localai":
+		// Active/loaded: GET /system
+		for _, path := range []string{"/system", "/v1/system"} {
+			if resp, err := client.Get(baseURL + path); err == nil && resp.StatusCode == 200 {
+				var sys struct {
+					LoadedModels []struct {
+						ID string `json:"id"`
+					} `json:"loaded_models"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&sys) == nil {
+					for _, m := range sys.LoadedModels {
+						if m.ID != "" {
+							activeModels = append(activeModels, m.ID)
+						}
+					}
+				}
+				resp.Body.Close()
+				break
+			}
+		}
+		// Available: GET /v1/models (OpenAI-compatible)
+		if resp, err := client.Get(baseURL + "/v1/models"); err == nil && resp.StatusCode == 200 {
+			var models struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&models) == nil {
+				for _, m := range models.Data {
+					if m.ID != "" {
+						availableModels = append(availableModels, m.ID)
+					}
+				}
+			}
+			resp.Body.Close()
+		}
+	case "llamacpp", "lmstudio", "vllm", "janai", "g4f":
+		// All use OpenAI-compatible GET /v1/models
+		ids := fetchOpenAIModels(baseURL + "/v1/models")
+		availableModels = ids
+		// For single-model servers (llama.cpp, vLLM), loaded = listed. For LM Studio/Jan, treat as available.
+		activeModels = ids
+	default:
+		http.Error(w, "unsupported local provider: "+provider, http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"activeModels":    activeModels,
+		"availableModels": availableModels,
+	})
+}
+
 func (s *Server) handleAPIModelsProviderEndpointPut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1996,6 +2190,18 @@ func (s *Server) handleAPIModelsProviderEndpointPut(w http.ResponseWriter, r *ht
 	switch spec.BaseURLConfigKey {
 	case "OllamaAPIURL":
 		cfg.OllamaAPIURL = url
+	case "LocalAIAPIURL":
+		cfg.LocalAIAPIURL = url
+	case "LlamaCppAPIURL":
+		cfg.LlamaCppAPIURL = url
+	case "LMStudioAPIURL":
+		cfg.LMStudioAPIURL = url
+	case "VLLMAPIURL":
+		cfg.VLLMAPIURL = url
+	case "JanAIAPIURL":
+		cfg.JanAIAPIURL = url
+	case "G4fAPIURL":
+		cfg.G4fAPIURL = url
 	case "ConwayAPIURL":
 		cfg.ConwayAPIURL = url
 	case "AzureOpenAIEndpoint":

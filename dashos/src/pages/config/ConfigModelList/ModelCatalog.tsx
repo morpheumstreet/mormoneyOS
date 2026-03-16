@@ -58,9 +58,9 @@ export function ModelCatalog({
       <p className="text-xs text-[#8aa8df] mb-3">
         {catalogType === "cloud"
           ? "Public API models from OpenAI, xAI, Qwen, etc. "
-          : "Local models (Ollama). "}
+          : "Local models (Ollama, LocalAI, llama.cpp, LM Studio, vLLM, Jan AI). "}
         {hasWriteAccess
-          ? "Click to fill the add form below."
+          ? "Click to fill the Add Model form."
           : "Connect wallet to add models."}{" "}
         <a
           href="https://llm-stats.com/"

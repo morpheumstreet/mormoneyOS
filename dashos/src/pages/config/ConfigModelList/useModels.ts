@@ -14,6 +14,7 @@ import { handleApiError } from "@/lib/api-error";
 import {
   DEFAULT_CONTEXT_LIMIT,
   DEFAULT_COST_CAP_CENTS,
+  DEFAULT_LOCAL_URLS,
   eligibleProviders,
 } from "./constants";
 
@@ -52,6 +53,7 @@ export function useModels(
     costCapCents: DEFAULT_COST_CAP_CENTS,
     enabled: true,
   });
+  const [localProviderUrl, setLocalProviderUrl] = useState("");
   const [editForm, setEditForm] = useState<Record<string, EditFormState>>({});
 
   const load = useCallback(() => {
@@ -198,6 +200,11 @@ export function useModels(
   }, []);
 
   const pickFromCatalog = useCallback((entry: ModelCatalogEntry) => {
+    const isLocal = entry.vramGb > 0;
+    const defaultUrl = DEFAULT_LOCAL_URLS[entry.provider] ?? "";
+    if (isLocal && defaultUrl) {
+      setLocalProviderUrl(defaultUrl);
+    }
     setForm((f) => {
       const eligible = eligibleProviders(providers);
       const provider = eligible.some((p) => p.key === entry.provider)
@@ -207,8 +214,8 @@ export function useModels(
         ...f,
         provider,
         modelId: entry.modelId,
-        contextLimit:
-          entry.contextK > 0 ? entry.contextK * 1024 : DEFAULT_CONTEXT_LIMIT,
+        contextLimit: isLocal ? 0 : (entry.contextK > 0 ? entry.contextK * 1024 : DEFAULT_CONTEXT_LIMIT),
+        costCapCents: isLocal ? 0 : f.costCapCents,
       };
     });
   }, [providers]);
@@ -225,6 +232,8 @@ export function useModels(
     deleting,
     form,
     setForm,
+    localProviderUrl,
+    setLocalProviderUrl,
     editForm,
     setEditForm,
     load,

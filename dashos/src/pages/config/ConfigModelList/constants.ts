@@ -1,6 +1,13 @@
-import type { ModelCatalogEntry, ModelProvider } from "@/lib/api";
+import type { ModelProvider } from "@/lib/api";
 
 export const DEFAULT_CONTEXT_LIMIT = 8192;
+
+export function getEndpointConfigKey(
+  provider: string,
+  providers: ModelProvider[]
+): string | undefined {
+  return providers.find((p) => p.key === provider)?.endpointConfigKey;
+}
 
 /** Providers eligible for Add model: local (e.g. Ollama) or have API key configured. */
 export function eligibleProviders(providers: ModelProvider[]): ModelProvider[] {
@@ -8,93 +15,27 @@ export function eligibleProviders(providers: ModelProvider[]): ModelProvider[] {
 }
 export const DEFAULT_COST_CAP_CENTS = 500;
 
-/** Fallback catalog when API returns empty — ensures CanIRun.ai design always shows */
-export const FALLBACK_CATALOG: ModelCatalogEntry[] = [
-  {
-    provider: "openai",
-    modelId: "gpt-4o",
-    displayName: "GPT-4o",
-    params: "",
-    vramGb: 0,
-    contextK: 128,
-    arch: "Dense",
-    useCases: ["chat", "code", "vision"],
-    tier: "S",
-    description: "OpenAI flagship",
-  },
-  {
-    provider: "openai",
-    modelId: "gpt-4o-mini",
-    displayName: "GPT-4o Mini",
-    params: "",
-    vramGb: 0,
-    contextK: 128,
-    arch: "Dense",
-    useCases: ["chat", "code"],
-    tier: "S",
-    description: "Fast and capable",
-  },
-  {
-    provider: "groq",
-    modelId: "llama-3.3-70b-versatile",
-    displayName: "Llama 3.3 70B",
-    params: "70B",
-    vramGb: 0,
-    contextK: 128,
-    arch: "Dense",
-    useCases: ["chat", "code", "reasoning"],
-    tier: "S",
-    description: "Best open at 70B (Groq)",
-  },
-  {
-    provider: "deepseek",
-    modelId: "deepseek-chat",
-    displayName: "DeepSeek Chat",
-    params: "",
-    vramGb: 0,
-    contextK: 64,
-    arch: "Dense",
-    useCases: ["chat", "code"],
-    tier: "S",
-    description: "Strong coding",
-  },
-  {
-    provider: "ollama",
-    modelId: "llama3.1",
-    displayName: "Llama 3.1 8B",
-    params: "8B",
-    vramGb: 4.1,
-    contextK: 128,
-    arch: "Dense",
-    useCases: ["chat", "code", "reasoning"],
-    tier: "S",
-    description: "Great quality/speed",
-  },
-  {
-    provider: "ollama",
-    modelId: "qwen2.5",
-    displayName: "Qwen 2.5 7B",
-    params: "7B",
-    vramGb: 3.6,
-    contextK: 128,
-    arch: "Dense",
-    useCases: ["chat", "code"],
-    tier: "S",
-    description: "Strong multilingual",
-  },
-  {
-    provider: "chatjimmy",
-    modelId: "llama3.1-8B",
-    displayName: "Llama 3.1 8B (ChatJimmy)",
-    params: "8B",
-    vramGb: 0,
-    contextK: 8,
-    arch: "Dense",
-    useCases: ["chat", "code"],
-    tier: "A",
-    description: "Free, no API key",
-  },
-];
+/** Local providers (Ollama, LocalAI, etc.) — used for Add form UI and catalog pick */
+export const LOCAL_PROVIDERS = [
+  "ollama",
+  "localai",
+  "llamacpp",
+  "lmstudio",
+  "vllm",
+  "janai",
+  "g4f",
+] as const;
+
+/** Default endpoint URLs for local providers */
+export const DEFAULT_LOCAL_URLS: Record<string, string> = {
+  ollama: "http://localhost:11434",
+  localai: "http://localhost:8080",
+  llamacpp: "http://localhost:8080",
+  lmstudio: "http://localhost:1234",
+  vllm: "http://localhost:8000",
+  janai: "http://localhost:1337",
+  g4f: "http://localhost:13145",
+};
 
 export const TIER_SETS: Record<string, string[]> = {
   sab: ["S", "A", "B"],

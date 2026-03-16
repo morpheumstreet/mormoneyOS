@@ -44,6 +44,12 @@ var baseURLConfigDefs = map[string]struct {
 	"AzureOpenAIEndpoint":  {"azureOpenAIEndpoint", func(c *types.AutomatonConfig) string { return c.AzureOpenAIEndpoint }},
 	"VertexAPIURL":         {"vertexApiUrl", func(c *types.AutomatonConfig) string { return c.VertexAPIURL }},
 	"OllamaAPIURL":         {"ollamaApiUrl", func(c *types.AutomatonConfig) string { return c.OllamaAPIURL }},
+	"LocalAIAPIURL":        {"localaiApiUrl", func(c *types.AutomatonConfig) string { return c.LocalAIAPIURL }},
+	"LlamaCppAPIURL":      {"llamacppApiUrl", func(c *types.AutomatonConfig) string { return c.LlamaCppAPIURL }},
+	"LMStudioAPIURL":      {"lmstudioApiUrl", func(c *types.AutomatonConfig) string { return c.LMStudioAPIURL }},
+	"VLLMAPIURL":          {"vllmApiUrl", func(c *types.AutomatonConfig) string { return c.VLLMAPIURL }},
+	"JanAIAPIURL":         {"janaiApiUrl", func(c *types.AutomatonConfig) string { return c.JanAIAPIURL }},
+	"G4fAPIURL":           {"g4fApiUrl", func(c *types.AutomatonConfig) string { return c.G4fAPIURL }},
 }
 
 // providerResolutionOrder defines backward-compat priority for auto-detecting provider from config.

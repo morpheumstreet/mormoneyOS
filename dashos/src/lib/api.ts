@@ -479,6 +479,30 @@ export function putModelsOrder(ids: string[]): Promise<void> {
   });
 }
 
+/** Fetch active and available models from a local provider (Ollama, LocalAI). Proxied by backend to avoid CORS. */
+export function getLocalProviderModels(
+  provider: string,
+  url: string
+): Promise<{ activeModels: string[]; availableModels: string[] }> {
+  const params = new URLSearchParams({ provider, url });
+  return fetch(API + "/models/local-provider-models?" + params).then((r) => {
+    if (!r.ok) throw new Error(r.statusText);
+    return r.json();
+  });
+}
+
+/** Test response latency for a local model. Requires Bearer token. Rate-limited (cooldown configurable, default 120s). */
+export function postModelsTestLatency(
+  provider: string,
+  url: string,
+  model: string
+): Promise<{ latencyMs: number }> {
+  const params = new URLSearchParams({ provider, url, model });
+  return apiFetch<{ latencyMs: number }>("/models/test-latency?" + params, {
+    method: "POST",
+  });
+}
+
 /** Update provider endpoint URL (Ollama, Conway, Azure, Vertex). For local LLMs like Ollama, allows custom base URL. */
 export function putProviderEndpoint(
   provider: string,

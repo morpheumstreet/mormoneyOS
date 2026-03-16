@@ -64,6 +64,7 @@ mormoneyOS integrates with several API surfaces:
 | PATCH | `/api/models/{id}` | ✅ Implemented | Update model (apiKey, modelId, contextLimit, costCapCents, enabled) | Model object |
 | DELETE | `/api/models/{id}` | ✅ Implemented | Remove a model | `204 No Content` |
 | PUT | `/api/models/order` | ✅ Implemented | Reorder models by priority | `204 No Content` |
+| POST | `/api/models/test-latency` | ✅ Implemented | Test response latency for local model (auth + rate limit) | `{ latencyMs: number }` |
 | GET | `/api/skills` | ✅ Implemented | List installed skills (filter, trusted) | `{ skills: [{ name, description, source, path, enabled, trusted }] }` |
 | GET | `/api/skills/discovery` | ✅ Implemented | Discover skills from ClawHub (search or list) | `{ results?: [...] }` or `{ items, nextCursor }` |
 | GET | `/api/skills/recommended` | ✅ Implemented | Recommended skills from ClawHub | `{ recommended: [{ slug, displayName, summary, version, installed }] }` |
@@ -247,6 +248,15 @@ Model list configuration: add, remove, prioritize LLM providers; set API keys, m
 
 - **Body:** `{ "ids": ["id1", "id2", "id3"] }` — order defines priority (first = highest)
 - **Response:** `204 No Content`
+
+**POST /api/models/test-latency** — Test response wait time for a local model. **Requires `Authorization: Bearer <token>`.** Rate-limited per (user, provider, url, model): cooldown applies per model ID, not per API path; testing model A does not block testing model B. Configurable via `testLatencyCooldownSeconds` in automaton.json (default 120 seconds).
+
+- **Query params:** `provider` (required), `url` (required), `model` (required)
+- **Supported providers:** `ollama`, `localai`, `llamacpp`, `lmstudio`, `vllm`, `janai`, `g4f`
+- **Response (200):** `{ "latencyMs": 123 }`
+- **Response (429):** `{ "error": "rate limited", "retryAfter": 95 }` — `Retry-After` header also set
+- **Response (502):** `{ "error": "..." }` — probe failure (e.g. connection refused)
+- **Example:** `curl -X POST "http://localhost:8080/api/models/test-latency?provider=ollama&url=http://localhost:11434&model=llama3.2" -H "Authorization: Bearer <token>"`
 
 ### 2.13 Tools API
 
@@ -524,7 +534,7 @@ Mnemonic wallet management: multi-chain address derivation, HD index rotation, c
 
 | Category | Paths |
 |----------|-------|
-| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `GET /api/heartbeat`, `PATCH /api/heartbeat/{name}`, `PATCH /api/heartbeat/{name}/schedule`, `GET /api/wallet`, `GET /api/wallet/address`, `POST /api/wallet/rotate`, `POST /api/wallet/clear-cache`, `POST /api/auth/verify`, `GET /api/reports` |
+| **Web Dashboard** | `/`, `/static/*`, `GET /api/status`, `GET /api/strategies`, `GET /api/history`, `GET /api/cost`, `GET /api/risk`, `POST /api/pause`, `POST /api/resume`, `POST /api/chat`, `GET /api/config`, `PUT /api/config`, `GET /api/soul/config`, `PUT /api/soul/config`, `GET /api/tools`, `PATCH /api/tools/{name}`, `GET /api/social`, `PATCH /api/social/{name}`, `PUT /api/social/{name}/config`, `GET /api/tunnels`, `GET /api/tunnels/providers`, `PUT /api/tunnels/providers/{name}`, `POST /api/tunnels/providers/{name}/restart`, `GET /api/models`, `POST /api/models`, `PATCH /api/models/{id}`, `DELETE /api/models/{id}`, `PUT /api/models/order`, `POST /api/models/test-latency`, `GET /api/skills`, `GET /api/skills/discovery`, `GET /api/skills/recommended`, `GET /api/skills/{name}`, `POST /api/skills`, `PATCH /api/skills/{name}`, `DELETE /api/skills/{name}`, `PATCH /api/skills/{name}/activate`, `PATCH /api/skills/{name}/deactivate`, `GET /api/heartbeat`, `PATCH /api/heartbeat/{name}`, `PATCH /api/heartbeat/{name}/schedule`, `GET /api/wallet`, `GET /api/wallet/address`, `POST /api/wallet/rotate`, `POST /api/wallet/clear-cache`, `POST /api/auth/verify`, `GET /api/reports` |
 | **Conway** | `GET/POST /v1/credits/*`, `GET/POST /v1/sandboxes`, `POST /v1/sandboxes/{id}/exec`, `POST /v1/sandboxes/{id}/files/upload/json`, `GET /v1/sandboxes/{id}/files/read`, `GET /v1/models` |
 | **Conway Auth** | `POST /v1/auth/nonce`, `POST /v1/auth/verify`, `POST /v1/auth/api-keys`, `POST /v1/automaton/register-parent` |
 | **Conway x402** | `GET /pay/{amountUsd}/{address}` |
@@ -560,6 +570,7 @@ Mnemonic wallet management: multi-chain address derivation, HD index rotation, c
 | `PATCH /api/models/{id}` | ✅ Full | Update model fields |
 | `DELETE /api/models/{id}` | ✅ Full | Remove model |
 | `PUT /api/models/order` | ✅ Full | Reorder by priority |
+| `POST /api/models/test-latency` | ✅ Full | Test response latency for local model; auth + rate limit (cooldown from `testLatencyCooldownSeconds`, default 120s) |
 | `POST /api/auth/verify` | ✅ Full | Verifies message signatures (Ethereum, Solana, Bitcoin, Morpheum) via standards package |
 | `GET /api/reports` | ✅ Full | Last metrics report (KV) + recent metric_snapshots from report_metrics task |
 | `GET /api/tunnels` | ✅ Full | Active tunnels from TunnelManager.Status() |

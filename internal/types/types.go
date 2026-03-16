@@ -71,6 +71,12 @@ type AutomatonConfig struct {
 	VertexAPIURL         string         `json:"vertexApiUrl,omitempty"` // e.g. https://REGION-aiplatform.googleapis.com/v1/projects/PROJECT/locations/REGION
 	ChatJimmyAPIURL      string         `json:"chatjimmyApiUrl,omitempty"` // optional; default https://chatjimmy.ai (no auth)
 	OllamaAPIURL         string         `json:"ollamaApiUrl,omitempty"`   // optional; default http://localhost:11434 for local Ollama
+	LocalAIAPIURL        string         `json:"localaiApiUrl,omitempty"`  // optional; default http://localhost:8080 for local LocalAI
+	LlamaCppAPIURL       string         `json:"llamacppApiUrl,omitempty"` // optional; default http://localhost:8080 for llama-server
+	LMStudioAPIURL       string         `json:"lmstudioApiUrl,omitempty"`  // optional; default http://localhost:1234 for LM Studio
+	VLLMAPIURL           string         `json:"vllmApiUrl,omitempty"`     // optional; default http://localhost:8000 for vLLM
+	JanAIAPIURL          string         `json:"janaiApiUrl,omitempty"`    // optional; default http://localhost:1337 for Jan AI
+	G4fAPIURL            string         `json:"g4fApiUrl,omitempty"`      // optional; default http://localhost:13145 for g4f (GPT4Free)
 	InferenceModel        string         `json:"inferenceModel"`
 	LowComputeModel       string         `json:"lowComputeModel,omitempty"`       // Optional; used when tier is critical/low_compute
 	ResourceConstraintMode string         `json:"resourceConstraintMode,omitempty"` // "auto" | "forced_on" | "forced_off"; default "auto"
@@ -114,6 +120,9 @@ type AutomatonConfig struct {
 
 	// Soul config: personality, system prompt, tone, behavioral constraints
 	Soul *SoulConfig `json:"soul,omitempty"`
+
+	// TestLatencyCooldownSeconds: minimum seconds between test-latency API requests (default 120)
+	TestLatencyCooldownSeconds int `json:"testLatencyCooldownSeconds,omitempty"`
 }
 
 // TelegramGroupCfg is per-group Telegram config (OpenClaw-style).

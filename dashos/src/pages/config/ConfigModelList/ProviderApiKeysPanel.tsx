@@ -6,6 +6,18 @@ function getEndpointPlaceholder(providerKey: string): string {
   switch (providerKey) {
     case "ollama":
       return "http://localhost:11434";
+    case "localai":
+      return "http://localhost:8080";
+    case "llamacpp":
+      return "http://localhost:8080";
+    case "lmstudio":
+      return "http://localhost:1234";
+    case "vllm":
+      return "http://localhost:8000";
+    case "janai":
+      return "http://localhost:1337";
+    case "g4f":
+      return "http://localhost:13145";
     case "azure":
       return "https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT";
     case "vertex":
@@ -20,6 +32,8 @@ interface ProviderApiKeysPanelProps {
   providers: ModelProvider[];
   apiKeysOpen: boolean;
   setApiKeysOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  /** When false, always show content (no collapse) — used when embedded in a tab */
+  standalone?: boolean;
   providerKeyValues: Record<string, string>;
   setProviderKeyValues: React.Dispatch<
     React.SetStateAction<Record<string, string>>
@@ -55,8 +69,11 @@ export function ProviderApiKeysPanel({
   saveProviderEndpoint,
   setError,
   load,
+  standalone = true,
 }: ProviderApiKeysPanelProps) {
   if (!hasWriteAccess) return null;
+
+  const showContent = standalone ? apiKeysOpen : true;
 
   const providerGroups = [
     {
@@ -71,28 +88,30 @@ export function ProviderApiKeysPanel({
 
   return (
     <div className="electric-card overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setApiKeysOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#07132f]/50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Key className="h-4 w-4 text-[#9bc3ff]" />
-          <span className="text-sm font-medium text-white">
-            Provider API keys
-          </span>
-          <span className="text-xs text-[#6b8fcc]">
-            {providers.filter((p) => p.configKey && !p.local).length} providers
-          </span>
-        </div>
-        {apiKeysOpen ? (
-          <ChevronDown className="h-4 w-4 text-[#6b8fcc]" />
-        ) : (
-          <ChevronRight className="h-4 w-4 text-[#6b8fcc]" />
-        )}
-      </button>
-      {apiKeysOpen && (
-        <div className="px-4 pb-4 pt-0 border-t border-[#1a3670]">
+      {standalone && (
+        <button
+          type="button"
+          onClick={() => setApiKeysOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#07132f]/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Key className="h-4 w-4 text-[#9bc3ff]" />
+            <span className="text-sm font-medium text-white">
+              Provider API keys
+            </span>
+            <span className="text-xs text-[#6b8fcc]">
+              {providers.filter((p) => p.configKey && !p.local).length} providers
+            </span>
+          </div>
+          {apiKeysOpen ? (
+            <ChevronDown className="h-4 w-4 text-[#6b8fcc]" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-[#6b8fcc]" />
+          )}
+        </button>
+      )}
+      {showContent && (
+        <div className={`px-4 pb-4 ${standalone ? "pt-0 border-t border-[#1a3670]" : "pt-4"}`}>
           <p className="text-xs text-[#8aa8df] mt-3 mb-3">
             Add API keys.{" "}
             <strong className="text-[#9bc3ff]">Resellers</strong> (OpenRouter,

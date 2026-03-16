@@ -19,6 +19,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
+	"github.com/morpheumlabs/mormoneyos-go/internal/ratelimit"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
@@ -73,8 +74,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// 3. Policy engine (with treasury policy and DB-backed rate limits)
 	policy := agent.NewPolicyEngine(agent.CreateDefaultRulesWithTreasury(cfg.TreasuryPolicy, db))
 
-	// 4. Inference client (real when OpenAI/Conway keys set, else stub)
-	infClient := inference.NewClientFromConfig(cfg)
+	// 4. Inference client (real when OpenAI/Conway keys set, else stub). Holder supports hot-reload on config save.
+	infHolder := inference.NewInferenceClientHolder(cfg)
+	infClient := infHolder.LiveClient()
 
 	// 5. Conway client (when configured) — shared by agent, heartbeat, web
 	var conwayClient conway.Client
@@ -261,6 +263,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 	var webSrv *web.Server
 	if !noWeb {
+		cooldown := 120
+		if cfg.TestLatencyCooldownSeconds > 0 {
+			cooldown = cfg.TestLatencyCooldownSeconds
+		}
 		webSrv = web.NewServer(webAddr, webState, db, &web.ServerConfig{
 			Name:               cfg.Name,
 			WalletAddress:      primaryAddr,
@@ -272,7 +278,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 			ToolsLister:        reg,
 			TunnelManager:      tunnelMgr,
 			TunnelReloader:     func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
+			InferenceReloader:  func(cfg *types.AutomatonConfig) { infHolder.Reload(cfg) },
 			SkillsConfigGetter: func() *types.SkillsConfig { return cfg.Skills },
+			LatencyProber:      inference.NewLatencyProber(),
+			TestLatencyRL:      ratelimit.NewMemoryRateLimiter(cooldown),
 		}, slog.Default())
 		go func() {
 			if err := webSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

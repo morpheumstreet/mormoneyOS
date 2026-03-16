@@ -72,6 +72,7 @@ export function useProviderKeys(providers: ModelProvider[]) {
         load();
       } catch (e) {
         handleApiError(e, setError, "Failed to save endpoint URL");
+        throw e;
       } finally {
         setSavingProviderKey(null);
       }

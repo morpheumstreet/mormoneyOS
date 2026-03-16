@@ -155,6 +155,24 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["ollamaApiUrl"].(string); ok && v != "" {
 		cfg.OllamaAPIURL = v
 	}
+	if v, ok := raw["localaiApiUrl"].(string); ok && v != "" {
+		cfg.LocalAIAPIURL = v
+	}
+	if v, ok := raw["llamacppApiUrl"].(string); ok && v != "" {
+		cfg.LlamaCppAPIURL = v
+	}
+	if v, ok := raw["lmstudioApiUrl"].(string); ok && v != "" {
+		cfg.LMStudioAPIURL = v
+	}
+	if v, ok := raw["vllmApiUrl"].(string); ok && v != "" {
+		cfg.VLLMAPIURL = v
+	}
+	if v, ok := raw["janaiApiUrl"].(string); ok && v != "" {
+		cfg.JanAIAPIURL = v
+	}
+	if v, ok := raw["g4fApiUrl"].(string); ok && v != "" {
+		cfg.G4fAPIURL = v
+	}
 	if v, ok := raw["inferenceModel"].(string); ok && v != "" {
 		cfg.InferenceModel = v
 	}
@@ -418,6 +436,13 @@ func Load() (*types.AutomatonConfig, error) {
 		cfg.Soul = mergeSoulConfig(cfg.Soul, sc)
 	}
 
+	// Test-latency cooldown (seconds between validate requests; default 120)
+	if v, ok := raw["testLatencyCooldownSeconds"].(float64); ok && v > 0 {
+		cfg.TestLatencyCooldownSeconds = int(v)
+	} else if v, ok := raw["testLatencyCooldownSeconds"].(int); ok && v > 0 {
+		cfg.TestLatencyCooldownSeconds = v
+	}
+
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
 		cfg.Skills = &types.SkillsConfig{TokenBudgetMax: 2000}
@@ -618,15 +643,16 @@ func DefaultConfig() *types.AutomatonConfig {
 func defaultConfig() *types.AutomatonConfig {
 	tp := types.DefaultTreasuryPolicy()
 	return &types.AutomatonConfig{
-		ConwayAPIURL:        "https://api.conway.tech",
-		Provider:            "chatjimmy",
-		InferenceModel:      "llama3.1-8B",
-		MaxTokensPerTurn:    4096,
-		HeartbeatConfigPath: ResolvePath("~/.automaton/heartbeat.yml"),
-		DBPath:              filepath.Join(GetAutomatonDir(), "state.db"),
-		LogLevel:            "info",
-		MaxChildren:         3,
-		TreasuryPolicy:      &tp,
+		ConwayAPIURL:                 "https://api.conway.tech",
+		Provider:                     "chatjimmy",
+		InferenceModel:               "llama3.1-8B",
+		MaxTokensPerTurn:             4096,
+		HeartbeatConfigPath:          ResolvePath("~/.automaton/heartbeat.yml"),
+		DBPath:                       filepath.Join(GetAutomatonDir(), "state.db"),
+		LogLevel:                     "info",
+		MaxChildren:                  3,
+		TreasuryPolicy:               &tp,
+		TestLatencyCooldownSeconds:   120,
 	}
 }
 

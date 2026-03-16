@@ -50,6 +50,12 @@ var registry = []ProviderSpec{
 	// --- Other (custom, local, free) ---
 	{Key: "conway", DisplayName: "Conway", BaseURL: "", BaseURLConfigKey: "ConwayAPIURL", AuthStyle: AuthXApiKey, APIKeyConfigKey: "ConwayAPIKey", Local: false},
 	{Key: "ollama", DisplayName: "Ollama", BaseURL: "http://localhost:11434", BaseURLConfigKey: "OllamaAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
+	{Key: "localai", DisplayName: "LocalAI", BaseURL: "http://localhost:8080", BaseURLConfigKey: "LocalAIAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
+	{Key: "llamacpp", DisplayName: "llama.cpp", BaseURL: "http://localhost:8080", BaseURLConfigKey: "LlamaCppAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
+	{Key: "lmstudio", DisplayName: "LM Studio", BaseURL: "http://localhost:1234", BaseURLConfigKey: "LMStudioAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
+	{Key: "vllm", DisplayName: "vLLM", BaseURL: "http://localhost:8000", BaseURLConfigKey: "VLLMAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
+	{Key: "janai", DisplayName: "Jan AI", BaseURL: "http://localhost:1337", BaseURLConfigKey: "JanAIAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
+	{Key: "g4f", DisplayName: "GPT4Free (g4f)", BaseURL: "http://localhost:13145", BaseURLConfigKey: "G4fAPIURL", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: true},
 	{Key: "chatjimmy", DisplayName: "ChatJimmy", BaseURL: "https://chatjimmy.ai", AuthStyle: AuthBearer, APIKeyConfigKey: "", Local: false}, // No auth
 }
 

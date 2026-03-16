@@ -66,7 +66,13 @@ var TopModels = []ModelSpec{
 // defaultModelFallback is for providers in registry but not in TopModels.
 // TopModels is the primary source; this covers helicone, deepinfra, etc.
 var defaultModelFallback = map[string]string{
-	"conway":      "gpt-4o-mini",
+	"localai":   "phi-3-mini-4k-instruct",
+	"llamacpp":  "Llama-3.1-8B-Instruct",
+	"lmstudio":  "Llama-3.1-8B-Instruct",
+	"vllm":      "meta-llama/Llama-3.1-8B-Instruct",
+	"janai":     "llama-3.1-8b",
+	"g4f":       "gpt-4o-mini",
+	"conway":    "gpt-4o-mini",
 	"helicone":   "gpt-4o-mini",
 	"deepinfra":  "meta-llama/Meta-Llama-3-8B-Instruct",
 	"novita":     "gpt-4o-mini",

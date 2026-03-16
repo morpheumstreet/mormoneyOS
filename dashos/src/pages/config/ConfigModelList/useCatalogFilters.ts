@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { ModelCatalogEntry } from "@/lib/api";
-import { FALLBACK_CATALOG, TIER_SETS } from "./constants";
+import { TIER_SETS } from "./constants";
 
 export function useCatalogFilters(
   catalog: ModelCatalogEntry[],
@@ -13,7 +13,7 @@ export function useCatalogFilters(
   }
 ) {
   return useMemo(() => {
-    const displayCatalog = catalog.length > 0 ? catalog : FALLBACK_CATALOG;
+    const displayCatalog = catalog;
     let result = displayCatalog;
 
     if (filters.type === "cloud") {

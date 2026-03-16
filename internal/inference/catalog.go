@@ -68,5 +68,30 @@ func ModelCatalog() []CatalogEntry {
 		{Provider: "ollama", ModelID: "qwen2.5-coder:32b", DisplayName: "Qwen 2.5 Coder 32B", Params: "32B", VRAMGB: 16.4, ContextK: 128, Arch: "Dense", UseCases: []string{"code"}, Tier: "B", Description: "Best open-source coding at release"},
 		{Provider: "ollama", ModelID: "llama3.1:70b", DisplayName: "Llama 3.1 70B", Params: "70B", VRAMGB: 35.9, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code", "reasoning"}, Tier: "C", Description: "Best open model at 70B"},
 		{Provider: "ollama", ModelID: "mixtral", DisplayName: "Mixtral 8x7B", Params: "47B", VRAMGB: 24.1, ContextK: 32, Arch: "MoE", UseCases: []string{"chat", "code"}, Tier: "B", Description: "MoE with 12.9B active"},
+
+		// --- Local (LocalAI) models — config-dependent, common examples ---
+		{Provider: "localai", ModelID: "phi-3-mini-4k-instruct", DisplayName: "Phi-3 Mini (LocalAI)", Params: "3.8B", VRAMGB: 2.4, ContextK: 4, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "Common LocalAI model"},
+		{Provider: "localai", ModelID: "llama-3-8b", DisplayName: "Llama 3 8B (LocalAI)", Params: "8B", VRAMGB: 4.1, ContextK: 8, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "Llama 3 via LocalAI"},
+		{Provider: "localai", ModelID: "gpt-4all-mistral", DisplayName: "GPT4All Mistral (LocalAI)", Params: "7B", VRAMGB: 3.6, ContextK: 8, Arch: "Dense", UseCases: []string{"chat"}, Tier: "S", Description: "GPT4All-style via LocalAI"},
+
+		// --- Local (llama.cpp) — single-model, alias from --alias or filename ---
+		{Provider: "llamacpp", ModelID: "Llama-3.1-8B-Instruct", DisplayName: "Llama 3.1 8B (llama.cpp)", Params: "8B", VRAMGB: 4.1, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "llama-server default alias"},
+		{Provider: "llamacpp", ModelID: "Llama-3.2-3B", DisplayName: "Llama 3.2 3B (llama.cpp)", Params: "3B", VRAMGB: 1.5, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "Lightweight via llama-server"},
+
+		// --- Local (LM Studio) — OpenAI-compatible ---
+		{Provider: "lmstudio", ModelID: "Llama-3.1-8B-Instruct", DisplayName: "Llama 3.1 8B (LM Studio)", Params: "8B", VRAMGB: 4.1, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "LM Studio local server"},
+		{Provider: "lmstudio", ModelID: "mistral-7b-instruct", DisplayName: "Mistral 7B (LM Studio)", Params: "7B", VRAMGB: 3.6, ContextK: 32, Arch: "Dense", UseCases: []string{"chat", "reasoning"}, Tier: "S", Description: "Mistral via LM Studio"},
+
+		// --- Local (vLLM) — single-model, HF-style path ---
+		{Provider: "vllm", ModelID: "meta-llama/Llama-3.1-8B-Instruct", DisplayName: "Llama 3.1 8B (vLLM)", Params: "8B", VRAMGB: 4.1, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "vLLM high-throughput"},
+		{Provider: "vllm", ModelID: "mistralai/Mistral-7B-Instruct-v0.2", DisplayName: "Mistral 7B (vLLM)", Params: "7B", VRAMGB: 3.6, ContextK: 32, Arch: "Dense", UseCases: []string{"chat"}, Tier: "S", Description: "Mistral via vLLM"},
+
+		// --- Local (Jan AI) — config-dependent ---
+		{Provider: "janai", ModelID: "llama-3.1-8b", DisplayName: "Llama 3.1 8B (Jan AI)", Params: "8B", VRAMGB: 4.1, ContextK: 8, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "Jan AI local API"},
+		{Provider: "janai", ModelID: "phi-3-mini", DisplayName: "Phi-3 Mini (Jan AI)", Params: "3.8B", VRAMGB: 2.4, ContextK: 4, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "Phi-3 via Jan AI"},
+
+		// --- Local (GPT4Free / g4f) — OpenAI-compatible, custom endpoint ---
+		{Provider: "g4f", ModelID: "gpt-4o-mini", DisplayName: "GPT-4o Mini (g4f)", Params: "", VRAMGB: 0, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code"}, Tier: "S", Description: "GPT4Free OpenAI-compatible API"},
+		{Provider: "g4f", ModelID: "gpt-4o", DisplayName: "GPT-4o (g4f)", Params: "", VRAMGB: 0, ContextK: 128, Arch: "Dense", UseCases: []string{"chat", "code", "vision"}, Tier: "S", Description: "GPT4Free via custom endpoint"},
 	}
 }
