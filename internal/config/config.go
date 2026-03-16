@@ -442,6 +442,33 @@ func Load() (*types.AutomatonConfig, error) {
 	} else if v, ok := raw["testLatencyCooldownSeconds"].(int); ok && v > 0 {
 		cfg.TestLatencyCooldownSeconds = v
 	}
+	if v, ok := raw["maxInputTokens"].(float64); ok && v > 0 {
+		cfg.MaxInputTokens = int(v)
+	} else if v, ok := raw["maxInputTokens"].(int); ok && v > 0 {
+		cfg.MaxInputTokens = v
+	} else if v, ok := raw["max_input_tokens"].(float64); ok && v > 0 {
+		cfg.MaxInputTokens = int(v)
+	} else if v, ok := raw["max_input_tokens"].(int); ok && v > 0 {
+		cfg.MaxInputTokens = v
+	}
+	if v, ok := raw["maxHistoryTurns"].(float64); ok && v > 0 {
+		cfg.MaxHistoryTurns = int(v)
+	} else if v, ok := raw["maxHistoryTurns"].(int); ok && v > 0 {
+		cfg.MaxHistoryTurns = v
+	} else if v, ok := raw["max_history_turns"].(float64); ok && v > 0 {
+		cfg.MaxHistoryTurns = int(v)
+	} else if v, ok := raw["max_history_turns"].(int); ok && v > 0 {
+		cfg.MaxHistoryTurns = v
+	}
+	if v, ok := raw["warnAtTokens"].(float64); ok && v > 0 {
+		cfg.WarnAtTokens = int(v)
+	} else if v, ok := raw["warnAtTokens"].(int); ok && v > 0 {
+		cfg.WarnAtTokens = v
+	} else if v, ok := raw["warn_at_tokens"].(float64); ok && v > 0 {
+		cfg.WarnAtTokens = int(v)
+	} else if v, ok := raw["warn_at_tokens"].(int); ok && v > 0 {
+		cfg.WarnAtTokens = v
+	}
 
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
@@ -643,16 +670,19 @@ func DefaultConfig() *types.AutomatonConfig {
 func defaultConfig() *types.AutomatonConfig {
 	tp := types.DefaultTreasuryPolicy()
 	return &types.AutomatonConfig{
-		ConwayAPIURL:                 "https://api.conway.tech",
-		Provider:                     "chatjimmy",
-		InferenceModel:               "llama3.1-8B",
-		MaxTokensPerTurn:             4096,
-		HeartbeatConfigPath:          ResolvePath("~/.automaton/heartbeat.yml"),
-		DBPath:                       filepath.Join(GetAutomatonDir(), "state.db"),
-		LogLevel:                     "info",
-		MaxChildren:                  3,
-		TreasuryPolicy:               &tp,
-		TestLatencyCooldownSeconds:   120,
+		ConwayAPIURL:               "https://api.conway.tech",
+		Provider:                   "chatjimmy",
+		InferenceModel:             "llama3.1-8B",
+		MaxTokensPerTurn:           4096,
+		HeartbeatConfigPath:        ResolvePath("~/.automaton/heartbeat.yml"),
+		DBPath:                     filepath.Join(GetAutomatonDir(), "state.db"),
+		LogLevel:                   "info",
+		MaxChildren:                3,
+		TreasuryPolicy:             &tp,
+		TestLatencyCooldownSeconds: 120,
+		MaxInputTokens:             5500,
+		MaxHistoryTurns:            12,
+		WarnAtTokens:               4500,
 	}
 }
 

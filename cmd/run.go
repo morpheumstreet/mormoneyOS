@@ -30,6 +30,32 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func tokenLimitsFromConfig(cfg *types.AutomatonConfig) *agent.TokenLimits {
+	if cfg == nil {
+		return nil
+	}
+	limits := agent.DefaultTokenLimits().WithOverrides(cfg.MaxInputTokens, cfg.MaxHistoryTurns, cfg.WarnAtTokens)
+	return &limits
+}
+
+func contextLimitForModelFromConfig(cfg *types.AutomatonConfig) agent.ContextLimitForModel {
+	if cfg == nil || len(cfg.Models) == 0 {
+		return nil
+	}
+	models := cfg.Models
+	return func(modelID string) int {
+		for _, m := range models {
+			if m.ModelID == modelID || strings.HasSuffix(modelID, "/"+m.ModelID) || strings.HasSuffix(modelID, m.ModelID) {
+				if m.ContextLimit > 0 {
+					return m.ContextLimit
+				}
+				break
+			}
+		}
+		return 0
+	}
+}
+
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start runtime (agent loop + heartbeat)",
@@ -171,14 +197,16 @@ func runRun(cmd *cobra.Command, args []string) error {
 			return list
 		},
 		Config: &agent.LoopConfig{
-			Name:                  cfg.Name,
-			GenesisPrompt:         cfg.GenesisPrompt,
-			CreatorMsg:            cfg.CreatorAddress,
-			InferenceModel:        cfg.InferenceModel,
-			LowComputeModel:       cfg.LowComputeModel,
+			Name:                   cfg.Name,
+			GenesisPrompt:          cfg.GenesisPrompt,
+			CreatorMsg:             cfg.CreatorAddress,
+			InferenceModel:         cfg.InferenceModel,
+			LowComputeModel:        cfg.LowComputeModel,
 			ResourceConstraintMode: cfg.ResourceConstraintMode,
-			WalletAddress:         primaryAddr,
-			SkillsConfig:          cfg.Skills,
+			WalletAddress:          primaryAddr,
+			SkillsConfig:           cfg.Skills,
+			TokenLimits:            tokenLimitsFromConfig(cfg),
+			ContextLimitForModel:   contextLimitForModelFromConfig(cfg),
 		},
 		CreditsFn: creditsFn,
 		FallbackSender: func(ctx context.Context, claimedIds []string) {

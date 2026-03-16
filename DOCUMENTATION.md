@@ -298,6 +298,9 @@ Configuration is stored at `~/.automaton/automaton.json`.
   // Inference
   "inferenceModel": "gpt-5.2",                  // Default model
   "maxTokensPerTurn": 4096,                     // Max tokens per inference call
+  "maxInputTokens": 5500,                       // Prefill cap; truncate history when exceeded (avoids Groq ~6k limit)
+  "maxHistoryTurns": 12,                        // Max history turns when truncating
+  "warnAtTokens": 4500,                         // Log warning when input approaches cap
   "openaiApiKey": "sk-...",                      // Optional BYOK OpenAI
   "anthropicApiKey": "sk-ant-...",               // Optional BYOK Anthropic
 
@@ -944,6 +947,10 @@ Use the `list_models` tool to see current models with pricing. The model registr
 ### Switching models
 
 Use `switch_model` to change the active inference model at runtime. The change persists to config.
+
+### Token caps and truncation
+
+To avoid provider prefill limits (e.g. Groq ~6k–8k tokens), the agent enforces a configurable input cap (`maxInputTokens`, default 5500). When context exceeds the cap, history is truncated (newest turns kept). See [token-caps-truncation.md](docs/design/token-caps-truncation.md) for design details.
 
 ### Cost tracking
 

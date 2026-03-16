@@ -123,6 +123,11 @@ type AutomatonConfig struct {
 
 	// TestLatencyCooldownSeconds: minimum seconds between test-latency API requests (default 120)
 	TestLatencyCooldownSeconds int `json:"testLatencyCooldownSeconds,omitempty"`
+
+	// Token limits for prefill cap safety (Groq ~6k–8k). Defaults: 5500, 12, 4500.
+	MaxInputTokens  int `json:"maxInputTokens,omitempty"`  // Safe threshold before truncation
+	MaxHistoryTurns int `json:"maxHistoryTurns,omitempty"` // Max history turns when truncating
+	WarnAtTokens    int `json:"warnAtTokens,omitempty"`    // Log warning when input exceeds this
 }
 
 // TelegramGroupCfg is per-group Telegram config (OpenClaw-style).

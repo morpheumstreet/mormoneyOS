@@ -181,10 +181,10 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	l.inference.SetLowComputeMode(useLowCompute)
 
 	// Build wakeup/input (TS step 2: claim inbox messages when no pendingInput)
-	recentTurns, _ := l.store.GetRecentTurns(5)
+	recentTurnsForWakeup, _ := l.store.GetRecentTurns(5)
 	lastSummaries := make([]string, 0, 3)
-	for i := len(recentTurns) - 1; i >= 0 && len(lastSummaries) < 3; i-- {
-		t := recentTurns[i]
+	for i := len(recentTurnsForWakeup) - 1; i >= 0 && len(lastSummaries) < 3; i-- {
+		t := recentTurnsForWakeup[i]
 		src := t.InputSource
 		if src == "" {
 			src = "self"
@@ -235,18 +235,23 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		}
 	}
 	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary, skillList)
-	messages := BuildContextMessages(systemPrompt, recentTurns, pendingInput)
 
-	// Step 6: memory retrieval — inject block at index 1 (after system) when non-empty
+	// Fetch more turns for truncation (start generous; BuildMessagesSafe will cap)
+	historyLimit := 50
+	if l.config != nil && l.config.TokenLimits != nil && l.config.TokenLimits.MaxHistoryTurns > 0 {
+		if l.config.TokenLimits.MaxHistoryTurns > historyLimit {
+			historyLimit = l.config.TokenLimits.MaxHistoryTurns
+		}
+	}
+	recentTurnsForContext, _ := l.store.GetRecentTurns(historyLimit)
+
+	// Step 6: memory retrieval
+	memoryBlock := ""
 	if l.memoryRetriever != nil {
-		memoryBlock, err := l.memoryRetriever.Retrieve(ctx, "", pendingInput)
+		var err error
+		memoryBlock, err = l.memoryRetriever.Retrieve(ctx, "", pendingInput)
 		if err != nil {
 			l.log.Debug("memory retrieval failed", "err", err)
-		}
-		if memoryBlock != "" {
-			// Insert at index 1: [system, memory, ...rest]
-			memMsg := inference.ChatMessage{Role: "system", Content: memoryBlock}
-			messages = append(messages[:1], append([]inference.ChatMessage{memMsg}, messages[1:]...)...)
 		}
 	}
 
@@ -265,10 +270,21 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		}
 		toolDefs = filtered
 	}
+
+	// Build messages with token cap and truncation (avoids prefill limit errors)
+	limits := DefaultTokenLimits()
+	if l.config != nil && l.config.TokenLimits != nil {
+		limits = *l.config.TokenLimits
+	}
 	model := l.inference.GetDefaultModel()
 	if useLowCompute && l.config != nil && l.config.LowComputeModel != "" {
 		model = l.config.LowComputeModel
 	}
+	effectiveCap := 0
+	if l.config != nil && l.config.ContextLimitForModel != nil {
+		effectiveCap = l.config.ContextLimitForModel(model)
+	}
+	messages := BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, memoryBlock, toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
 	opts := &inference.InferenceOptions{
 		Model:      model,
 		MaxTokens:  4096,
@@ -277,6 +293,7 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	}
 
 	// Call inference
+	l.log.Debug("inference call", "model", model, "messages", len(messages))
 	resp, err := l.inference.Chat(ctx, messages, opts)
 	if err != nil {
 		l.log.Warn("inference failed", "err", err)

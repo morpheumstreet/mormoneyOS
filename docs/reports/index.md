@@ -1,6 +1,6 @@
 # mormoneyOS — Test Report
 
-**mormoneyOS-go — 14 March 2026**
+**mormoneyOS-go — 17 March 2026**
 
 ## Summary
 
@@ -145,7 +145,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 
 ### 1.7 Agent Loop & Context (`internal/agent`)
 
-**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`
+**Files:** `internal/agent/loop_test.go`, `internal/agent/context_test.go`, `internal/agent/prompt_test.go`, `internal/agent/token_test.go`
 
 | ID | Test | Spec / Traceability | Status |
 |----|------|---------------------|--------|
@@ -155,8 +155,22 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | A4 | `TestBuildContextMessages_IncludesToolResults` | agent-context | PASS |
 | A5 | `TestAppendToolResults_Empty` | agent-context | PASS |
 | A6 | `TestAppendToolResults_WithResults` | agent-context | PASS |
+| A7 | `TestBuildMessagesSafe_UnderCap` | token-caps-truncation | PASS |
+| A8 | `TestBuildMessagesSafe_TruncatesWhenOverCap` | token-caps-truncation | PASS |
+| A9 | `TestBuildMessagesSafe_WithMemory` | token-caps-truncation | PASS |
+| A10 | `TestBuildMessagesSafe_SummaryWhenRemainingBudget` | token-caps-truncation | PASS |
+| A11 | `TestBuildMessagesSafe_EffectiveCap` | token-caps-truncation | PASS |
+| A12 | `TestEstimateToolTokens` | token-caps-truncation | PASS |
+| A13 | `TestNaiveTokenizer_Empty` | token-caps-truncation | PASS |
+| A14 | `TestNaiveTokenizer_Short` | token-caps-truncation | PASS |
+| A15 | `TestNaiveTokenizer_Approximate` | token-caps-truncation | PASS |
+| A16 | `TestNaiveTokenizer_LongText` | token-caps-truncation | PASS |
+| A17 | `TestDefaultTokenLimits` | token-caps-truncation | PASS |
+| A18 | `TestTokenLimits_WithOverrides` | token-caps-truncation | PASS |
+| A19 | `TestTokenLimits_WithOverrides_ZeroPreservesDefault` | token-caps-truncation | PASS |
+| A20 | `TestTiktokenTokenizer` | token-caps-truncation | PASS |
 
-**Total: 6 passed, 0 failed**
+**Total: 20 passed, 0 failed**
 
 ---
 
@@ -315,7 +329,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | agent (policy) | 21 | 0 | 21 |
 | state | 17 | 0 | 17 |
 | heartbeat | 3 | 0 | 3 |
-| agent (loop, context) | 6 | 0 | 6 |
+| agent (loop, context, prompt, token) | 20 | 0 | 20 |
 | tools | 10 | 0 | 10 |
 | inference | 16 | 0 | 16 |
 | identity | 14 | 0 | 14 |
@@ -324,7 +338,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | soul | 4 | 0 | 4 |
 | tunnel | 1 | 0 | 1 |
 | cmd | 7 | 0 | 7 |
-| **Total** | **130** | **0** | **130** |
+| **Total** | **144** | **0** | **144** |
 
 ---
 
@@ -340,7 +354,7 @@ mormoneyOS unit and integration tests. **All tests passed, 0 failed.** Tests cov
 | `go test -race ./...` | Race detector | PASS |
 | `make test-coverage` | Coverage report | coverage.html |
 
-### 2.2 Test Run Output (Last Verified: 14 Mar 2026)
+### 2.2 Test Run Output (Last Verified: 17 Mar 2026)
 
 ```bash
 $ make test
@@ -361,7 +375,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/tunnel	(cached)
 ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
 ```
 
-**Aggregate:** 130+ tests passed, 0 failed.
+**Aggregate:** 144+ tests passed, 0 failed.
 
 ---
 
@@ -390,6 +404,7 @@ ok  	github.com/morpheumlabs/mormoneyos-go/internal/types	(cached)
 | **state** | S1–S17 |
 | **heartbeat** | H1–H3 |
 | **agent-loop** | A1–A6 |
+| **token-caps-truncation** | A7–A20 |
 | **tools** | TO1–TO10 |
 | **inference** | INF1–INF16 |
 | **identity** | ID1–ID14 |
@@ -434,4 +449,5 @@ bash scripts/soak-test.sh [hours] [db_path]
 - [ARCHITECTURE.md](../ARCHITECTURE.md) — System architecture
 - [API_REFERENCE.md](./API_REFERENCE.md) — API documentation
 - [memory-retrieval-step6.md](./design/memory-retrieval-step6.md) — Memory retrieval
+- [token-caps-truncation.md](./design/token-caps-truncation.md) — Token caps, truncation, prefill limit avoidance
 - [skills-design.md](./design/skills-design.md) — Skills loader
