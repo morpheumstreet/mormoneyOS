@@ -12,7 +12,7 @@
 #
 # Env overrides:
 #   MORMONEYOS_BOT    - Bot name (default: default). Each bot gets its own data dir and container.
-#   MORMONEYOS_IMAGE  - Docker image (default: ghcr.io/morpheumstreet/mormoneyos)
+#   MORMONEYOS_IMAGE  - Docker image (default: morpheumstreet/mormoneyos from Docker Hub)
 #   MORMONEYOS_TAG    - Image tag (default: latest)
 #   AUTOMATON_DIR     - Host path for data (default: $HOME/.automaton or $HOME/.automaton-{BOT})
 #   MORMONEYOS_PORT   - Host port for web UI (default: 8080; use different ports per bot)
@@ -21,14 +21,14 @@
 
 set -e
 
+# ── Config ───────────────────────────────────────────────────────────
 BOT="${MORMONEYOS_BOT:-default}"
-IMAGE="${MORMONEYOS_IMAGE:-ghcr.io/morpheumstreet/mormoneyos}"
+IMAGE="${MORMONEYOS_IMAGE:-morpheumstreet/mormoneyos}"
 TAG="${MORMONEYOS_TAG:-latest}"
 PORT="${MORMONEYOS_PORT:-8080}"
 DAEMON="${MORMONEYOS_DAEMON:-0}"
 FULL_IMAGE="${IMAGE}:${TAG}"
 
-# Data dir: explicit AUTOMATON_DIR, or ~/.automaton-{bot} for named bots, ~/.automaton for default
 if [ -n "${AUTOMATON_DIR}" ]; then
   DATA_DIR="$AUTOMATON_DIR"
 elif [ "$BOT" = "default" ]; then
@@ -39,6 +39,7 @@ fi
 
 CONTAINER_NAME="mormoneyos-${BOT}"
 
+# ── Checks ───────────────────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
   echo "[ERROR] Docker is required. Install from https://docs.docker.com/get-docker/" >&2
   exit 1
@@ -47,12 +48,14 @@ fi
 echo "[INFO] mormoneyOS Docker — bot=${BOT} image=${FULL_IMAGE}"
 echo "[INFO] Data: ${DATA_DIR}  Port: ${PORT}  Container: ${CONTAINER_NAME}"
 
-mkdir -p "$DATA_DIR"
-
+# ── Pull ─────────────────────────────────────────────────────────────
 if [ "${MORMONEYOS_PULL:-1}" != "0" ]; then
-  echo "[INFO] Pulling ${FULL_IMAGE}..."
+  echo "[INFO] Pulling ${FULL_IMAGE} from Docker Hub..."
   docker pull "$FULL_IMAGE"
 fi
+
+# ── Preparation (before container run) ────────────────────────────────
+mkdir -p "$DATA_DIR"
 
 RUN_OPTS=(
   --rm
@@ -63,6 +66,7 @@ RUN_OPTS=(
   --user "$(id -u):$(id -g)"
 )
 
+# ── Run ─────────────────────────────────────────────────────────────
 if [ "$DAEMON" = "1" ]; then
   echo "[INFO] Starting mormoneyOS (bot=${BOT}) in background — http://localhost:${PORT}"
   docker run -d "${RUN_OPTS[@]}" "$FULL_IMAGE"
