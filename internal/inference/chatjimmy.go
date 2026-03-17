@@ -48,7 +48,7 @@ func NewChatJimmyClient(baseURL, model string, maxTokens int) *ChatJimmyClient {
 		Model:     model,
 		MaxTokens: maxTokens,
 		HTTP: &http.Client{
-			Timeout: 90 * time.Second,
+			Timeout: 300 * time.Second,
 		},
 	}
 }

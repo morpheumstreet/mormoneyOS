@@ -51,7 +51,7 @@ func NewOpenAICompatibleClient(name, baseURL, apiKey string, auth AuthStyle, mod
 		Model:               model,
 		MaxTokens:           maxTokens,
 		HTTP: &http.Client{
-			Timeout: 90 * time.Second,
+			Timeout: 300 * time.Second,
 		},
 	}
 }
