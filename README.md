@@ -2,38 +2,37 @@
 
 **7x24 AI Agent that saves and makes money autonomously.**
 
-Go implementation aligned with [moneyclaw-py](https://github.com/Qiyd81/moneyclaw-py) — sovereign AI agent runtime with web dashboard, skills, and survival economics.
+Sovereign AI agent runtime with web dashboard, skills, and survival economics. Go implementation aligned with [moneyclaw-py](https://github.com/Qiyd81/moneyclaw-py).
 
-Design reference: [mormoneyOS/docs/design](../mormoneyOS/docs/design)
+---
 
-## Structure
+## Install (one line)
 
+**Requires:** [Docker](https://docs.docker.com/get-docker/)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
 ```
-mormoneyOS-go/
-├── cmd/
-│   ├── moneyclaw/main.go    # Entry point
-│   ├── root.go              # Cobra root + viper
-│   ├── run.go               # run: bootstrap + main loop + web dashboard
-│   ├── setup.go             # setup: wizard
-│   ├── status.go            # status
-│   ├── strategies.go        # strategies: list (placeholder)
-│   ├── cost.go              # cost: LLM cost summary (placeholder)
-│   ├── pause.go             # pause: via web API
-│   ├── resume.go            # resume: via web API
-│   └── init.go              # init: create ~/.automaton
-├── internal/
-│   ├── agent/               # ReAct loop, policy engine
-│   ├── config/              # Config load/save
-│   ├── conway/              # Conway API client, credits
-│   ├── heartbeat/           # Daemon, scheduler, tasks
-│   ├── state/               # SQLite schema, database
-│   ├── types/               # Shared types
-│   └── web/                 # Web dashboard (HTMX-style, moneyclaw-py aligned)
-│       ├── server.go        # HTTP server, API routes
-│       └── static/          # Embedded HTML/CSS/JS
-├── go.mod
-└── README.md
+
+This pulls the image, mounts `~/.automaton` for data, and starts the agent. Web dashboard at **http://localhost:8080**.
+
+### Options
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `MORMONEYOS_BOT` | `default` | Bot name (each bot gets its own data dir) |
+| `MORMONEYOS_PORT` | `8080` | Host port for web UI |
+| `MORMONEYOS_DAEMON` | `0` | Set to `1` to run in background |
+| `AUTOMATON_DIR` | `~/.automaton` or `~/.automaton-{BOT}` | Data directory |
+
+**Multi-bot example** (run in separate terminals):
+
+```bash
+MORMONEYOS_BOT=trading  MORMONEYOS_PORT=8080  curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
+MORMONEYOS_BOT=research MORMONEYOS_PORT=8081  curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
 ```
+
+---
 
 ## Commands
 
@@ -41,39 +40,65 @@ mormoneyOS-go/
 |---------|-------------|
 | `moneyclaw run` | Start runtime (agent loop + heartbeat + web dashboard) |
 | `moneyclaw run --no-web` | Run without web dashboard |
-| `moneyclaw run --no-telegram` | Run without Telegram (placeholder) |
 | `moneyclaw setup` | Interactive setup wizard |
 | `moneyclaw status` | Show config/DB status |
-| `moneyclaw strategies` | List discovered strategies (placeholder) |
-| `moneyclaw cost` | LLM cost summary (placeholder) |
 | `moneyclaw pause` | Pause agent via web API |
 | `moneyclaw resume` | Resume agent via web API |
 | `moneyclaw init` | Create ~/.automaton |
 
 ## Web Dashboard
 
-The web dashboard is available at `http://localhost:8080` by default when running `moneyclaw run`.
-
-- **Status**: Agent state, P&L, risk level, tick count
-- **Strategies**: Active strategies (placeholder list)
-- **Control**: Pause / Resume
-- **Chat**: Simple agent chat (status, help)
-- **API**: REST endpoints aligned with moneyclaw-py (`/api/status`, `/api/strategies`, `/api/cost`, `/api/risk`, `/api/pause`, `/api/resume`, `/api/chat`)
+At `http://localhost:8080`: Status, P&L, risk level, strategies, pause/resume, chat. REST API: `/api/status`, `/api/strategies`, `/api/cost`, `/api/risk`, `/api/pause`, `/api/resume`, `/api/chat`.
 
 ## Config
 
 - **Path:** `~/.automaton/automaton.json`
 - **Env:** `AUTOMATON_DIR`, `CONWAY_API_URL`, `CONWAY_API_KEY`
 
-## Build
+## Build from source
 
 ```bash
 go build -o moneyclaw ./cmd/moneyclaw
 ```
 
-## Design Alignment
+---
 
-- Bootstrap sequence per [runtime-lifecycle.md](../mormoneyOS/docs/design/runtime-lifecycle.md)
-- Policy engine with 6 rule categories per [security-model.md](../mormoneyOS/docs/design/security-model.md)
-- Heartbeat daemon with durable scheduler per [modules.md](../mormoneyOS/docs/design/modules.md)
-- Config, extension points per [extension-points.md](../mormoneyOS/docs/design/extension-points.md)
+## Appendix A: Design Introduction
+
+The mormoneyOS design docs describe the architecture, policies, and subsystems of the sovereign AI agent runtime. They are intended for contributors and integrators who need to understand or extend the system.
+
+### Core lifecycle & modules
+
+| Doc | Description |
+|-----|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Full system overview, runtime lifecycle, security model, heartbeat daemon |
+| [feature-lis.md](docs/design/feature-lis.md) | Go system feature table, agent loop detail |
+
+### Agent & context
+
+| Doc | Description |
+|-----|-------------|
+| [context-trimming-stage2.md](docs/design/context-trimming-stage2.md) | Message trimming, token budgets |
+| [token-caps-truncation.md](docs/design/token-caps-truncation.md) | Token caps, truncation strategy |
+| [prompt-templates-cot.md](docs/design/prompt-templates-cot.md) | Versioned prompts, chain-of-thought |
+| [model-routing-reflexion.md](docs/design/model-routing-reflexion.md) | Model routing, reflection engine |
+| [tool-system.md](docs/design/tool-system.md) | Tool registry, policy gating |
+
+### Memory, skills & identity
+
+| Doc | Description |
+|-----|-------------|
+| [memory-system-5-tier.md](docs/design/memory-system-5-tier.md) | 5-tier memory schema |
+| [memory-auto-ingestion.md](docs/design/memory-auto-ingestion.md) | Auto-ingestion, extraction |
+| [skills-design.md](docs/design/skills-design.md) | Skills architecture, packaging |
+| [wallet-identity-architecture.md](docs/design/wallet-identity-architecture.md) | Wallet, identity, multi-chain |
+| [mnemonic-wallet-multichain.md](docs/design/mnemonic-wallet-multichain.md) | BIP-39 mnemonic, key derivation |
+
+### Channels, children & extensions
+
+| Doc | Description |
+|-----|-------------|
+| [social-channel-design.md](docs/design/social-channel-design.md) | Conway, Telegram, Discord channels |
+| [child-runtime-protocol.md](docs/design/child-runtime-protocol.md) | Child agents, spawn protocol |
+| [tunnel-tools-borrow.md](docs/design/tunnel-tools-borrow.md) | Tunnel tools, localhost exposure |
+| [mormclaw-provider-borrow.md](docs/design/mormclaw-provider-borrow.md) | AI provider architecture |

@@ -8,6 +8,7 @@
 # Env vars:
 #   DOCKER_SPACE_SORA - Docker Hub username or registry path (e.g. myuser or ghcr.io/myorg)
 #   DOCKER_TOKEN_SORA - Docker API token / deployment key for authentication
+#   GITHUB_TOKEN     - GitHub PAT for private deps (github.com/morpheum-labs/*); required for Docker build
 
 set -e
 
@@ -34,8 +35,13 @@ if [[ -z "${DOCKER_SPACE_SORA}" || -z "${DOCKER_TOKEN_SORA}" ]]; then
   exit 1
 fi
 
+if [[ -z "${GITHUB_TOKEN}" ]]; then
+  echo "Warning: GITHUB_TOKEN not set. Build may fail if private deps (github.com/morpheum-labs/*) are required."
+fi
+
 echo "Building ${IMAGE_NAME}:${TAG}..."
 docker build \
+  --build-arg GITHUB_TOKEN="${GITHUB_TOKEN}" \
   --build-arg VERSION="${VERSION}" \
   --build-arg BUILD_TIME="${BUILD_TIME}" \
   --build-arg COMMIT="${COMMIT}" \
@@ -60,3 +66,5 @@ docker tag "${IMAGE_NAME}:${TAG}" "${REMOTE_LATEST}"
 docker push "${REMOTE_LATEST}"
 
 echo "Published ${REMOTE_IMAGE} and ${REMOTE_LATEST}"
+echo ""
+echo "Preview tags: https://hub.docker.com/r/sorajez/mormoneyos/tags"
