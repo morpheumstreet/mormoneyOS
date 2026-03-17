@@ -10,7 +10,7 @@ COPY dashos/ ./
 RUN bun run build:embed
 
 # ── Stage 1: Build ────────────────────────────────────────────────
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -22,6 +22,18 @@ COPY go.mod go.sum ./
 
 # Remove local replace for standards (used for dev; use published module in Docker)
 RUN go mod edit -dropreplace=github.com/morpheum-labs/standards 2>/dev/null || true
+
+# Auth for private GitHub repos (github.com/morpheum-labs/*)
+# Pass via: docker build --build-arg GITHUB_TOKEN=$GITHUB_TOKEN
+# Safer: docker build --secret id=github_token,env=GITHUB_TOKEN (use RUN --mount=type=secret)
+ARG GITHUB_TOKEN
+ENV GOPRIVATE=github.com/morpheum-labs
+RUN if [ -n "${GITHUB_TOKEN}" ]; then \
+      git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    fi
+
+# Fetch modules with auth in place
+RUN go mod download
 
 # Copy source
 COPY cmd/ cmd/
