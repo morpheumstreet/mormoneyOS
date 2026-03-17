@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # mormoneyOS (MoneyClaw) — one-line Docker install (supports multi-bot)
-# Usage: curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/morpheumstreet/mormoneyOS/main/scripts/install-docker.sh | bash
 #
 # Single bot (default):
 #   curl -fsSL ... | bash

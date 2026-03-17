@@ -11,7 +11,7 @@ Sovereign AI agent runtime with web dashboard, skills, and survival economics. G
 **Requires:** [Docker](https://docs.docker.com/get-docker/)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
+curl -fsSL https://raw.githubusercontent.com/morpheumstreet/mormoneyOS/main/scripts/install-docker.sh | bash
 ```
 
 This pulls the image, mounts `~/.automaton` for data, and starts the agent. Web dashboard at **http://localhost:8080**.
@@ -28,8 +28,8 @@ This pulls the image, mounts `~/.automaton` for data, and starts the agent. Web 
 **Multi-bot example** (run in separate terminals):
 
 ```bash
-MORMONEYOS_BOT=trading  MORMONEYOS_PORT=8080  curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
-MORMONEYOS_BOT=research MORMONEYOS_PORT=8081  curl -fsSL https://raw.githubusercontent.com/morpheumlabs/mormoneyOS/main/scripts/install-docker.sh | bash
+MORMONEYOS_BOT=trading  MORMONEYOS_PORT=8080  curl -fsSL https://raw.githubusercontent.com/morpheumstreet/mormoneyOS/main/scripts/install-docker.sh | bash
+MORMONEYOS_BOT=research MORMONEYOS_PORT=8081  curl -fsSL https://raw.githubusercontent.com/morpheumstreet/mormoneyOS/main/scripts/install-docker.sh | bash
 ```
 
 ---
