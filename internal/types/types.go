@@ -137,6 +137,19 @@ type AutomatonConfig struct {
 
 	// Inference routing: model tier selection (fast/normal/strong).
 	Routing *RoutingConfig `json:"routing,omitempty"`
+
+	// MiroFish: swarm intelligence / foresight layer (simulate markets, run predictions, get reports).
+	MiroFish *MiroFishConfig `json:"mirofish,omitempty"`
+}
+
+// MiroFishConfig configures the MiroFish swarm intelligence container.
+// Env overrides: MIROFISH_ENABLED, MIROFISH_BASE_URL, MIROFISH_TIMEOUT, MIROFISH_DEFAULT_LLM, MIROFISH_MAX_AGENTS.
+type MiroFishConfig struct {
+	Enabled        bool   `json:"enabled"`
+	BaseURL        string `json:"base_url"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	DefaultLLM     string `json:"default_llm"`
+	MaxAgents      int    `json:"max_agents"`
 }
 
 // RoutingConfig configures model routing and self-critique.

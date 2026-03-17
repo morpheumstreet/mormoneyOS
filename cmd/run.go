@@ -294,6 +294,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			cooldown = cfg.TestLatencyCooldownSeconds
 		}
 		webSrv = web.NewServer(webAddr, webState, db, &web.ServerConfig{
+			ConfigPtr:          cfg,
 			Name:               cfg.Name,
 			WalletAddress:      primaryAddr,
 			CreatorAddress:     cfg.CreatorAddress,

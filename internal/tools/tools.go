@@ -116,6 +116,9 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 				ig, _ = opts.Store.(identity.IdentityGetter)
 			}
 			r.Register(&CheckUSDCBalanceTool{Config: opts.Config, IdentityGetter: ig})
+			if opts.Config.MiroFish != nil && opts.Config.MiroFish.Enabled {
+				r.Register(NewMiroFishTool(opts.Config.MiroFish))
+			}
 		}
 		if opts.Conway != nil {
 			r.RegisterMany(NewConwayTools(opts.Conway))

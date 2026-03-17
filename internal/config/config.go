@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -522,6 +523,34 @@ func Load() (*types.AutomatonConfig, error) {
 		}
 	}
 
+	// MiroFish config (swarm intelligence / foresight layer)
+	if mf, ok := raw["mirofish"].(map[string]any); ok {
+		if cfg.MiroFish == nil {
+			cfg.MiroFish = defaultMiroFishConfig()
+		}
+		if v, ok := mf["enabled"].(bool); ok {
+			cfg.MiroFish.Enabled = v
+		}
+		if v, ok := mf["base_url"].(string); ok && v != "" {
+			cfg.MiroFish.BaseURL = v
+		}
+		if v, ok := mf["timeout_seconds"].(float64); ok && v > 0 {
+			cfg.MiroFish.TimeoutSeconds = int(v)
+		} else if v, ok := mf["timeout_seconds"].(int); ok && v > 0 {
+			cfg.MiroFish.TimeoutSeconds = v
+		}
+		if v, ok := mf["default_llm"].(string); ok && v != "" {
+			cfg.MiroFish.DefaultLLM = v
+		}
+		if v, ok := mf["max_agents"].(float64); ok && v > 0 {
+			cfg.MiroFish.MaxAgents = int(v)
+		} else if v, ok := mf["max_agents"].(int); ok && v > 0 {
+			cfg.MiroFish.MaxAgents = v
+		}
+	}
+	// Env overrides for MiroFish (Docker-friendly)
+	applyMiroFishEnvOverrides(cfg)
+
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {
 		cfg.Skills = &types.SkillsConfig{TokenBudgetMax: 2000}
@@ -719,9 +748,50 @@ func DefaultConfig() *types.AutomatonConfig {
 	return defaultConfig()
 }
 
+func defaultMiroFishConfig() *types.MiroFishConfig {
+	return &types.MiroFishConfig{
+		Enabled:        true,
+		BaseURL:        "http://localhost:5001",
+		TimeoutSeconds: 300,
+		DefaultLLM:    "qwen-plus",
+		MaxAgents:      2000,
+	}
+}
+
+func applyMiroFishEnvOverrides(cfg *types.AutomatonConfig) {
+	if cfg == nil || cfg.MiroFish == nil {
+		return
+	}
+	if v := os.Getenv("MIROFISH_ENABLED"); v != "" {
+		cfg.MiroFish.Enabled = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := os.Getenv("MIROFISH_BASE_URL"); v != "" {
+		cfg.MiroFish.BaseURL = v
+	}
+	if v := os.Getenv("MIROFISH_TIMEOUT"); v != "" {
+		if n, err := parseInt(v); err == nil && n > 0 {
+			cfg.MiroFish.TimeoutSeconds = n
+		}
+	}
+	if v := os.Getenv("MIROFISH_DEFAULT_LLM"); v != "" {
+		cfg.MiroFish.DefaultLLM = v
+	}
+	if v := os.Getenv("MIROFISH_MAX_AGENTS"); v != "" {
+		if n, err := parseInt(v); err == nil && n > 0 {
+			cfg.MiroFish.MaxAgents = n
+		}
+	}
+}
+
+func parseInt(s string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(s, "%d", &n)
+	return n, err
+}
+
 func defaultConfig() *types.AutomatonConfig {
 	tp := types.DefaultTreasuryPolicy()
-	return &types.AutomatonConfig{
+	cfg := &types.AutomatonConfig{
 		ConwayAPIURL:               "https://api.conway.tech",
 		Provider:                   "chatjimmy",
 		InferenceModel:             "llama3.1-8B",
@@ -735,7 +805,9 @@ func defaultConfig() *types.AutomatonConfig {
 		MaxInputTokens:             5500,
 		MaxHistoryTurns:            12,
 		WarnAtTokens:               4500,
+		MiroFish:                   defaultMiroFishConfig(),
 	}
+	return cfg
 }
 
 func mergeTreasuryPolicy(base *types.TreasuryPolicy, over map[string]any) *types.TreasuryPolicy {

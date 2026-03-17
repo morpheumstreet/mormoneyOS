@@ -62,6 +62,7 @@ type ToolsLister interface {
 
 // ServerConfig holds config for status API (TS-aligned).
 type ServerConfig struct {
+	ConfigPtr       *types.AutomatonConfig // Optional; when set, POST /api/config/mirofish updates in place
 	Name            string
 	WalletAddress   string
 	CreatorAddress  string // Only this address may pass login wallet verification
@@ -147,6 +148,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/chat", s.handleAPIChat)
 	s.mux.HandleFunc("GET /api/config", s.handleAPIConfigGet)
 	s.mux.HandleFunc("PUT /api/config", s.handleAPIConfigPut)
+	s.mux.HandleFunc("POST /api/config/mirofish", s.handleAPIConfigMiroFishPut)
 	s.mux.HandleFunc("POST /api/auth/verify", s.handleAPIAuthVerify)
 	if os.Getenv("MONEYCLAW_DEV_BYPASS") == "1" {
 		s.mux.HandleFunc("POST /api/auth/dev-bypass", s.handleAPIAuthDevBypass)
@@ -524,6 +526,58 @@ func (s *Server) handleAPIConfigPut(w http.ResponseWriter, r *http.Request) {
 		s.Cfg.InferenceReloader(&cfg)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAPIConfigMiroFishPut(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body types.MiroFishConfig
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("config mirofish: load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = &types.AutomatonConfig{}
+	}
+	if cfg.MiroFish == nil {
+		cfg.MiroFish = &types.MiroFishConfig{}
+	}
+	// Merge body into config
+	cfg.MiroFish.Enabled = body.Enabled
+	if body.BaseURL != "" {
+		cfg.MiroFish.BaseURL = body.BaseURL
+	}
+	if body.TimeoutSeconds > 0 {
+		cfg.MiroFish.TimeoutSeconds = body.TimeoutSeconds
+	}
+	if body.DefaultLLM != "" {
+		cfg.MiroFish.DefaultLLM = body.DefaultLLM
+	}
+	if body.MaxAgents > 0 {
+		cfg.MiroFish.MaxAgents = body.MaxAgents
+	}
+	// Update live config if ConfigPtr is set (tool sees new config without restart)
+	if s.Cfg != nil && s.Cfg.ConfigPtr != nil && s.Cfg.ConfigPtr.MiroFish != nil {
+		*s.Cfg.ConfigPtr.MiroFish = *cfg.MiroFish
+	}
+	if err := config.Save(cfg); err != nil {
+		s.Log.Error("config mirofish: save failed", "err", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":   "updated",
+		"base_url": cfg.MiroFish.BaseURL,
+	})
 }
 
 func (s *Server) handleAPIAuthVerify(w http.ResponseWriter, r *http.Request) {

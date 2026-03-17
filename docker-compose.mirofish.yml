@@ -1,0 +1,33 @@
+# mormoneyOS + MiroFish — swarm intelligence / foresight layer
+# Usage: docker compose -f docker-compose.mirofish.yml up
+#
+# MiroFish provides: run simulations, get ReportAgent output, inject variables,
+# chat with digital crowd. The agent uses the mirofish tool to rehearse
+# markets before betting.
+
+services:
+  mormoneyos:
+    image: morpheumstreet/mormoneyos:latest
+    depends_on:
+      - mirofish
+    environment:
+      - MIROFISH_BASE_URL=http://mirofish:5001
+    volumes:
+      - ~/.automaton:/root/.automaton
+    ports:
+      - "8080:8080"
+    networks:
+      - money-net
+
+  mirofish:
+    # Uncomment one:
+    # build: ../MiroFish
+    image: morpheumstreet/mirofish:latest
+    ports:
+      - "5001:5001"
+    networks:
+      - money-net
+
+networks:
+  money-net:
+    driver: bridge
