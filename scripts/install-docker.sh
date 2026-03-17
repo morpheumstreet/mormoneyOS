@@ -12,7 +12,7 @@
 #
 # Env overrides:
 #   MORMONEYOS_BOT    - Bot name (default: default). Each bot gets its own data dir and container.
-#   MORMONEYOS_IMAGE  - Docker image (default: morpheumstreet/mormoneyos from Docker Hub)
+#   MORMONEYOS_IMAGE  - Docker image (default: sorajez/mormoneyos from Docker Hub)
 #   MORMONEYOS_TAG    - Image tag (default: latest)
 #   AUTOMATON_DIR     - Host path for data (default: $HOME/.automaton or $HOME/.automaton-{BOT})
 #   MORMONEYOS_PORT   - Host port for web UI (default: 8080; use different ports per bot)
@@ -23,7 +23,7 @@ set -e
 
 # ── Config ───────────────────────────────────────────────────────────
 BOT="${MORMONEYOS_BOT:-default}"
-IMAGE="${MORMONEYOS_IMAGE:-morpheumstreet/mormoneyos}"
+IMAGE="${MORMONEYOS_IMAGE:-sorajez/mormoneyos}"
 TAG="${MORMONEYOS_TAG:-latest}"
 PORT="${MORMONEYOS_PORT:-8080}"
 DAEMON="${MORMONEYOS_DAEMON:-0}"
