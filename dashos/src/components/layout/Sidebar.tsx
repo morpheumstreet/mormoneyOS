@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { ChevronsLeftRightEllipsis, X } from 'lucide-react';
+import { ChevronsLeftRightEllipsis, LogOut, Wallet, X } from 'lucide-react';
 import { useStorageSync } from '@/hooks/useStorageSync';
 import { getVisibleSidebarItems, SIDEBAR_NAV_CHANGE_EVENT } from '@/lib/sidebarNav';
 import { getVersion, type VersionResponse } from '@/lib/api';
+import { useWalletAuth } from '@/contexts/WalletAuthContext';
 
 const COLLAPSE_BUTTON_DELAY_MS = 1000;
 
@@ -18,6 +19,14 @@ export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse
   const [showCollapseButton, setShowCollapseButton] = useState(false);
   const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
   const navItems = useStorageSync(getVisibleSidebarItems, SIDEBAR_NAV_CHANGE_EVENT);
+  const { address, isGuest, isAuthenticated, disconnect } = useWalletAuth();
+  const shortAddress = isGuest
+    ? 'Guest'
+    : address
+      ? address.length > 12
+        ? `${address.slice(0, 6)}…${address.slice(-4)}`
+        : address
+      : '—';
 
   useEffect(() => {
     const id = setTimeout(() => setShowCollapseButton(true), COLLAPSE_BUTTON_DELAY_MS);
@@ -62,7 +71,7 @@ export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse
                 >
                   <span className="sr-only">MormOS</span>
                 </div>
-                <span className="text-lg font-semibold tracking-[0.1em] text-white">DashOS</span>
+                <span className="text-lg font-semibold tracking-[0.1em] text-white">MormOS</span>
               </>
             )}
           </div>
@@ -118,6 +127,23 @@ export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse
             </NavLink>
           ))}
         </nav>
+
+        <div className="mx-3 mb-3 flex flex-col gap-2 md:hidden">
+          {isAuthenticated && (
+            <div className="flex items-center gap-2 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff]">
+              <Wallet className="h-3.5 w-3.5 shrink-0" />
+              <span className={isGuest ? '' : 'font-mono truncate'}>{shortAddress}{isGuest ? ' (read-only)' : ''}</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={disconnect}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-3 py-2 text-xs text-[#c4d8ff] transition hover:border-[#4f83ff] hover:text-white"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Disconnect</span>
+          </button>
+        </div>
 
         <div
           className={[

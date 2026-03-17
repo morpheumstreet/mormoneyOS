@@ -57,7 +57,7 @@ export default function Header({
         </div>
       </div>
 
-      <div className="relative flex w-full items-center justify-end gap-1.5 sm:gap-2 md:w-auto md:gap-3">
+      <div className="relative hidden w-full items-center justify-end gap-1.5 sm:gap-2 md:flex md:w-auto md:gap-3">
         <button
           type="button"
           onClick={onToggleSidebarCollapse}
@@ -69,7 +69,7 @@ export default function Header({
         </button>
 
         {isAuthenticated && (
-          <div className="flex items-center gap-2 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff]">
+          <div className="hidden items-center gap-2 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff] md:flex">
             <Wallet className="h-3.5 w-3.5" />
             <span className={isGuest ? '' : 'font-mono'}>{shortAddress}{isGuest ? ' (read-only)' : ''}</span>
           </div>
@@ -78,7 +78,7 @@ export default function Header({
         <button
           type="button"
           onClick={disconnect}
-          className="flex items-center gap-1 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff] transition hover:border-[#4f83ff] hover:text-white sm:gap-1.5 sm:px-3 sm:text-sm"
+          className="hidden items-center gap-1 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff] transition hover:border-[#4f83ff] hover:text-white sm:gap-1.5 sm:px-3 sm:text-sm md:flex"
         >
           <LogOut className="h-4 w-4" />
           <span className="hidden sm:inline">Disconnect</span>
