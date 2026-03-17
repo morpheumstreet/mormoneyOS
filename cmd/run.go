@@ -154,6 +154,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	// 5e. Memory service (auto-ingestion when enabled)
 	var memSvc *memory.MemoryService
+	var memIngester agent.MemoryIngester // use typed nil interface when memSvc is nil (avoids nil receiver panic)
 	if cfg.Memory != nil && cfg.Memory.AutoIngest != nil && cfg.Memory.AutoIngest.Enabled {
 		memCfg := memory.MemoryConfig{
 			AutoIngestEnabled:       true,
@@ -169,16 +170,21 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}
 		memSvc = memory.NewMemoryService(memCfg, db, infClient, slog.Default())
 		memSvc.SetMetrics(&agentMemoryMetrics{})
+		memIngester = memSvc
 	}
 
 	// 6. Agent loop (full ReAct when inference+store configured)
+	var conwayForTools conway.Client // use typed nil interface when conwayClient is nil (avoids nil receiver panic in DistressSignalTool etc.)
+	if conwayClient != nil {
+		conwayForTools = conwayClient
+	}
 	var serviceProviders []tools.ServiceProvider
 	if cfg.MiroFish != nil && cfg.MiroFish.Enabled {
 		serviceProviders = append(serviceProviders, mirofish.NewServiceProvider(cfg.MiroFish))
 	}
 	reg := tools.NewRegistryWithOptions(&tools.RegistryOptions{
 		Store:            db,
-		Conway:           conwayClient,
+		Conway:           conwayForTools,
 		Name:             cfg.Name,
 		ParentAddress:    primaryAddr,
 		GenesisPrompt:    cfg.GenesisPrompt,
@@ -199,7 +205,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		Tools:           reg,
 		LineageStore:    db,
 		MemoryRetriever: memory.NewTieredMemoryRetriever(db, memory.DefaultTierConfig()),
-		MemoryIngester:  memSvc,
+		MemoryIngester:  memIngester,
 		ModelRouter:     modelRouter,
 		ReflectionEngine: reflectionEngine,
 		DisabledToolsGetter: func() []string {

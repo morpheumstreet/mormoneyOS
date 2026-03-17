@@ -52,17 +52,27 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w \
   -X github.com/morpheumlabs/mormoneyos-go/cmd.commit=${COMMIT:-}" \
   -o /moneyclaw ./cmd/moneyclaw
 
-# ── Stage 2: Release (minimal runtime) ─────────────────────────────
-FROM gcr.io/distroless/static-debian12:nonroot
+# ── Stage 2: Release (minimal runtime with shell) ───────────────────
+FROM alpine:3.19
+
+RUN apk add --no-cache bash ca-certificates
 
 COPY --from=builder /moneyclaw /usr/local/bin/moneyclaw
+
+# Non-root user (UID 1000)
+RUN adduser -D -u 1000 mormusr
 
 # Default data dir (override with AUTOMATON_DIR)
 ENV AUTOMATON_DIR=/data
 WORKDIR /data
 
-USER nonroot:nonroot
 EXPOSE 8080
 
+# Ensure data dir is writable by mormusr
+RUN chown -R mormusr:mormusr /data
+
+USER mormusr
+
+# Allow bash and direct binary commands; default to moneyclaw run
 ENTRYPOINT ["/usr/local/bin/moneyclaw"]
 CMD ["run"]
