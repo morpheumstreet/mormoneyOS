@@ -14,6 +14,7 @@ import ConfigModelList from "@/pages/config/ConfigModelList";
 import ConfigEconomic from "@/pages/config/ConfigEconomic";
 import ConfigWallet from "@/pages/config/ConfigWallet";
 import ConfigSoul from "@/pages/config/ConfigSoul";
+import ConfigLayoutSettings from "@/pages/config/ConfigLayoutSettings";
 import Skills from "@/pages/Skills";
 
 function AppContent() {
@@ -32,6 +33,7 @@ function AppContent() {
         <Route path="/skills" element={<Skills />} />
         <Route path="/config" element={<ConfigLayout />}>
           <Route index element={<Navigate to="/config/general" replace />} />
+          <Route path="layout" element={<ConfigLayoutSettings />} />
           <Route path="general" element={<ConfigGeneral />} />
           <Route path="tools" element={<ConfigTools />} />
           <Route path="social" element={<ConfigSocial />} />

@@ -1,20 +1,8 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import {
-  ChevronsLeftRightEllipsis,
-  FileText,
-  LayoutDashboard,
-  Puzzle,
-  Settings,
-  X,
-} from 'lucide-react';
-
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/reports', icon: FileText, label: 'Reports' },
-  { to: '/skills', icon: Puzzle, label: 'Skills' },
-  { to: '/config', icon: Settings, label: 'Config' },
-];
+import { ChevronsLeftRightEllipsis, X } from 'lucide-react';
+import { useStorageSync } from '@/hooks/useStorageSync';
+import { getVisibleSidebarItems, SIDEBAR_NAV_CHANGE_EVENT } from '@/lib/sidebarNav';
 
 const COLLAPSE_BUTTON_DELAY_MS = 1000;
 
@@ -27,6 +15,7 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: SidebarProps) {
   const [showCollapseButton, setShowCollapseButton] = useState(false);
+  const navItems = useStorageSync(getVisibleSidebarItems, SIDEBAR_NAV_CHANGE_EVENT);
 
   useEffect(() => {
     const id = setTimeout(() => setShowCollapseButton(true), COLLAPSE_BUTTON_DELAY_MS);

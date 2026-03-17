@@ -1,34 +1,15 @@
 import { NavLink } from "react-router-dom";
-import {
-  FileJson,
-  Wrench,
-  Users,
-  Network,
-  Cpu,
-  Sparkles,
-  Wallet,
-  Wallet2,
-  Activity,
-} from "lucide-react";
-
-const configNavItems = [
-  { to: "/config/general", icon: FileJson, label: "General" },
-  { to: "/config/tools", icon: Wrench, label: "Tools" },
-  { to: "/config/social", icon: Users, label: "Social" },
-  { to: "/config/heartbeat", icon: Activity, label: "Heartbeat" },
-  { to: "/config/tunnel", icon: Network, label: "Tunnel" },
-  { to: "/config/model-list", icon: Cpu, label: "Model List" },
-  { to: "/config/economic", icon: Wallet, label: "Economic" },
-  { to: "/config/wallet", icon: Wallet2, label: "ID" },
-  { to: "/config/soul", icon: Sparkles, label: "Soul" },
-];
+import { useStorageSync } from "@/hooks/useStorageSync";
+import { getVisibleNavItems, CONFIG_NAV_CHANGE_EVENT } from "@/lib/configNav";
 
 export default function ConfigSubNav() {
+  const items = useStorageSync(getVisibleNavItems, CONFIG_NAV_CHANGE_EVENT);
+
   return (
     <nav className="config-sub-nav relative flex items-center gap-1 overflow-x-auto border-b border-[#1a3670] bg-[#050d1f]/95 px-4 py-2 backdrop-blur-sm md:px-6">
       <div className="absolute inset-0 pointer-events-none opacity-60 bg-[radial-gradient(circle_at_0%_50%,rgba(41,148,255,0.12),transparent_50%)]" />
       <div className="relative flex min-w-0 items-center gap-1">
-        {configNavItems.map(({ to, icon: Icon, label }) => (
+        {items.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
