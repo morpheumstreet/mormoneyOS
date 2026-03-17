@@ -950,7 +950,7 @@ Use `switch_model` to change the active inference model at runtime. The change p
 
 ### Token caps and truncation
 
-To avoid provider prefill limits (e.g. Groq ~6k–8k tokens), the agent enforces a configurable input cap (`maxInputTokens`, default 5500). When context exceeds the cap, history is truncated (newest turns kept). See [token-caps-truncation.md](docs/design/token-caps-truncation.md) for design details.
+To avoid provider prefill limits (e.g. Groq ~6k–8k tokens), the agent enforces a configurable input cap (`maxInputTokens`, default 5500). When context exceeds the cap, **HistoryTrimmer** compresses older turns (full last 6, summarize 7–20, drop older), **TieredMemoryRetriever** applies per-tier soft/hard caps to memory, and **MessageTrimmer** orchestrates budget-aware retrieval. See [token-caps-truncation.md](docs/design/token-caps-truncation.md) and [context-trimming-stage2.md](docs/design/context-trimming-stage2.md) for design details.
 
 ### Cost tracking
 

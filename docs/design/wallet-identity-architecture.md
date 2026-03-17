@@ -21,7 +21,7 @@ The automaton has a **sovereign multi-chain identity**: a wallet (or HD seed) wh
 
 ---
 
-## 2. Multi-Chain Foundation (Design Principle)
+## 2. Multi-Chain Foundation
 
 Multi-chain support is **built into the foundation**, not layered on later. All identity, config, and on-chain operations are chain-aware.
 
@@ -560,26 +560,14 @@ Proposed flow:
 
 ---
 
-## 5. Design Principles (CLEAN, DRY, SOLID)
-
-### 5.1 CLEAN
+## 5. Architecture Notes
 
 - **Single responsibility:** `chain.go` — CAIP-2 parsing and chain identification; `validation.go` — address format validation only; `wallet.go` — wallet I/O and derivation; `provision.go` — SIWE flow.
 - **Clear naming:** `CAIP2ToChainType`, `ValidateAddressForChain`, `AddressKeyForChain` are self-documenting.
 - **Minimal functions:** Each function does one thing; no side effects in pure helpers.
-
-### 5.2 DRY
-
 - **Shared validation helpers:** `validateHexAddress` (EVM, Sui), `validatePrefixBased` (Bitcoin SegWit/Taproot, XRP), `validateFirstChar` (Bitcoin Legacy/Nested), `isHexChar`.
 - **Validator composition:** `hexValidator`, `prefixValidator`, `firstCharValidator`, `lengthRangeValidator` reuse helpers; chain-specific validators (Tron, Polkadot) implement `AddressValidator` directly when rules differ.
-
-### 5.3 SOLID
-
-- **S — Single Responsibility:** Each module has one concern; validators are isolated.
-- **O — Open/Closed:** Add new chain by registering a validator in `validation.go` init; no modification to `validateAddressFormat` switch.
-- **L — Liskov Substitution:** All validators implement `AddressValidator` and are interchangeable.
-- **I — Interface Segregation:** `AddressValidator` has a single method `Validate(addr string) error`.
-- **D — Dependency Inversion:** `ValidateAddressForChain` depends on the validator registry abstraction, not concrete switch logic.
+- **Modularity:** Each module has one concern; validators are isolated. Add new chain by registering a validator in `validation.go` init; no modification to `validateAddressFormat` switch. All validators implement `AddressValidator` and are interchangeable. `AddressValidator` has a single method `Validate(addr string) error`. `ValidateAddressForChain` depends on the validator registry abstraction, not concrete switch logic.
 
 ---
 

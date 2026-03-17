@@ -22,3 +22,15 @@ var mutatingTools = map[string]bool{
 func IsMutatingTool(name string) bool {
 	return mutatingTools[name]
 }
+
+// moneyMovingTools are tools that move credits/money (used for model routing).
+var moneyMovingTools = map[string]bool{
+	"transfer_credits": true,
+	"fund_child":        true,
+}
+
+// IsMoneyMovingTool returns true if the tool moves credits or money.
+// Used for routing to strong model on financial impact.
+func IsMoneyMovingTool(name string) bool {
+	return moneyMovingTools[name]
+}

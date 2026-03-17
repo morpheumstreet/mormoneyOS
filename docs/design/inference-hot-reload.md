@@ -1,37 +1,7 @@
 # Inference Client Hot-Reload Design
 
 **Date:** 2026-03-16  
-**Purpose:** Apply inference model/provider changes from the web UI without restarting the process. Aligns with the existing `TunnelReloader` pattern; keeps the design clean, DRY, and SOLID.
-
----
-
-## 0. Design Principles
-
-### 0.1 Clean
-
-| Principle | Application |
-|-----------|-------------|
-| **Single responsibility** | Holder owns client lifecycle; consumers only call `Client()`. Reload is a single, explicit operation. |
-| **Clear boundaries** | Inference creation stays in `inference` package; holder is a thin coordination layer. |
-| **Explicit over implicit** | Reload is triggered by config save or explicit API; no background polling. |
-
-### 0.2 DRY
-
-| Principle | Application |
-|-----------|-------------|
-| **Single source of truth** | One holder instance; agent loop and web server both read from it. |
-| **Reuse factory** | `inference.NewClientFromConfig` remains the sole constructor; no duplicate logic. |
-| **Mirror tunnel pattern** | `InferenceReloader` mirrors `TunnelReloader` for consistency. |
-
-### 0.3 SOLID
-
-| Principle | Application |
-|-----------|-------------|
-| **S**ingle Responsibility | Holder = client lifecycle + atomic swap. No inference logic. |
-| **O**pen/Closed | Add new providers via registry; holder unchanged. |
-| **L**iskov Substitution | Live client implements `inference.Client`; drop-in for static client. |
-| **I**nterface Segregation | Holder exposes `Client()` and `Reload()`; minimal surface. |
-| **D**ependency Inversion | Agent loop and web depend on `inference.Client`; holder injects current implementation. |
+**Purpose:** Apply inference model/provider changes from the web UI without restarting the process. Aligns with the existing `TunnelReloader` pattern.
 
 ---
 

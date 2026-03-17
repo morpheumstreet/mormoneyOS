@@ -128,6 +128,39 @@ type AutomatonConfig struct {
 	MaxInputTokens  int `json:"maxInputTokens,omitempty"`  // Safe threshold before truncation
 	MaxHistoryTurns int `json:"maxHistoryTurns,omitempty"` // Max history turns when truncating
 	WarnAtTokens    int `json:"warnAtTokens,omitempty"`    // Log warning when input exceeds this
+
+	// PromptVersion: "v1" = versioned templates + CoT forcing; empty = legacy ad-hoc prompts.
+	PromptVersion string `json:"promptVersion,omitempty"`
+
+	// Memory: auto-ingestion and consolidation (5-tier memory pipeline).
+	Memory *MemoryConfig `json:"memory,omitempty"`
+
+	// Inference routing: model tier selection (fast/normal/strong).
+	Routing *RoutingConfig `json:"routing,omitempty"`
+}
+
+// RoutingConfig configures model routing and self-critique.
+type RoutingConfig struct {
+	DefaultTier             string `json:"defaultTier,omitempty"`             // "fast", "normal", "strong"; default "normal"
+	StrongThresholdTokens   int    `json:"strongThresholdTokens,omitempty"`   // use strong model when tokens > this (default 3500)
+	ForceStrongOnMoneyMove  bool   `json:"forceStrongOnMoneyMove,omitempty"`  // use strong model for transfer_credits, fund_child
+	ReflectionTier          string `json:"reflectionTier,omitempty"`          // tier for critique calls (default "fast")
+	TokenCapForStrong       int    `json:"tokenCapForStrong,omitempty"`      // never route Strong above this (default 5500); merge blocker
+	ReflectionOnAllTurns    bool   `json:"reflectionOnAllTurns,omitempty"`    // run critique on every turn (debugging/learning); default false
+	ReflectionFrequencyCap int    `json:"reflectionFrequencyCap,omitempty"`   // max 1 critique per N turns; 0 = no cap
+}
+
+// MemoryConfig holds automatic memory ingestion settings.
+type MemoryConfig struct {
+	AutoIngest *MemoryAutoIngestConfig `json:"autoIngest,omitempty"`
+}
+
+// MemoryAutoIngestConfig configures the per-turn extraction and background consolidation.
+type MemoryAutoIngestConfig struct {
+	Enabled                     bool   `json:"enabled"`
+	CheapModel                  string `json:"cheapModel,omitempty"`
+	ConsolidationIntervalMinutes int    `json:"consolidationIntervalMinutes,omitempty"`
+	MaxCandidatesPerBatch       int    `json:"maxCandidatesPerBatch,omitempty"`
 }
 
 // TelegramGroupCfg is per-group Telegram config (OpenClaw-style).

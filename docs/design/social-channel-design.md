@@ -5,36 +5,6 @@
 
 ---
 
-## 0. Design Principles (Clean, DRY, SOLID)
-
-### 0.1 Clean
-
-| Principle | Application |
-|-----------|-------------|
-| **Single responsibility** | Each channel does one thing: send/receive messages on its platform. No business logic, no routing. |
-| **Clear boundaries** | Channel = transport + auth. Agent loop = orchestration. Factory = construction. No cross-cutting concerns. |
-| **Explicit over implicit** | API keys, webhook URLs, allowed users — all passed via config. No magic defaults. |
-
-### 0.2 DRY
-
-| Principle | Application |
-|-----------|-------------|
-| **Shared types** | `OutboundMessage`, `InboxMessage`, `ChannelMessage` live in a common package; all channels consume them. |
-| **Shared validation** | Message size limits, rate limiting, replay protection — one module, all channels. |
-| **Provider descriptors, not code** | New channel = registry entry (key, config keys, constructor). Minimal per-provider code. |
-
-### 0.3 SOLID
-
-| Principle | Application |
-|-----------|-------------|
-| **S**ingle Responsibility | Channel = send + poll only. Factory = construction. Registry = metadata. |
-| **O**pen/Closed | Add channels by registering, not by editing factory switch. |
-| **L**iskov Substitution | Any `SocialChannel` implementation works in agent loop; no channel-specific branches. |
-| **I**nterface Segregation | `SocialChannel` has minimal surface: `Send`, `Poll`, `HealthCheck`. No fat interface. |
-| **D**ependency Inversion | Agent loop depends on `SocialChannel` interface; factory injects concrete implementation. |
-
----
-
 ## 1. Context: Unified Social Channels
 
 All social messaging — Conway relay, Telegram, Discord, Slack — uses the same `SocialChannel` interface. No distinction between "agent-to-agent" and "user-facing"; they are all channels.
@@ -295,7 +265,7 @@ func runCheckSocialInbox(ctx context.Context, tc *TaskContext) {
 }
 ```
 
-**Message processing** (`internal/heartbeat/social_inbox.go`): `ProcessInboxMessage` handles one message — Type 2 (programmatic) or Type 1 (LLM). DRY, single place for reply logic.
+**Message processing** (`internal/heartbeat/social_inbox.go`): `ProcessInboxMessage` handles one message — Type 2 (programmatic) or Type 1 (LLM). Single place for reply logic.
 
 ---
 
@@ -316,7 +286,7 @@ internal/social/
   stub.go         # StubChannel for tests / no config
 
 internal/heartbeat/
-  social_inbox.go # ProcessInboxMessage (DRY message handling)
+  social_inbox.go # ProcessInboxMessage (unified message handling)
   social_commands.go # HandleSocialCommand (Type 2 replies)
 ```
 

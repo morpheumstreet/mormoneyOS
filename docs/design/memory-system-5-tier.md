@@ -9,7 +9,7 @@
 
 The **5-tier memory system** is the TypeScript reference design for agent memory. It separates memory into five distinct tiers with dedicated tables, priority ordering, and token budgeting. The **Go implementation** has **Phase 3 (DB-only)** implemented: five dedicated tables (schema v13), `DBMemoryRetriever`, and `BudgetAllocator`. Memory retrieval is DB-only; tools write to DB tables (semantic_memory, procedural_memory, working_memory) or KV until tool migration.
 
-**Status:** Tables exist; retrieval and formatting aligned. Memory ingestion pipeline (auto-extraction from turns) is optional Phase 3.
+**Status:** Tables exist; retrieval and formatting aligned. Memory ingestion pipeline (auto-extraction from turns) is implemented — see [memory-auto-ingestion.md](./memory-auto-ingestion.md).
 
 ---
 
@@ -81,7 +81,7 @@ Higher-priority tiers get token budget first; unused budget rolls to the next ti
 
 ### 4.2 What Go Still Lacks (Phase 3)
 
-1. **Memory ingestion pipeline:** TS has automatic extraction from turns into tiers. Go relies on explicit tool calls (remember_fact, save_procedure, etc.); no automatic ingestion into working_memory, episodic_memory, semantic_memory, procedural_memory, relationship_memory. Until ingestion, DB tiers are populated only by future tools or manual writes.
+1. **Memory ingestion pipeline:** Implemented. See [memory-auto-ingestion.md](./memory-auto-ingestion.md). Opt-in via `memory.autoIngest.enabled`. Extracts from turns into `ingest_candidates`; background consolidator writes to 5-tier tables.
 
 2. **Tool updates:** `remember_fact`, `save_procedure`, etc. write to KV. Phase 3 could add dual-write or migration to DB tables.
 

@@ -1,0 +1,26 @@
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+*.exe
+coverage.out
+coverage.html
+
+# Dashos / Node (built in container)
+dashos/node_modules
+dashos/dist
+
+# Docs and scripts (not needed for runtime)
+docs/
+*.md
+!README.md
+
+# Test and dev
+*_test.go
+.github/

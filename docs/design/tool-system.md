@@ -5,7 +5,7 @@
 
 ---
 
-## 1. Design Principles
+## 1. Architecture
 
 - **Flat design:** Each tool is a first-class entity with no hierarchy. Tools are identified by name only.
 - **Self-contained:** Each tool owns its name, description, JSON schema (parameters), and execution logic.
@@ -90,7 +90,7 @@ Tools not yet implemented return "Not implemented in Go runtime yet." Schema and
 | **DB** | ✅ | `installed_tools` table (TS-aligned); `GetInstalledTools()`, `InstallTool()`, `RemoveTool()` |
 | **Plugins** | ✅ | Load `.so` modules from `pluginPaths` (Linux only; `.wasm` future) |
 
-### 5.0 ServiceProvider Pattern (DRY, Extensible)
+### 5.0 ServiceProvider Pattern (Extensible)
 
 **One registration path.** No Conway-specific or Tunnel-specific branches in registry init.
 
@@ -105,7 +105,7 @@ type ServiceProvider interface {
 ```
 
 - **Conway:** `ConwayServiceProvider{Client}` implements `ServiceProvider`; `Tools()` returns Conway tools.
-- **Tunnel:** `TunnelServiceProvider{Manager, Registry}` implements `ServiceProvider`; yields `expose_port`, `remove_port`, `tunnel_status`. Tunnel backends implement `TunnelProvider`; shared `CommandTunnelProvider` base for DRY. See [tunnel-tools-borrow.md](./tunnel-tools-borrow.md).
+- **Tunnel:** `TunnelServiceProvider{Manager, Registry}` implements `ServiceProvider`; yields `expose_port`, `remove_port`, `tunnel_status`. Tunnel backends implement `TunnelProvider`; shared `CommandTunnelProvider` base. See [tunnel-tools-borrow.md](./tunnel-tools-borrow.md).
 
 ### 5.1 Config Tools
 

@@ -88,9 +88,10 @@ var DefaultTokenizer Tokenizer = TiktokenTokenizerOrDefault()
 
 // TokenLimits holds configurable limits for input truncation (Groq ~6k–8k prefill caps).
 type TokenLimits struct {
-	MaxInputTokens  int // Safe threshold before truncation (default 5500)
-	MaxHistoryTurns int // Max history turns to keep when truncating (default 12)
-	WarnAtTokens    int // Log warning when input exceeds this (default 4500)
+	MaxInputTokens   int                    // Safe threshold before truncation (default 5500)
+	MaxHistoryTurns  int                    // Max history turns to keep when truncating (default 12)
+	WarnAtTokens     int                    // Log warning when input exceeds this (default 4500)
+	HistoryCompress *HistoryTrimmerConfig // Optional; when set, use rule-based history compression before truncation
 }
 
 // DefaultTokenLimits returns sensible defaults for Groq and similar providers.

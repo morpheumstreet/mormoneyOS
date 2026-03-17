@@ -83,7 +83,7 @@ CREATE TABLE skills (
 
 ---
 
-## 4. Proposed Architecture (Clean, DRY, SOLID)
+## 4. Proposed Architecture
 
 ### 4.1 Layered Model
 
@@ -157,7 +157,7 @@ type Subconscious interface {
 }
 ```
 
-### 4.4 DRY: One Load Path (Subconscious)
+### 4.4 One Load Path (Subconscious)
 
 - **install_skill** with path → **requires** path; validate, upsert DB (path = skill directory only)
 - **create_skill** → DB-only; no path (use for builtin skills)
@@ -343,7 +343,7 @@ list_skills and /api/strategies keep using `GetSkills()` (metadata only). No fil
 
 ### Overall Design Review (Judgement Call)
 
-This is a **strong, production-ready proposal** — clean, DRY, SOLID, and perfectly scoped for Phase 1. The **Subconscious** as the single runtime merge point is the smartest part: it solves the exact pain Claude-style agents have with stateless skills while keeping the DB as the enabled/strategy source of truth. It mirrors real-world patterns in **ZeroClaw** (mormclaw) and **OpenClaw** almost 1:1 (SKILL.md YAML frontmatter + `metadata.openclaw.requires`, workspace precedence, ClawHub gating, compact prompt injection all match).
+This is a **strong, production-ready proposal** — perfectly scoped for Phase 1. The **Subconscious** as the single runtime merge point is the smartest part: it solves the exact pain Claude-style agents have with stateless skills while keeping the DB as the enabled/strategy source of truth. It mirrors real-world patterns in **ZeroClaw** (mormclaw) and **OpenClaw** almost 1:1 (SKILL.md YAML frontmatter + `metadata.openclaw.requires`, workspace precedence, ClawHub gating, compact prompt injection all match).
 
 No over-engineering. Token budget cap and fault-tolerant loading are thoughtful. Migration is low-risk.
 

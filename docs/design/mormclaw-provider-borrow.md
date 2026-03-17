@@ -1,40 +1,11 @@
 # mormclaw Provider Design → mormoneyOS Borrow
 
 **Date:** 2025-03-13  
-**Purpose:** Capture mormclaw (mormOS) AI provider architecture and recommend patterns to borrow into mormoneyOS. Optimized for **clean**, **DRY**, and **SOLID** design.
+**Purpose:** Capture mormclaw (mormOS) AI provider architecture and recommend patterns to borrow into mormoneyOS.
 
 ---
 
-## 0. Design Principles (Clean, DRY, SOLID)
-
-### 0.1 Clean
-
-| Principle | Application |
-|-----------|-------------|
-| **Single responsibility** | Each provider does one thing: call its API and return normalized `InferenceResponse`. No business logic, no routing. |
-| **Clear boundaries** | Provider = transport + auth. Agent loop = orchestration. Factory = construction. No cross-cutting concerns. |
-| **Explicit over implicit** | Auth style, base URL, model — all passed explicitly. No magic defaults hidden in provider internals. |
-
-### 0.2 DRY
-
-| Principle | Application |
-|-----------|-------------|
-| **One OpenAI-compatible implementation** | All providers using `/v1/chat/completions` share a single `OpenAICompatibleClient`. No per-provider request/response code. |
-| **Shared types** | `ChatMessage`, `InferenceResponse`, `ToolCall` live in `client.go`; all providers consume them. |
-| **Shared HTTP + auth** | One `buildRequest` / `setAuthHeader` path parameterized by `AuthStyle`. |
-| **Provider descriptors, not code** | New OpenAI-compatible provider = registry entry (name, baseURL, authStyle, configKey). No new file. |
-
-### 0.3 SOLID
-
-| Principle | Application |
-|-----------|-------------|
-| **S**ingle Responsibility | `Client` = inference only. Factory = construction. Registry = metadata. |
-| **O**pen/Closed | Add providers by registering, not by editing factory switch. |
-| **L**iskov Substitution | Any `Client` implementation works in agent loop; no provider-specific branches. |
-| **I**nterface Segregation | `Client` has minimal surface: `Chat`, `GetDefaultModel`, `SetLowComputeMode`. No fat interface. |
-| **D**ependency Inversion | Agent loop depends on `inference.Client` interface; factory injects concrete implementation. |
-
-### 0.4 Provider Taxonomy (DRY)
+## 0. Provider Taxonomy
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -136,9 +107,9 @@ Display-only: `ProviderInfo { name, display_name, aliases, local }` — separate
 
 ---
 
-## 3. Optimized Design (Clean, DRY, SOLID)
+## 3. Optimized Design
 
-### 3.1 Single OpenAI-Compatible Implementation (DRY)
+### 3.1 Single OpenAI-Compatible Implementation
 
 **One struct, one Chat implementation.** All OpenAI-compatible providers use it.
 

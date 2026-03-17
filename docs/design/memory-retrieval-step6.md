@@ -36,18 +36,18 @@ Higher-priority tiers get token budget first; unused budget rolls to the next ti
 - **Phase 3 (implemented):** 5-tier tables (schema v13); `DBMemoryRetriever` (DB-only); `BudgetAllocator`; memory block injected at index 1
 - **DB-only:** No KV fallback; all five tables read from DB
 - **Tools:** `remember_fact`, `recall_facts`, `forget`, `set_goal`, `complete_goal`, `save_procedure`, `recall_procedure`, `review_memory` (KV-backed)
-- **Pending (Phase 3):** Memory ingestion pipeline to populate working/episodic/relationship from turns
+- **Memory ingestion:** Implemented. See [memory-auto-ingestion.md](./memory-auto-ingestion.md). Opt-in via `memory.autoIngest.enabled`.
 
 ---
 
-## 3. Design Principles
+## 3. Architecture
 
-| Principle | Application |
-|-----------|-------------|
+| Aspect | Application |
+|--------|-------------|
 | **Single Responsibility** | `MemoryRetriever` retrieves; `FormatMemoryBlock` formats; loop injects |
 | **Interface Segregation** | Narrow `MemoryRetriever` interface; optional in loop |
 | **Open/Closed** | Add new tiers or backends without changing loop |
-| **DRY** | One retrieval path, one format function; tools and retriever share KV keys |
+| **Single path** | One retrieval path, one format function; tools and retriever share KV keys |
 | **Dependency Inversion** | Loop depends on `MemoryRetriever` interface, not concrete store |
 
 ---
@@ -218,7 +218,7 @@ TS has `MemoryIngestionPipeline` that extracts from turns into tiers. Go could a
 
 ---
 
-## 9. Shared Constants (DRY)
+## 9. Shared Constants
 
 Keys used by both tools and retriever should live in one place:
 

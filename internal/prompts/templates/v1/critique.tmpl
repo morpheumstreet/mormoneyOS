@@ -1,0 +1,10 @@
+Critique this agent turn. Return ONLY valid JSON, no markdown.
+
+Input: {{.Input}}
+Thought: {{.Thinking}}
+Tool calls: {{.ToolCalls}}
+
+Format:
+{"success_score":0.0-1.0,"lessons":["lesson1","lesson2"],"memory_recommendations":["rec1"]}
+
+Rules: success_score 0-1. lessons: what went well or poorly. memory_recommendations: facts to remember for future turns. Max 3 lessons, 2 recommendations. Empty arrays ok.

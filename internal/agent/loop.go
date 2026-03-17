@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
+	"github.com/morpheumlabs/mormoneyos-go/internal/prompts"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/skills"
 	"github.com/morpheumlabs/mormoneyos-go/internal/state"
@@ -54,20 +56,29 @@ type ToolExecutor interface {
 // Called with ctx and claimed message IDs; implementation looks up route and sends via channels.
 type FallbackSender func(ctx context.Context, claimedIds []string)
 
+// MemoryIngester ingests turn data into memory (optional, for automatic memory pipeline).
+type MemoryIngester interface {
+	IngestTurn(ctx context.Context, turn *memory.TurnData) error
+}
+
 // Loop implements the ReAct cycle per mormoneyOS design.
 type Loop struct {
-	policy               *PolicyEngine
-	persister            TurnPersister
-	store                AgentStore
-	inference            inference.Client
-	tools                ToolExecutor
-	config               *LoopConfig
-	creditsFn            func(ctx context.Context) int64
-	lineageStore         replication.LineageStore
-	memoryRetriever      memory.MemoryRetriever
-	disabledToolsGetter  func() []string
-	fallbackSender       FallbackSender
-	log                  *slog.Logger
+	policy                   *PolicyEngine
+	persister                TurnPersister
+	store                    AgentStore
+	inference                inference.Client
+	tools                    ToolExecutor
+	config                   *LoopConfig
+	creditsFn                func(ctx context.Context) int64
+	lineageStore             replication.LineageStore
+	memoryRetriever          memory.MemoryRetriever
+	memoryIngester           MemoryIngester
+	modelRouter              *inference.ModelRouter
+	reflectionEngine         *ReflectionEngine
+	reflectionTurnsSinceLast int // for reflectionFrequencyCap
+	disabledToolsGetter      func() []string
+	fallbackSender           FallbackSender
+	log                      *slog.Logger
 }
 
 // NewLoop creates an agent loop.
@@ -85,23 +96,30 @@ func NewLoopWithPersister(policy *PolicyEngine, persister TurnPersister, log *sl
 
 // LoopOptions configures the full ReAct loop (TS AgentLoopOptions-aligned).
 type LoopOptions struct {
-	Policy               *PolicyEngine
-	Store                AgentStore
-	Inference            inference.Client
-	Tools                ToolExecutor
-	Config               *LoopConfig
-	CreditsFn            func(ctx context.Context) int64
-	LineageStore         replication.LineageStore   // optional; for GetLineageSummary in system prompt
-	MemoryRetriever      memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
-	DisabledToolsGetter  func() []string           // optional; when set, filters tool schemas (tools disabled via dashboard)
-	FallbackSender       FallbackSender            // optional; when LLM fails with claimed inbox, send "Sorry, having trouble" to user
-	Log                  *slog.Logger
+	Policy              *PolicyEngine
+	Store               AgentStore
+	Inference           inference.Client
+	Tools               ToolExecutor
+	Config              *LoopConfig
+	CreditsFn           func(ctx context.Context) int64
+	LineageStore        replication.LineageStore   // optional; for GetLineageSummary in system prompt
+	MemoryRetriever     memory.MemoryRetriever     // optional; TS step 6 pre-turn memory injection
+	MemoryIngester      MemoryIngester             // optional; automatic memory ingestion from turns
+	ModelRouter         *inference.ModelRouter    // optional; when set, routes to fast/normal/strong model per turn
+	ReflectionEngine    *ReflectionEngine          // optional; when set, runs self-critique on impactful turns
+	DisabledToolsGetter func() []string            // optional; when set, filters tool schemas (tools disabled via dashboard)
+	FallbackSender      FallbackSender            // optional; when LLM fails with claimed inbox, send "Sorry, having trouble" to user
+	Log                 *slog.Logger
 }
 
 // NewLoopWithOptions creates a loop with full ReAct support.
 func NewLoopWithOptions(opts LoopOptions) *Loop {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
+	}
+	reflectionTurnsSinceLast := 0
+	if opts.ReflectionEngine != nil && opts.Config != nil && opts.Config.Routing != nil && opts.Config.Routing.ReflectionFrequencyCap > 0 {
+		reflectionTurnsSinceLast = opts.Config.Routing.ReflectionFrequencyCap
 	}
 	return &Loop{
 		policy:              opts.Policy,
@@ -113,7 +131,11 @@ func NewLoopWithOptions(opts LoopOptions) *Loop {
 		creditsFn:           opts.CreditsFn,
 		lineageStore:        opts.LineageStore,
 		memoryRetriever:     opts.MemoryRetriever,
-		disabledToolsGetter: opts.DisabledToolsGetter,
+		memoryIngester:      opts.MemoryIngester,
+		modelRouter:             opts.ModelRouter,
+		reflectionEngine:        opts.ReflectionEngine,
+		reflectionTurnsSinceLast: reflectionTurnsSinceLast,
+		disabledToolsGetter:     opts.DisabledToolsGetter,
 		fallbackSender:      opts.FallbackSender,
 		log:                 opts.Log,
 	}
@@ -148,6 +170,10 @@ func (l *Loop) RunOneTurn(ctx context.Context, agentState types.AgentState) Turn
 }
 
 func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult {
+	// Increment turns since last critique (for reflectionFrequencyCap)
+	if l.reflectionEngine != nil {
+		l.reflectionTurnsSinceLast++
+	}
 	turnCount, _ := l.store.GetTurnCount()
 	agentState, _, _ := l.store.GetAgentState()
 	if agentState == "" {
@@ -234,7 +260,6 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 			skillList = skills.LoadAllFromStore(store, l.config.SkillsConfig)
 		}
 	}
-	systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary, skillList)
 
 	// Fetch more turns for truncation (start generous; BuildMessagesSafe will cap)
 	historyLimit := 50
@@ -244,16 +269,6 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		}
 	}
 	recentTurnsForContext, _ := l.store.GetRecentTurns(historyLimit)
-
-	// Step 6: memory retrieval
-	memoryBlock := ""
-	if l.memoryRetriever != nil {
-		var err error
-		memoryBlock, err = l.memoryRetriever.Retrieve(ctx, "", pendingInput)
-		if err != nil {
-			l.log.Debug("memory retrieval failed", "err", err)
-		}
-	}
 
 	// Inference options with tool definitions (from registry when available)
 	toolDefs := getToolSchemas(l.tools)
@@ -272,6 +287,7 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	}
 
 	// Build messages with token cap and truncation (avoids prefill limit errors)
+	// Step 6: MessageTrimmer orchestrates memory retrieval (with budget when supported) + BuildMessagesSafe
 	limits := DefaultTokenLimits()
 	if l.config != nil && l.config.TokenLimits != nil {
 		limits = *l.config.TokenLimits
@@ -284,7 +300,53 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	if l.config != nil && l.config.ContextLimitForModel != nil {
 		effectiveCap = l.config.ContextLimitForModel(model)
 	}
-	messages := BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, memoryBlock, toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+	var messages []inference.ChatMessage
+	if l.config != nil && l.config.PromptVersion != "" {
+		// Versioned prompts: template-based system + CoT forcing
+		credits := float64(creditsCents) / 100
+		if creditsCents < 0 {
+			credits = 0
+		}
+		systemData := prompts.SystemPromptData{
+			State:          agentState,
+			Credits:        fmt.Sprintf("%.2f", credits),
+			Tier:           string(tier),
+			TurnCount:      turnCount,
+			Model:          model,
+			LineageSummary: lineageSummary,
+			SkillsBlock:    skills.FormatForPrompt(skillList, tokenBudgetFromConfig(l.config)),
+			GenesisPrompt:  truncateGenesis(l.config.GenesisPrompt, 2000),
+		}
+		messages, _ = BuildMessagesFromPrompts(ctx, prompts.Version(l.config.PromptVersion), systemData, recentTurnsForContext, pendingInput, l.memoryRetriever, toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+	} else {
+		// Legacy: ad-hoc prompt building
+		systemPrompt := BuildSystemPrompt(l.config, agentState, turnCount, creditsCents, string(tier), lineageSummary, skillList)
+		if l.memoryRetriever != nil {
+			trimmer := NewMessageTrimmer(DefaultTokenizer)
+			messages, _ = trimmer.Trim(ctx, systemPrompt, recentTurnsForContext, pendingInput, l.memoryRetriever, toolDefs, limits, effectiveCap, l.log)
+		} else {
+			messages = BuildMessagesSafe(systemPrompt, recentTurnsForContext, pendingInput, "", toolDefs, limits, effectiveCap, DefaultTokenizer, l.log)
+		}
+	}
+	// Route model when router is configured
+	client := l.inference
+	if l.modelRouter != nil {
+		tokensUsed := CountMessagesTokens(messages, toolDefs, DefaultTokenizer)
+		hasMoneyImpact := strings.Contains(strings.ToLower(pendingInput), "transfer") ||
+			strings.Contains(strings.ToLower(pendingInput), "fund") ||
+			strings.Contains(strings.ToLower(pendingInput), "send")
+		dc := inference.DecisionContext{
+			TokensUsed:     tokensUsed,
+			RiskLevel:      inference.RiskLow,
+			HasMoneyImpact: hasMoneyImpact,
+			TurnPhase:      "action",
+		}
+		if routed, err := l.modelRouter.Select(ctx, dc); err == nil && routed != nil {
+			client = routed
+			model = client.GetDefaultModel()
+		}
+	}
+
 	opts := &inference.InferenceOptions{
 		Model:      model,
 		MaxTokens:  4096,
@@ -294,7 +356,7 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 
 	// Call inference
 	l.log.Debug("inference call", "model", model, "messages", len(messages))
-	resp, err := l.inference.Chat(ctx, messages, opts)
+	resp, err := client.Chat(ctx, messages, opts)
 	if err != nil {
 		l.log.Warn("inference failed", "err", err)
 		// Persist error turn
@@ -315,6 +377,12 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 		ts := time.Now().UTC().Format(time.RFC3339)
 		tokenUsage := jsonObject("prompt_tokens", resp.InputTokens, "completion_tokens", resp.OutputTokens)
 		_ = l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, resp.Content, "[]", tokenUsage, resp.CostCents)
+		if l.memoryIngester != nil {
+			_ = l.memoryIngester.IngestTurn(ctx, &memory.TurnData{
+				TurnID: turnID, Timestamp: ts, SessionID: "", Input: pendingInput, InputSource: inputSource,
+				Thinking: resp.Content, ToolCalls: "[]",
+			})
+		}
 		if len(claimedIds) > 0 {
 			// Inbox messages claimed but model stopped without acting; stay running to process them next turn
 			return TurnResult{State: types.AgentStateRunning, WasIdle: false}
@@ -386,6 +454,38 @@ func (l *Loop) runOneTurnReAct(ctx context.Context, stateStr string) TurnResult 
 	if err := l.store.InsertTurn(turnID, ts, stateStr, pendingInput, inputSource, thinking, toolCallsJSON, tokenUsage, resp.CostCents); err != nil {
 		l.log.Warn("insert turn failed", "err", err)
 	}
+	if l.memoryIngester != nil {
+		_ = l.memoryIngester.IngestTurn(ctx, &memory.TurnData{
+			TurnID: turnID, Timestamp: ts, SessionID: "", Input: pendingInput, InputSource: inputSource,
+			Thinking: thinking, ToolCalls: toolCallsJSON,
+		})
+	}
+
+	// Self-critique on impactful turns (Reflexion-style improvement)
+	reflectionOnAllTurns := l.config != nil && l.config.Routing != nil && l.config.Routing.ReflectionOnAllTurns
+	reflectionFrequencyCap := 0
+	if l.config != nil && l.config.Routing != nil && l.config.Routing.ReflectionFrequencyCap > 0 {
+		reflectionFrequencyCap = l.config.Routing.ReflectionFrequencyCap
+	}
+	shouldReflect := (anyMutatingToolExecuted || reflectionOnAllTurns) &&
+		(reflectionFrequencyCap == 0 || l.reflectionTurnsSinceLast >= reflectionFrequencyCap)
+	if l.reflectionEngine != nil && shouldReflect {
+		ref, err := l.reflectionEngine.CritiqueTurn(ctx, &CritiqueTurnData{
+			TurnID: turnID, Input: pendingInput, Thinking: thinking, ToolCalls: toolCallsJSON,
+		})
+		if err == nil && ref != nil {
+			l.reflectionTurnsSinceLast = 0 // reset for frequency cap
+			rd := &memory.ReflectionData{
+				TurnID:                turnID,
+				SuccessScore:          ref.SuccessScore,
+				Lessons:               ref.Lessons,
+				MemoryRecommendations: ref.MemoryRecommendations,
+			}
+			if ri, ok := l.memoryIngester.(ReflectionIngester); ok {
+				_ = ri.IngestReflection(ctx, rd)
+			}
+		}
+	}
 
 	// TS step 2: mark claimed inbox messages as processed (atomic with turn persistence)
 	if len(claimedIds) > 0 {
@@ -428,6 +528,20 @@ func jsonObject(kv ...interface{}) string {
 // ShouldSleep returns true if agent should sleep (idle or explicit sleep).
 func (l *Loop) ShouldSleep(idleTurns int) bool {
 	return idleTurns >= 3
+}
+
+func tokenBudgetFromConfig(cfg *LoopConfig) int {
+	if cfg == nil || cfg.SkillsConfig == nil {
+		return 2000
+	}
+	return cfg.SkillsConfig.TokenBudgetMax
+}
+
+func truncateGenesis(s string, maxLen int) string {
+	if s == "" || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // tierToAgentState maps SurvivalTier to agent state string for prompt/observability.

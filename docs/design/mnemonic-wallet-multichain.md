@@ -5,7 +5,7 @@
 
 ---
 
-## 1. Core Design Principles
+## 1. Core Constraints
 
 - **Single source of truth** = mnemonic only (no persisted private keys)
 - **On-demand derivation** (ephemeral keys in memory)

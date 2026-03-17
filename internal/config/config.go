@@ -469,6 +469,58 @@ func Load() (*types.AutomatonConfig, error) {
 	} else if v, ok := raw["warn_at_tokens"].(int); ok && v > 0 {
 		cfg.WarnAtTokens = v
 	}
+	if v, ok := raw["promptVersion"].(string); ok && v != "" {
+		cfg.PromptVersion = v
+	}
+
+	// Memory config (auto-ingestion, consolidation)
+	if mc, ok := raw["memory"].(map[string]any); ok {
+		if cfg.Memory == nil {
+			cfg.Memory = &types.MemoryConfig{}
+		}
+		if ai, ok := mc["autoIngest"].(map[string]any); ok {
+			if cfg.Memory.AutoIngest == nil {
+				cfg.Memory.AutoIngest = &types.MemoryAutoIngestConfig{}
+			}
+			if v, ok := ai["enabled"].(bool); ok {
+				cfg.Memory.AutoIngest.Enabled = v
+			}
+			if v, ok := ai["cheapModel"].(string); ok && v != "" {
+				cfg.Memory.AutoIngest.CheapModel = v
+			}
+			if v, ok := ai["consolidationIntervalMinutes"].(float64); ok && v > 0 {
+				cfg.Memory.AutoIngest.ConsolidationIntervalMinutes = int(v)
+			} else if v, ok := ai["consolidationIntervalMinutes"].(int); ok && v > 0 {
+				cfg.Memory.AutoIngest.ConsolidationIntervalMinutes = v
+			}
+			if v, ok := ai["maxCandidatesPerBatch"].(float64); ok && v > 0 {
+				cfg.Memory.AutoIngest.MaxCandidatesPerBatch = int(v)
+			} else if v, ok := ai["maxCandidatesPerBatch"].(int); ok && v > 0 {
+				cfg.Memory.AutoIngest.MaxCandidatesPerBatch = v
+			}
+		}
+	}
+
+	// Inference routing (model tier selection, self-critique)
+	if rc, ok := raw["routing"].(map[string]any); ok {
+		if cfg.Routing == nil {
+			cfg.Routing = &types.RoutingConfig{}
+		}
+		if v, ok := rc["defaultTier"].(string); ok && v != "" {
+			cfg.Routing.DefaultTier = v
+		}
+		if v, ok := rc["strongThresholdTokens"].(float64); ok && v > 0 {
+			cfg.Routing.StrongThresholdTokens = int(v)
+		} else if v, ok := rc["strongThresholdTokens"].(int); ok && v > 0 {
+			cfg.Routing.StrongThresholdTokens = v
+		}
+		if v, ok := rc["forceStrongOnMoneyMove"].(bool); ok {
+			cfg.Routing.ForceStrongOnMoneyMove = v
+		}
+		if v, ok := rc["reflectionTier"].(string); ok && v != "" {
+			cfg.Routing.ReflectionTier = v
+		}
+	}
 
 	// Skills config (trusted roots for install_skill, token budget for prompt)
 	if sc, ok := raw["skills"].(map[string]any); ok {

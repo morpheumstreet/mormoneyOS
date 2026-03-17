@@ -30,31 +30,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func tokenLimitsFromConfig(cfg *types.AutomatonConfig) *agent.TokenLimits {
-	if cfg == nil {
-		return nil
-	}
-	limits := agent.DefaultTokenLimits().WithOverrides(cfg.MaxInputTokens, cfg.MaxHistoryTurns, cfg.WarnAtTokens)
-	return &limits
-}
+// agentMemoryMetrics bridges memory ingestion to agent expvar metrics.
+type agentMemoryMetrics struct{}
 
-func contextLimitForModelFromConfig(cfg *types.AutomatonConfig) agent.ContextLimitForModel {
-	if cfg == nil || len(cfg.Models) == 0 {
-		return nil
-	}
-	models := cfg.Models
-	return func(modelID string) int {
-		for _, m := range models {
-			if m.ModelID == modelID || strings.HasSuffix(modelID, "/"+m.ModelID) || strings.HasSuffix(modelID, m.ModelID) {
-				if m.ContextLimit > 0 {
-					return m.ContextLimit
-				}
-				break
-			}
-		}
-		return 0
-	}
-}
+func (agentMemoryMetrics) RecordIngestTurn() { agent.RecordMemoryIngestTurn() }
+func (agentMemoryMetrics) RecordLatencyMs(ms int64) { agent.RecordMemoryExtractionLatency(ms) }
 
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -103,6 +83,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 	// 4. Inference client (real when OpenAI/Conway keys set, else stub). Holder supports hot-reload on config save.
 	infHolder := inference.NewInferenceClientHolder(cfg)
 	infClient := infHolder.LiveClient()
+
+	// 4b. Model router (optional; routes to fast/normal/strong per turn)
+	var modelRouter *inference.ModelRouter
+	if cfg.Routing != nil || len(cfg.Models) > 0 {
+		modelRouter = inference.NewModelRouter(cfg, infHolder, agent.RoutingMetrics, slog.Default())
+	}
 
 	// 5. Conway client (when configured) — shared by agent, heartbeat, web
 	var conwayClient conway.Client
@@ -165,6 +151,25 @@ func runRun(cmd *cobra.Command, args []string) error {
 		}()
 	}
 
+	// 5e. Memory service (auto-ingestion when enabled)
+	var memSvc *memory.MemoryService
+	if cfg.Memory != nil && cfg.Memory.AutoIngest != nil && cfg.Memory.AutoIngest.Enabled {
+		memCfg := memory.MemoryConfig{
+			AutoIngestEnabled:       true,
+			CheapModel:              cfg.Memory.AutoIngest.CheapModel,
+			ConsolidationIntervalMin: cfg.Memory.AutoIngest.ConsolidationIntervalMinutes,
+			MaxCandidatesPerBatch:   cfg.Memory.AutoIngest.MaxCandidatesPerBatch,
+		}
+		if memCfg.ConsolidationIntervalMin <= 0 {
+			memCfg.ConsolidationIntervalMin = 12
+		}
+		if memCfg.MaxCandidatesPerBatch <= 0 {
+			memCfg.MaxCandidatesPerBatch = 40
+		}
+		memSvc = memory.NewMemoryService(memCfg, db, infClient, slog.Default())
+		memSvc.SetMetrics(&agentMemoryMetrics{})
+	}
+
 	// 6. Agent loop (full ReAct when inference+store configured)
 	reg := tools.NewRegistryWithOptions(&tools.RegistryOptions{
 		Store:          db,
@@ -180,13 +185,17 @@ func runRun(cmd *cobra.Command, args []string) error {
 		TunnelManager:  tunnelMgr,
 		TunnelRegistry: tunnelReg,
 	})
+	reflectionEngine := agent.NewReflectionEngine(modelRouter, slog.Default())
 	loop := agent.NewLoopWithOptions(agent.LoopOptions{
 		Policy:          policy,
 		Store:           db,
 		Inference:       infClient,
 		Tools:           reg,
 		LineageStore:    db,
-		MemoryRetriever: memory.NewDBMemoryRetriever(db, memory.NewBudgetAllocator(memory.DefaultTokenBudget)),
+		MemoryRetriever: memory.NewTieredMemoryRetriever(db, memory.DefaultTierConfig()),
+		MemoryIngester:  memSvc,
+		ModelRouter:     modelRouter,
+		ReflectionEngine: reflectionEngine,
 		DisabledToolsGetter: func() []string {
 			raw, ok, _ := db.GetKV("disabled_tools")
 			if !ok || raw == "" {
@@ -196,18 +205,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			_ = json.Unmarshal([]byte(raw), &list)
 			return list
 		},
-		Config: &agent.LoopConfig{
-			Name:                   cfg.Name,
-			GenesisPrompt:          cfg.GenesisPrompt,
-			CreatorMsg:             cfg.CreatorAddress,
-			InferenceModel:         cfg.InferenceModel,
-			LowComputeModel:        cfg.LowComputeModel,
-			ResourceConstraintMode: cfg.ResourceConstraintMode,
-			WalletAddress:          primaryAddr,
-			SkillsConfig:           cfg.Skills,
-			TokenLimits:            tokenLimitsFromConfig(cfg),
-			ContextLimitForModel:   contextLimitForModelFromConfig(cfg),
-		},
+		Config: agent.BuildLoopConfig(cfg, &agent.BuildLoopConfigOpts{WalletAddress: primaryAddr}),
 		CreditsFn: creditsFn,
 		FallbackSender: func(ctx context.Context, claimedIds []string) {
 			for _, id := range claimedIds {
@@ -306,7 +304,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 			ToolsLister:        reg,
 			TunnelManager:      tunnelMgr,
 			TunnelReloader:     func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
-			InferenceReloader:  func(cfg *types.AutomatonConfig) { infHolder.Reload(cfg) },
+			InferenceReloader: func(cfg *types.AutomatonConfig) {
+				infHolder.Reload(cfg)
+				if modelRouter != nil {
+					modelRouter.Reload()
+				}
+			},
 			SkillsConfigGetter: func() *types.SkillsConfig { return cfg.Skills },
 			LatencyProber:      inference.NewLatencyProber(),
 			TestLatencyRL:      ratelimit.NewMemoryRateLimiter(cooldown),
@@ -328,6 +331,11 @@ func runRun(cmd *cobra.Command, args []string) error {
 		slog.Info("shutdown signal received")
 		cancel()
 	}()
+
+	if memSvc != nil {
+		_ = memSvc.StartBackground(ctx)
+		defer memSvc.Stop()
+	}
 
 	channelMgr.Start(ctx)
 	defer channelMgr.Close()
