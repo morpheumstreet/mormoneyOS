@@ -7,27 +7,26 @@
 
 services:
   mormoneyos:
-    image: morpheumstreet/mormoneyos:latest
+    image: sorajez/mormoneyos:latest
     depends_on:
       - mirofish
     environment:
       - MIROFISH_BASE_URL=http://mirofish:5001
     volumes:
-      - ~/.automaton:/root/.automaton
+      - /home/your_username/clawlaundry/moneyman1:/data
     ports:
-      - "8080:8080"
-    networks:
-      - money-net
+      - "20010:8080"
 
   mirofish:
     # Uncomment one:
     # build: ../MiroFish
-    image: morpheumstreet/mirofish:latest
+    image: ghcr.io/666ghj/mirofish:latest
+    container_name: mirofish
+    restart: unless-stopped
+    env_file:
+      - .env
     ports:
-      - "5001:5001"
-    networks:
-      - money-net
+      - "20011:5001"
 
-networks:
-  money-net:
-    driver: bridge
+    volumes:
+      - /path/to/morpheum_konwledges:/app/backend/uploads
