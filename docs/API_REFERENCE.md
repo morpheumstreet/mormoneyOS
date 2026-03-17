@@ -37,6 +37,7 @@ mormoneyOS integrates with several API surfaces:
 | Method | Path | Status | Description | Response Shape |
 |--------|------|--------|-------------|----------------|
 | GET | `/api/status` | ✅ Implemented | Agent runtime status, credits, identity | `{ is_running, state, tick_count, wallet_value, today_pnl, dry_run, address, chain, name, version, running, paused, agent_state, tick }` |
+| GET | `/api/version` | ✅ Implemented | Build version, commit, tag (no auth) | `{ version, commit, build_time }` |
 | GET | `/api/strategies` | ✅ Implemented | Skills + children from DB (or hardcoded fallback) | `[{ name, description, risk_level, enabled }, ...]` |
 | GET | `/api/history` | ⚠️ Placeholder | Memory/history — returns `[]` | `[]` |
 | GET | `/api/cost` | ✅ Implemented | Inference cost summary (when `inference_costs` exists) | `{ today_cost, today_calls, total_cost, over_budget, by_layer, calls_by_layer }` |

@@ -67,7 +67,9 @@ type ServerConfig struct {
 	WalletAddress   string
 	CreatorAddress  string // Only this address may pass login wallet verification
 	DefaultChain    string // CAIP-2, e.g. eip155:8453
-	Version       string
+	Version         string
+	Commit          string // Git short hash from build
+	BuildTime       string // Build timestamp from build
 	CreditsGetter CreditsGetter
 	JWTSecret     string // For issuing tokens on wallet verify; if empty, a random one is used (tokens invalid on restart)
 	ChatClient    inference.Client // Optional; when set, Agent Comm Link uses LLM for chat
@@ -139,6 +141,7 @@ func (s *Server) routes() {
 
 	// API (aligned with moneyclaw-py)
 	s.mux.HandleFunc("GET /api/status", s.handleAPIStatus)
+	s.mux.HandleFunc("GET /api/version", s.handleAPIVersion)
 	s.mux.HandleFunc("GET /api/strategies", s.handleAPIStrategies)
 	s.mux.HandleFunc("GET /api/history", s.handleAPIHistory)
 	s.mux.HandleFunc("GET /api/cost", s.handleAPICost)
@@ -324,6 +327,25 @@ func (s *Server) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"paused":        paused,
 		"agent_state":   agentState,
 		"tick":          tickNum,
+	})
+}
+
+func (s *Server) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
+	version := Version
+	commit := ""
+	buildTime := ""
+	if s.Cfg != nil {
+		if s.Cfg.Version != "" {
+			version = s.Cfg.Version
+		}
+		commit = s.Cfg.Commit
+		buildTime = s.Cfg.BuildTime
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"version":    version,
+		"commit":     commit,
+		"build_time": buildTime,
 	})
 }
 

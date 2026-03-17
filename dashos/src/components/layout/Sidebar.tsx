@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { ChevronsLeftRightEllipsis, X } from 'lucide-react';
 import { useStorageSync } from '@/hooks/useStorageSync';
 import { getVisibleSidebarItems, SIDEBAR_NAV_CHANGE_EVENT } from '@/lib/sidebarNav';
+import { getVersion, type VersionResponse } from '@/lib/api';
 
 const COLLAPSE_BUTTON_DELAY_MS = 1000;
 
@@ -15,11 +16,18 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse }: SidebarProps) {
   const [showCollapseButton, setShowCollapseButton] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
   const navItems = useStorageSync(getVisibleSidebarItems, SIDEBAR_NAV_CHANGE_EVENT);
 
   useEffect(() => {
     const id = setTimeout(() => setShowCollapseButton(true), COLLAPSE_BUTTON_DELAY_MS);
     return () => clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    getVersion()
+      .then(setVersionInfo)
+      .catch(() => setVersionInfo(null));
   }, []);
 
   return (
@@ -121,6 +129,22 @@ export default function Sidebar({ isOpen, isCollapsed, onClose, onToggleCollapse
           <p className={isCollapsed ? 'text-[10px] uppercase tracking-widest' : 'mt-1 text-[#5f84cc]'}>
             {isCollapsed ? 'UI' : 'Command Center'}
           </p>
+          {versionInfo && (
+            <p
+              className={[
+                'mt-2 truncate font-mono text-[10px] text-[#4a6ba8]',
+                isCollapsed ? 'hidden md:block md:truncate' : '',
+              ].join(' ')}
+              title={
+                [versionInfo.version, versionInfo.commit, versionInfo.build_time]
+                  .filter(Boolean)
+                  .join(' · ') || undefined
+              }
+            >
+              {versionInfo.version || 'dev'}
+              {versionInfo.commit ? ` · ${versionInfo.commit}` : ''}
+            </p>
+          )}
         </div>
       </aside>
     </>

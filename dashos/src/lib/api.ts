@@ -95,6 +95,20 @@ async function fetchGet<T>(
   return res.json() as Promise<T>;
 }
 
+/** Version info (commit, tag) — no auth required */
+export interface VersionResponse {
+  version?: string;
+  commit?: string;
+  build_time?: string;
+}
+
+export function getVersion(): Promise<VersionResponse> {
+  return fetch(API + "/version").then((r) => {
+    if (!r.ok) throw new Error(r.statusText);
+    return r.json();
+  });
+}
+
 /** Read-only endpoints (no auth required by mormoneyOS) */
 export function getStatus(): Promise<StatusResponse> {
   return fetch(API + "/status").then((r) => {
