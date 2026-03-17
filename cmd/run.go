@@ -19,6 +19,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
+	"github.com/morpheumlabs/mormoneyos-go/internal/mirofish"
 	"github.com/morpheumlabs/mormoneyos-go/internal/ratelimit"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
@@ -171,19 +172,24 @@ func runRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// 6. Agent loop (full ReAct when inference+store configured)
+	var serviceProviders []tools.ServiceProvider
+	if cfg.MiroFish != nil && cfg.MiroFish.Enabled {
+		serviceProviders = append(serviceProviders, mirofish.NewServiceProvider(cfg.MiroFish))
+	}
 	reg := tools.NewRegistryWithOptions(&tools.RegistryOptions{
-		Store:          db,
-		Conway:         conwayClient,
-		Name:           cfg.Name,
-		ParentAddress:  primaryAddr,
-		GenesisPrompt:  cfg.GenesisPrompt,
-		Config:         cfg,
-		ConfigTools:    cfg.Tools,
-		InstalledDB:    db,
-		PluginPaths:    cfg.PluginPaths,
-		Channels:       channels,
-		TunnelManager:  tunnelMgr,
-		TunnelRegistry: tunnelReg,
+		Store:            db,
+		Conway:           conwayClient,
+		Name:             cfg.Name,
+		ParentAddress:    primaryAddr,
+		GenesisPrompt:    cfg.GenesisPrompt,
+		Config:           cfg,
+		ConfigTools:      cfg.Tools,
+		InstalledDB:      db,
+		PluginPaths:      cfg.PluginPaths,
+		Channels:         channels,
+		TunnelManager:     tunnelMgr,
+		TunnelRegistry:   tunnelReg,
+		ServiceProviders: serviceProviders,
 	})
 	reflectionEngine := agent.NewReflectionEngine(modelRouter, slog.Default())
 	loop := agent.NewLoopWithOptions(agent.LoopOptions{

@@ -40,6 +40,7 @@ type AutomatonConfig struct {
 	GenesisPrompt      string         `json:"genesisPrompt"`
 	CreatorMessage     string         `json:"creatorMessage,omitempty"`
 	CreatorAddress     string         `json:"creatorAddress"`
+	GuestAccessEnabled bool           `json:"guestAccessEnabled"`
 	SandboxID          string         `json:"sandboxId"`
 	Provider           string         `json:"provider,omitempty"` // "openai", "conway", "ollama", "groq", etc.
 	ConwayAPIURL       string         `json:"conwayApiUrl"`

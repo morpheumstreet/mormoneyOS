@@ -153,6 +153,11 @@ internal/
 
   conway/                  Conway API integration
     client.go              ConwayClient (sandbox ops, credits, models)
+
+  mirofish/                Swarm intelligence / foresight oracle
+    client.go              HTTP client for MiroFish API
+    tool.go                mirofish tool (run_simulation, get_report, inject, chat, heartbeat)
+    provider.go            ServiceProvider registration
     credits.go             Survival tier calculation
     usdc.go                USDC balance queries
     x402.go                x402 payment protocol
@@ -321,6 +326,7 @@ The automaton has **built-in tools** (real implementations + stubs for TS parity
 |---|---|---|
 | **vm** | `exec` (shell), `write_file`, `read_file`, `expose_port`, `remove_port`, `tunnel_status` | — |
 | **conway** | `check_credits`, `check_usdc_balance`, `list_sandboxes`, `list_models`, `switch_model`, `create_sandbox`, `delete_sandbox`, `transfer_credits` | `topup_credits`, `search_domains`, `register_domain`, `manage_dns` |
+| **mirofish** | `mirofish` (run_simulation, get_report, inject_variable, chat_with_agent, test_connection) | — |
 | **self_mod** | `edit_own_file`, `install_npm_package`, `review_upstream_changes`, `pull_upstream`, `modify_heartbeat` | `install_mcp_server` |
 | **survival** | `sleep`, `system_synopsis`, `heartbeat_ping`, `distress_signal`, `enter_low_compute`, `update_genesis_prompt` | — |
 | **financial** | `transfer_credits` (Conway) | `x402_fetch` |
@@ -332,6 +338,17 @@ The automaton has **built-in tools** (real implementations + stubs for TS parity
 | **social** | `send_message` (when Channels configured) | — |
 
 *Note: `transfer_credits` is implemented via Conway API. Stubs remain for tools not yet ported (domains, x402_fetch, ERC-8004, install_mcp_server).*
+
+**ServiceProvider pattern:** External capabilities (Conway, MiroFish, Tunnel) register tools via `ServiceProvider`:
+
+```go
+type ServiceProvider interface {
+    Name() string
+    Tools() []Tool
+}
+```
+
+`internal/mirofish/` is a domain package: HTTP client (`client.go`), tool (`tool.go`), and `ServiceProvider` (`provider.go`). Config in `automaton.json` under `"mirofish": { "enabled": true, "base_url": "..." }`; env overrides `MIROFISH_BASE_URL`, `MIROFISH_ENABLED`, etc. Runtime config via `POST /api/config/mirofish`.
 
 Each tool has a `riskLevel`: `safe`, `caution`, `dangerous`, or `forbidden`. Every tool call flows through the policy engine before execution.
 
@@ -797,6 +814,7 @@ cmd/moneyclaw/main.go
   +-> internal/agent/       # ReAct loop, policy engine
   +-> internal/heartbeat/   # Daemon, tasks, scheduler
   +-> internal/conway/      # HTTP client, credits, USDC, x402
+  +-> internal/mirofish/   # Swarm foresight oracle (ServiceProvider)
   +-> internal/state/       # Database, schema, migrations
   +-> internal/memory/      # 5-tier retrieval (DBMemoryRetriever)
   +-> internal/soul/        # Reflection pipeline

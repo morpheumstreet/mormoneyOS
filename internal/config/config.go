@@ -63,6 +63,9 @@ func Load() (*types.AutomatonConfig, error) {
 	if v, ok := raw["creatorAddress"].(string); ok {
 		cfg.CreatorAddress = v
 	}
+	if v, ok := raw["guestAccessEnabled"].(bool); ok {
+		cfg.GuestAccessEnabled = v
+	}
 	if v, ok := raw["sandboxId"].(string); ok {
 		cfg.SandboxID = v
 	}

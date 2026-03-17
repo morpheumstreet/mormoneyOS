@@ -5,11 +5,13 @@ import Layout from "@/components/layout/Layout";
 import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
 import ConfigLayout from "@/components/config/ConfigLayout";
+import ConfigAuth from "@/pages/config/ConfigAuth";
 import ConfigGeneral from "@/pages/config/ConfigGeneral";
 import ConfigTools from "@/pages/config/ConfigTools";
 import ConfigSocial from "@/pages/config/ConfigSocial";
 import ConfigHeartbeat from "@/pages/config/ConfigHeartbeat";
 import ConfigTunnel from "@/pages/config/ConfigTunnel";
+import ConfigMiroFish from "@/pages/config/ConfigMiroFish";
 import ConfigModelList from "@/pages/config/ConfigModelList";
 import ConfigEconomic from "@/pages/config/ConfigEconomic";
 import ConfigWallet from "@/pages/config/ConfigWallet";
@@ -18,8 +20,7 @@ import ConfigLayoutSettings from "@/pages/config/ConfigLayoutSettings";
 import Skills from "@/pages/Skills";
 
 function AppContent() {
-  const { address, hasWriteAccess } = useWalletAuth();
-  const isAuthenticated = !!address && hasWriteAccess;
+  const { isAuthenticated } = useWalletAuth();
 
   if (!isAuthenticated) {
     return <WalletConnectScreen />;
@@ -35,10 +36,12 @@ function AppContent() {
           <Route index element={<Navigate to="/config/general" replace />} />
           <Route path="layout" element={<ConfigLayoutSettings />} />
           <Route path="general" element={<ConfigGeneral />} />
+          <Route path="auth" element={<ConfigAuth />} />
           <Route path="tools" element={<ConfigTools />} />
           <Route path="social" element={<ConfigSocial />} />
           <Route path="heartbeat" element={<ConfigHeartbeat />} />
           <Route path="tunnel" element={<ConfigTunnel />} />
+          <Route path="mirofish" element={<ConfigMiroFish />} />
           <Route path="model-list" element={<ConfigModelList />} />
           <Route path="economic" element={<ConfigEconomic />} />
           <Route path="wallet/:index" element={<ConfigWallet />} />

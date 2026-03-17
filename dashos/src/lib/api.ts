@@ -165,6 +165,63 @@ export function putConfig(config: string): Promise<void> {
   });
 }
 
+/** MiroFish config (swarm intelligence / foresight layer) */
+export interface MiroFishConfig {
+  enabled: boolean;
+  base_url: string;
+  timeout_seconds: number;
+  default_llm: string;
+  max_agents: number;
+}
+
+export function getMiroFishConfig(): Promise<MiroFishConfig> {
+  return fetch(API + "/config/mirofish").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "MiroFish config API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export function putMiroFishConfig(config: Partial<MiroFishConfig>): Promise<{ status: string; base_url: string }> {
+  return apiFetch<{ status: string; base_url: string }>("/config/mirofish", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+/** Auth config (dashboard sign-in: creator address restriction) */
+export interface AuthConfig {
+  creator_address: string;
+  guest_access_enabled?: boolean;
+}
+
+export function getAuthConfig(): Promise<AuthConfig> {
+  return fetch(API + "/config/auth").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Auth config API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+/** Public endpoint: check if guest login is available (no auth required, no sensitive data) */
+export function getAuthConfigGuestEnabled(): Promise<{ guest_access_enabled: boolean }> {
+  return fetch(API + "/config/auth/guest-enabled").then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Auth config API not available" : r.statusText);
+    return r.json();
+  });
+}
+
+export interface PutAuthConfigResponse {
+  status: string;
+  creator_address: string;
+  guest_access_enabled?: boolean;
+}
+
+export function putAuthConfig(config: Partial<AuthConfig>): Promise<PutAuthConfigResponse> {
+  return apiFetch<PutAuthConfigResponse>("/config/auth", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
 /** Economic (wallets, USDC balances, treasury policy, constraint mode) */
 export interface EconomicAddress {
   address: string;

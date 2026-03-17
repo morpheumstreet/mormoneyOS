@@ -11,6 +11,7 @@ export function useStorageSync<T>(
   const [value, setValue] = useState(getValue);
 
   useEffect(() => {
+    setValue(getValue());
     const handler = () => setValue(getValue());
     window.addEventListener(changeEvent, handler);
     return () => window.removeEventListener(changeEvent, handler);

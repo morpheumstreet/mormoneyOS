@@ -148,7 +148,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/chat", s.handleAPIChat)
 	s.mux.HandleFunc("GET /api/config", s.handleAPIConfigGet)
 	s.mux.HandleFunc("PUT /api/config", s.handleAPIConfigPut)
+	s.mux.HandleFunc("GET /api/config/mirofish", s.handleAPIConfigMiroFishGet)
 	s.mux.HandleFunc("POST /api/config/mirofish", s.handleAPIConfigMiroFishPut)
+	s.mux.HandleFunc("GET /api/config/auth", s.handleAPIConfigAuthGet)
+	s.mux.HandleFunc("GET /api/config/auth/guest-enabled", s.handleAPIConfigAuthGuestEnabledGet)
+	s.mux.HandleFunc("POST /api/config/auth", s.handleAPIConfigAuthPut)
 	s.mux.HandleFunc("POST /api/auth/verify", s.handleAPIAuthVerify)
 	if os.Getenv("MONEYCLAW_DEV_BYPASS") == "1" {
 		s.mux.HandleFunc("POST /api/auth/dev-bypass", s.handleAPIAuthDevBypass)
@@ -526,6 +530,118 @@ func (s *Server) handleAPIConfigPut(w http.ResponseWriter, r *http.Request) {
 		s.Cfg.InferenceReloader(&cfg)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAPIConfigMiroFishGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("config mirofish: load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	mf := &types.MiroFishConfig{
+		Enabled:        false,
+		BaseURL:        "http://localhost:5001",
+		TimeoutSeconds: 300,
+		DefaultLLM:    "qwen-plus",
+		MaxAgents:      2000,
+	}
+	if cfg != nil && cfg.MiroFish != nil {
+		mf = cfg.MiroFish
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(mf)
+}
+
+func (s *Server) handleAPIConfigAuthGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("config auth: load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	creatorAddr := ""
+	guestEnabled := false
+	if cfg != nil {
+		creatorAddr = cfg.CreatorAddress
+		guestEnabled = cfg.GuestAccessEnabled
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"creator_address":      creatorAddr,
+		"guest_access_enabled": guestEnabled,
+	})
+}
+
+// handleAPIConfigAuthGuestEnabledGet returns only guest_access_enabled. Public endpoint for unauthenticated users to check if guest login is available.
+func (s *Server) handleAPIConfigAuthGuestEnabledGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("config auth guest: load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	guestEnabled := false
+	if cfg != nil {
+		guestEnabled = cfg.GuestAccessEnabled
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"guest_access_enabled": guestEnabled})
+}
+
+func (s *Server) handleAPIConfigAuthPut(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CreatorAddress     string `json:"creator_address"`
+		GuestAccessEnabled *bool  `json:"guest_access_enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		s.Log.Error("config auth: load failed", "err", err)
+		http.Error(w, "Config not available", http.StatusInternalServerError)
+		return
+	}
+	if cfg == nil {
+		cfg = &types.AutomatonConfig{}
+	}
+	cfg.CreatorAddress = strings.TrimSpace(body.CreatorAddress)
+	if body.GuestAccessEnabled != nil {
+		cfg.GuestAccessEnabled = *body.GuestAccessEnabled
+	}
+	if s.Cfg != nil && s.Cfg.ConfigPtr != nil {
+		s.Cfg.ConfigPtr.CreatorAddress = cfg.CreatorAddress
+		s.Cfg.ConfigPtr.GuestAccessEnabled = cfg.GuestAccessEnabled
+	}
+	if err := config.Save(cfg); err != nil {
+		s.Log.Error("config auth: save failed", "err", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":               "updated",
+		"creator_address":      cfg.CreatorAddress,
+		"guest_access_enabled": cfg.GuestAccessEnabled,
+	})
 }
 
 func (s *Server) handleAPIConfigMiroFishPut(w http.ResponseWriter, r *http.Request) {

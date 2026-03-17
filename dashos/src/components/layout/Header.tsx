@@ -20,16 +20,18 @@ export default function Header({
   onToggleSidebarCollapse,
 }: HeaderProps) {
   const location = useLocation();
-  const { address, isAuthenticated, disconnect } = useWalletAuth();
+  const { address, isGuest, isAuthenticated, disconnect } = useWalletAuth();
   const pageTitle =
     routeTitles[location.pathname] ??
     (location.pathname.startsWith('/config') ? 'Config' : 'Dashboard');
 
-  const shortAddress = address
-    ? address.length > 12
-      ? `${address.slice(0, 6)}…${address.slice(-4)}`
-      : address
-    : '—';
+  const shortAddress = isGuest
+    ? 'Guest'
+    : address
+      ? address.length > 12
+        ? `${address.slice(0, 6)}…${address.slice(-4)}`
+        : address
+      : '—';
 
   return (
     <header className="glass-header relative flex min-h-[4.5rem] flex-wrap items-center justify-between gap-2 border border-[#1a3670] px-4 py-3 sm:px-5 sm:py-3.5 md:flex-nowrap md:px-8 md:py-4">
@@ -69,7 +71,7 @@ export default function Header({
         {isAuthenticated && (
           <div className="flex items-center gap-2 rounded-lg border border-[#2b4f97] bg-[#091937]/75 px-2.5 py-1.5 text-xs text-[#c4d8ff]">
             <Wallet className="h-3.5 w-3.5" />
-            <span className="font-mono">{shortAddress}</span>
+            <span className={isGuest ? '' : 'font-mono'}>{shortAddress}{isGuest ? ' (read-only)' : ''}</span>
           </div>
         )}
 

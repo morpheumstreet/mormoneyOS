@@ -1,27 +1,21 @@
-package tools
+package mirofish
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
 
+	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
 	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
-// MiroFishTool triggers MiroFish swarm intelligence functions (simulate markets, run predictions, get reports, chat with digital crowd).
-// Register when MiroFish is enabled in config.
-type MiroFishTool struct {
-	client *http.Client
+// Tool triggers MiroFish swarm intelligence (simulate markets, run predictions, get reports, chat with digital crowd).
+type Tool struct {
+	client Client
 	cfg    *types.MiroFishConfig
 }
 
-// NewMiroFishTool creates a MiroFish tool from config.
-func NewMiroFishTool(cfg *types.MiroFishConfig) *MiroFishTool {
+// NewTool creates a MiroFish tool from config.
+func NewTool(cfg *types.MiroFishConfig) *Tool {
 	if cfg == nil {
 		cfg = &types.MiroFishConfig{
 			Enabled:        true,
@@ -31,19 +25,18 @@ func NewMiroFishTool(cfg *types.MiroFishConfig) *MiroFishTool {
 			MaxAgents:      2000,
 		}
 	}
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 300 * time.Second
-	}
-	return &MiroFishTool{
-		client: &http.Client{Timeout: timeout},
+	return &Tool{
+		client: NewHTTPClient(cfg),
 		cfg:    cfg,
 	}
 }
 
-func (t *MiroFishTool) Name() string        { return "mirofish" }
-func (t *MiroFishTool) Description() string { return "Trigger MiroFish swarm intelligence: run simulations, get ReportAgent output, inject variables, chat with digital crowd. Use for market predictions, foresight, and rehearsal before betting." }
-func (t *MiroFishTool) Parameters() string {
+// Ensure Tool implements tools.Tool.
+var _ tools.Tool = (*Tool)(nil)
+
+func (t *Tool) Name() string        { return "mirofish" }
+func (t *Tool) Description() string { return "Trigger MiroFish swarm intelligence: run simulations, get ReportAgent output, inject variables, chat with digital crowd. Use for market predictions, foresight, and rehearsal before betting." }
+func (t *Tool) Parameters() string {
 	return `{
 		"type": "object",
 		"properties": {
@@ -70,7 +63,7 @@ func (t *MiroFishTool) Parameters() string {
 	}`
 }
 
-func (t *MiroFishTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (t *Tool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t.cfg == nil || !t.cfg.Enabled {
 		return "", fmt.Errorf("MiroFish not configured or disabled")
 	}
@@ -98,7 +91,7 @@ func (t *MiroFishTool) Execute(ctx context.Context, args map[string]any) (string
 		payload["max_agents"] = t.cfg.MaxAgents
 	}
 
-	// Map action to MiroFish API path (common conventions)
+	// Map action to MiroFish API path
 	path := action
 	switch action {
 	case "run_simulation":
@@ -113,34 +106,15 @@ func (t *MiroFishTool) Execute(ctx context.Context, args map[string]any) (string
 		path = "heartbeat"
 	}
 
-	url := strings.TrimSuffix(t.cfg.BaseURL, "/") + "/api/" + path
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := t.client.Do(req)
+	respBody, statusCode, err := t.client.Call(ctx, path, payload)
 	if err != nil {
 		return "", fmt.Errorf("MiroFish request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
+	if statusCode >= 400 {
+		return "", fmt.Errorf("MiroFish %s: %s (status %d)", action, string(respBody), statusCode)
 	}
 
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("MiroFish %s: %s (status %d)", action, string(respBody), resp.StatusCode)
-	}
-
-	// Return clean JSON for agent memory
 	if len(respBody) == 0 {
 		return `{"status":"ok","action":"` + action + `"}`, nil
 	}

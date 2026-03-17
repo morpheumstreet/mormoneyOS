@@ -1,9 +1,15 @@
 import { NavLink } from "react-router-dom";
 import { useStorageSync } from "@/hooks/useStorageSync";
-import { getVisibleNavItems, CONFIG_NAV_CHANGE_EVENT } from "@/lib/configNav";
+import { getVisibleNavItems, getVisibleNavItemsForGuest, CONFIG_NAV_CHANGE_EVENT } from "@/lib/configNav";
+import { useWalletAuth } from "@/contexts/WalletAuthContext";
 
 export default function ConfigSubNav() {
-  const items = useStorageSync(getVisibleNavItems, CONFIG_NAV_CHANGE_EVENT);
+  const { isGuest } = useWalletAuth();
+  const baseItems = useStorageSync(
+    isGuest ? getVisibleNavItemsForGuest : getVisibleNavItems,
+    CONFIG_NAV_CHANGE_EVENT
+  );
+  const items = baseItems;
 
   return (
     <nav className="config-sub-nav relative flex items-center gap-1 overflow-x-auto border-b border-[#1a3670] bg-[#050d1f]/95 px-4 py-2 backdrop-blur-sm md:px-6">

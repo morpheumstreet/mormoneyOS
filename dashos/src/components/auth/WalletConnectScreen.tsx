@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getBestWallet } from "@/sdk/utils/extdetection";
 import { useWalletAuth } from "@/contexts/WalletAuthContext";
+import { getAuthConfigGuestEnabled } from "@/lib/api";
 
 const isDev = import.meta.env.DEV;
 
 export function WalletConnectScreen() {
-  const { connectAndSign, bypassDev, error, isConnecting, isSigning } =
+  const { connectAndSign, connectAsGuest, bypassDev, error, isConnecting, isSigning } =
     useWalletAuth();
   const [submitting, setSubmitting] = useState(false);
+  const [guestEnabled, setGuestEnabled] = useState(false);
+
+  useEffect(() => {
+    getAuthConfigGuestEnabled()
+      .then((r) => setGuestEnabled(r.guest_access_enabled))
+      .catch(() => setGuestEnabled(false));
+  }, []);
 
   const walletAvailable = !!getBestWallet("ethereum");
   const loading = isConnecting || isSigning || submitting;
@@ -32,6 +40,10 @@ export function WalletConnectScreen() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleGuestLogin = () => {
+    connectAsGuest();
   };
 
   return (
@@ -63,6 +75,16 @@ export function WalletConnectScreen() {
                   : "Connecting..."
                 : "Connect Wallet & Sign"}
             </button>
+            {guestEnabled && (
+              <button
+                type="button"
+                onClick={handleGuestLogin}
+                disabled={loading}
+                className="w-full rounded-xl border border-[#2956a8] bg-[#071228]/60 py-2.5 text-sm font-medium text-[#9bb8e8] hover:bg-[#071228] disabled:opacity-50"
+              >
+                Continue as Guest (read-only)
+              </button>
+            )}
             {isDev && (
               <button
                 type="button"
@@ -81,6 +103,16 @@ export function WalletConnectScreen() {
                 No Ethereum wallet detected. Install MetaMask, Phantom, or another supported wallet extension.
               </p>
             </div>
+            {guestEnabled && (
+              <button
+                type="button"
+                onClick={handleGuestLogin}
+                disabled={loading}
+                className="w-full rounded-xl border border-[#2956a8] bg-[#071228]/60 py-2.5 text-sm font-medium text-[#9bb8e8] hover:bg-[#071228] disabled:opacity-50"
+              >
+                Continue as Guest (read-only)
+              </button>
+            )}
             {isDev && (
               <button
                 type="button"

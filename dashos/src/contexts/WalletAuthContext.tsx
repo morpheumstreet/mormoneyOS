@@ -18,11 +18,13 @@ export interface WalletAuthState {
   isSigning: boolean;
   error: string | null;
   hasWriteAccess: boolean;
+  isGuest: boolean;
 }
 
 interface WalletAuthContextValue extends WalletAuthState {
   isAuthenticated: boolean;
   connectAndSign: () => Promise<void>;
+  connectAsGuest: () => void;
   bypassDev: () => Promise<void>;
   disconnect: () => void;
 }
@@ -125,6 +127,7 @@ export function WalletAuthProvider({ children }: { children: ReactNode }) {
     isSigning: false,
     error: null,
     hasWriteAccess: false,
+    isGuest: false,
   });
 
   const disconnect = useCallback(() => {
@@ -136,6 +139,20 @@ export function WalletAuthProvider({ children }: { children: ReactNode }) {
       isSigning: false,
       error: null,
       hasWriteAccess: false,
+      isGuest: false,
+    });
+  }, []);
+
+  const connectAsGuest = useCallback(() => {
+    clearToken();
+    setState({
+      address: null,
+      walletName: null,
+      isConnecting: false,
+      isSigning: false,
+      error: null,
+      hasWriteAccess: false,
+      isGuest: true,
     });
   }, []);
 
@@ -263,8 +280,9 @@ export function WalletAuthProvider({ children }: { children: ReactNode }) {
     <WalletAuthContext.Provider
       value={{
         ...state,
-        isAuthenticated: !!state.address && state.hasWriteAccess,
+        isAuthenticated: (!!state.address && state.hasWriteAccess) || state.isGuest,
         connectAndSign,
+        connectAsGuest,
         bypassDev,
         disconnect,
       }}

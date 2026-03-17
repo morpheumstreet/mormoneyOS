@@ -27,6 +27,13 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]any) (string, error)
 }
 
+// ServiceProvider is implemented by domain packages (Conway, MiroFish, Tunnel, etc.)
+// that contribute tools to the registry. Single registration path for external capabilities.
+type ServiceProvider interface {
+	Name() string
+	Tools() []Tool
+}
+
 // Registry maps tool names to implementations.
 type Registry struct {
 	tools map[string]Tool
@@ -34,19 +41,20 @@ type Registry struct {
 
 // RegistryOptions configures tool registration (Store, Conway, Name, extension points).
 type RegistryOptions struct {
-	Store           ToolStore
-	Conway          conway.Client
-	Name            string
-	ParentAddress   string               // For spawn_child (wallet address)
-	GenesisPrompt   string               // For spawn_child
-	Config          *types.AutomatonConfig // Optional; for check_usdc_balance (chainProviders, defaultChain)
-	SocialClient    SocialClient          // For message_child; nil = stub. If Channels has conway, used to build this.
-	Channels        map[string]social.SocialChannel // Social channels (conway, telegram, discord); enables send_message
-	ConfigTools     []types.ConfigToolDef // Tools from config (extension point)
-	InstalledDB     InstalledToolDB       // DB installed_tools (extension point); can be same as Store when Store is *state.Database
-	PluginPaths     []string              // Paths to .so plugin dirs (extension point)
-	TunnelManager   *tunnel.TunnelManager  // When set, register expose_port, remove_port, tunnel_status
-	TunnelRegistry  *tunnel.ProviderRegistry
+	Store            ToolStore
+	Conway           conway.Client
+	Name             string
+	ParentAddress    string               // For spawn_child (wallet address)
+	GenesisPrompt    string               // For spawn_child
+	Config           *types.AutomatonConfig // Optional; for check_usdc_balance (chainProviders, defaultChain)
+	SocialClient     SocialClient          // For message_child; nil = stub. If Channels has conway, used to build this.
+	Channels         map[string]social.SocialChannel // Social channels (conway, telegram, discord); enables send_message
+	ConfigTools      []types.ConfigToolDef // Tools from config (extension point)
+	InstalledDB      InstalledToolDB       // DB installed_tools (extension point); can be same as Store when Store is *state.Database
+	PluginPaths      []string              // Paths to .so plugin dirs (extension point)
+	TunnelManager    *tunnel.TunnelManager  // When set, register expose_port, remove_port, tunnel_status
+	TunnelRegistry   *tunnel.ProviderRegistry
+	ServiceProviders []ServiceProvider     // Conway, MiroFish, Tunnel, etc. — single path for external capabilities
 }
 
 // InstalledToolDB provides installed tools from DB (extension point).
@@ -116,9 +124,9 @@ func NewRegistryWithOptions(opts *RegistryOptions) *Registry {
 				ig, _ = opts.Store.(identity.IdentityGetter)
 			}
 			r.Register(&CheckUSDCBalanceTool{Config: opts.Config, IdentityGetter: ig})
-			if opts.Config.MiroFish != nil && opts.Config.MiroFish.Enabled {
-				r.Register(NewMiroFishTool(opts.Config.MiroFish))
-			}
+		}
+		for _, sp := range opts.ServiceProviders {
+			r.RegisterMany(sp.Tools())
 		}
 		if opts.Conway != nil {
 			r.RegisterMany(NewConwayTools(opts.Conway))
