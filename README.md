@@ -34,6 +34,14 @@ MORMONEYOS_BOT=research MORMONEYOS_PORT=8081  curl -fsSL https://raw.githubuserc
 
 ---
 
+## LLM Setup (Local Models)
+
+The agent requires an **OpenAI-compatible API endpoint** (local or remote). For **local models**, hardware, model choice, and backend configuration matter to avoid issues like empty responses or prefill-limit errors.
+
+See **[LLM Setup Requirements](docs/llm-requirement.md)** for hardware recommendations, model choices (e.g. Qwen 3.5 35B-A3B MoE, DeepSeek-R1 Distill), Ollama setup, and `automaton.json` configuration.
+
+---
+
 ## Commands
 
 | Command | Description |
