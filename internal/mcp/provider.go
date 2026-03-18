@@ -2,49 +2,69 @@
 package mcp
 
 import (
-	"github.com/morpheumlabs/mormoneyos-go/internal/marketplace/adapter"
-	"github.com/morpheumlabs/mormoneyos-go/internal/marketplace/usecase"
+	mkt "github.com/morpheumlabs/mormoneyos-go/internal/marketplace"
 	"github.com/morpheumlabs/mormoneyos-go/internal/mcp/tools/marketplace"
+	migrateuc "github.com/morpheumlabs/mormoneyos-go/internal/migration/usecase"
+	"github.com/morpheumlabs/mormoneyos-go/internal/state"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
+	"github.com/morpheumlabs/mormoneyos-go/internal/types"
 )
 
+// ServiceProviderOptions configures Phase 2 real adapters.
+type ServiceProviderOptions struct {
+	SkillsConfig *types.SkillsConfig
+	DB           *state.Database // For ListMySkills + Install; nil = stubs
+}
+
 // ServiceProvider implements tools.ServiceProvider for Mormaegis marketplace tools.
-// Registers the 7 mormaegis.* tools wired to marketplace usecases (Phase 1: stub ports).
+// Phase 2: uses real RegistryAdapter, ScannerAdapter, OnChainAdapter when options provided.
 type ServiceProvider struct {
-	reg    *adapter.StubRegistry
-	scan   *adapter.StubScanner
-	tools  []tools.Tool
+	tools []tools.Tool
 }
 
 // NewServiceProvider creates the Mormaegis MCP service provider.
-// Phase 1 uses stub registry/scanner; Phase 2 will accept real port implementations.
+// Phase 1: stub adapters when no options. Phase 2: real adapters when opts provided.
 func NewServiceProvider() *ServiceProvider {
-	reg := &adapter.StubRegistry{}
-	scan := &adapter.StubScanner{}
+	return NewServiceProviderWithOptions(nil)
+}
 
-	searchUC := &usecase.SearchSkills{Registry: reg, Scanner: scan}
-	getSkillUC := &usecase.GetSkill{Registry: reg, Scanner: scan}
-	installUC := &usecase.InstallSkill{Registry: reg}
-	negotiateUC := &usecase.NegotiateOffer{Registry: reg, OnChain: nil}
-	claimUC := &usecase.ClaimReward{Registry: reg}
-	securityUC := &usecase.SecurityReport{Scanner: scan}
-	mySkillsUC := &usecase.MySkills{Registry: reg}
+// NewServiceProviderWithOptions creates provider with real adapters when opts.DB and opts.SkillsConfig set.
+func NewServiceProviderWithOptions(opts *ServiceProviderOptions) *ServiceProvider {
+	svc := mkt.NewService(
+		func() *types.SkillsConfig {
+			if opts != nil {
+				return opts.SkillsConfig
+			}
+			return nil
+		}(),
+		func() *state.Database {
+			if opts != nil {
+				return opts.DB
+			}
+			return nil
+		}(),
+	)
 
 	toolList := []tools.Tool{
-		&marketplace.SearchTool{UseCase: searchUC},
-		&marketplace.GetSkillTool{UseCase: getSkillUC},
-		&marketplace.InstallTool{UseCase: installUC},
-		&marketplace.NegotiateTool{UseCase: negotiateUC},
-		&marketplace.ClaimRewardTool{UseCase: claimUC},
-		&marketplace.SecurityReportTool{UseCase: securityUC},
-		&marketplace.MySkillsTool{UseCase: mySkillsUC},
+		&marketplace.SearchTool{UseCase: svc.SearchSkills},
+		&marketplace.GetSkillTool{UseCase: svc.GetSkill},
+		&marketplace.InstallTool{UseCase: svc.InstallSkill},
+		&marketplace.NegotiateTool{UseCase: svc.NegotiateOffer},
+		&marketplace.ClaimRewardTool{UseCase: svc.ClaimReward},
+		&marketplace.SecurityReportTool{UseCase: svc.SecurityReport},
+		&marketplace.MySkillsTool{UseCase: svc.MySkills},
 	}
 
-	return &ServiceProvider{
-		reg:   reg,
-		scan:  scan,
-		tools: toolList,
+	// Optional: mormaegis.migrate when DB + config available
+	if opts != nil && opts.DB != nil {
+		migrateUC := &migrateuc.MigrateAgent{Store: opts.DB, Config: opts.SkillsConfig}
+		if migrateUC.Config == nil {
+			migrateUC.Config = &types.SkillsConfig{}
+		}
+		toolList = append(toolList, &marketplace.MigrateTool{UseCase: migrateUC})
 	}
+
+	return &ServiceProvider{tools: toolList}
 }
 
 // Name returns the provider name.

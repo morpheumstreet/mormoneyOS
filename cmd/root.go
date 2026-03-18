@@ -5,6 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/morpheumlabs/mormoneyos-go/internal/migration/cli"
 )
 
 const (
@@ -41,6 +43,7 @@ Subcommands:
   pause      Pause agent (via web API)
   resume     Resume agent
   init       Initialize config directory
+  migrate    One-click OpenClaw → MormOS migration (SOUL.md + skills)
   test-api      Verify inference API connectivity (ChatJimmy, etc.)
   test-telegram Verify Telegram bot connectivity and message flow
 `,
@@ -74,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(provisionCmd)
+	rootCmd.AddCommand(cli.MigrateCmd)
 
 	rootCmd.Version = version
 	if buildTime != "" || commit != "" {

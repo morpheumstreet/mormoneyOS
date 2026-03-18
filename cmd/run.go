@@ -18,6 +18,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/heartbeat"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
+	"github.com/morpheumlabs/mormoneyos-go/internal/marketplace"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
 	"github.com/morpheumlabs/mormoneyos-go/internal/mcp"
 	"github.com/morpheumlabs/mormoneyos-go/internal/mirofish"
@@ -180,7 +181,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 		conwayForTools = conwayClient
 	}
 	var serviceProviders []tools.ServiceProvider
-	serviceProviders = append(serviceProviders, mcp.NewServiceProvider())
+	serviceProviders = append(serviceProviders, mcp.NewServiceProviderWithOptions(&mcp.ServiceProviderOptions{
+		SkillsConfig: cfg.Skills,
+		DB:           db,
+	}))
 	if cfg.MiroFish != nil && cfg.MiroFish.Enabled {
 		serviceProviders = append(serviceProviders, mirofish.NewServiceProvider(cfg.MiroFish))
 	}
@@ -328,9 +332,10 @@ func runRun(cmd *cobra.Command, args []string) error {
 					modelRouter.Reload()
 				}
 			},
-			SkillsConfigGetter: func() *types.SkillsConfig { return cfg.Skills },
-			LatencyProber:      inference.NewLatencyProber(),
-			TestLatencyRL:      ratelimit.NewMemoryRateLimiter(cooldown),
+			SkillsConfigGetter:   func() *types.SkillsConfig { return cfg.Skills },
+			MarketplaceService:   marketplace.NewService(cfg.Skills, db),
+			LatencyProber:        inference.NewLatencyProber(),
+			TestLatencyRL:        ratelimit.NewMemoryRateLimiter(cooldown),
 		}, slog.Default())
 		go func() {
 			if err := webSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

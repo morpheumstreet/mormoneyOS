@@ -23,6 +23,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
+	"github.com/morpheumlabs/mormoneyos-go/internal/marketplace"
 	"github.com/morpheumlabs/mormoneyos-go/internal/mcp"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify"
@@ -82,6 +83,7 @@ type ServerConfig struct {
 	TunnelReloader      func(cfg *types.TunnelConfig) // Optional; when set, POST /api/tunnels/providers/{name}/restart reloads providers
 	InferenceReloader  func(cfg *types.AutomatonConfig) // Optional; when set, config save triggers inference client reload (no restart)
 	SkillsConfigGetter func() *types.SkillsConfig     // Optional; when set, skills API uses this for registry config (DI)
+	MarketplaceService *marketplace.Service          // Optional; when set, /api/marketplace/* handlers use same usecases as MCP (DRY)
 	LatencyProber      inference.LatencyProber        // Optional; when set, POST /api/models/test-latency measures response time (auth + rate limit required)
 	TestLatencyRL      ratelimit.RateLimiter         // Optional; when set, enforces cooldown between test-latency requests
 }
@@ -198,6 +200,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/skills/{name}", s.handleAPISkillsDelete)
 	s.mux.HandleFunc("PATCH /api/skills/{name}/activate", s.handleAPISkillsActivate)
 	s.mux.HandleFunc("PATCH /api/skills/{name}/deactivate", s.handleAPISkillsDeactivate)
+
+	// Marketplace API (Mormaegis) — same usecases as MCP, human dashboard
+	s.mux.HandleFunc("GET /api/marketplace/search", s.handleAPIMarketplaceSearch)
+	s.mux.HandleFunc("GET /api/marketplace/skills/{id}", s.handleAPIMarketplaceSkill)
+	s.mux.HandleFunc("POST /api/marketplace/install", s.handleAPIMarketplaceInstall)
+	s.mux.HandleFunc("GET /api/marketplace/my-skills", s.handleAPIMarketplaceMySkills)
+	s.mux.HandleFunc("GET /api/marketplace/security-report", s.handleAPIMarketplaceSecurityReport)
 
 	// MCP (Model Context Protocol) — agent-native tool discovery and execution at /mcp
 	var exec mcp.Executor

@@ -20,16 +20,17 @@ func (t *NegotiateTool) Description() string {
 	return "Post or counter-offer on a skill"
 }
 func (t *NegotiateTool) Parameters() string {
-	return `{"type":"object","properties":{"offer_id":{"type":"string"},"morm_amount":{"type":"number"}},"required":["morm_amount"]}`
+	return `{"type":"object","properties":{"skill_id":{"type":"string","description":"Skill ID for new offer"},"offer_id":{"type":"string","description":"Offer ID for counter-offer"},"morm_amount":{"type":"number","description":"MORM amount"}},"required":["morm_amount"]}`
 }
 
 func (t *NegotiateTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	skillID, _ := args["skill_id"].(string)
 	offerID, _ := args["offer_id"].(string)
 	mormAmount := 0.0
 	if m, ok := args["morm_amount"].(float64); ok {
 		mormAmount = m
 	}
-	offer, err := t.UseCase.Execute(ctx, offerID, mormAmount)
+	offer, err := t.UseCase.Execute(ctx, skillID, offerID, mormAmount)
 	if err != nil {
 		return "", err
 	}
