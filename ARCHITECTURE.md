@@ -238,6 +238,19 @@ internal/
     cloudflare.go, ngrok.go, localtunnel.go, tailscale.go
     store.go, command.go   Tunnel config storage
 
+  marketplace/             Clean Architecture core domain (Mormaegis)
+    entity/                Pure data models (skill, offer, deal, reward_claim)
+    usecase/               Business logic (search, install, negotiate, claim_reward)
+    port/                  Interfaces (ScannerPort, OnChainPort, RegistryPort)
+    dto/                   Shared request/response (DRY with REST)
+
+  mcp/                     MCP (Model Context Protocol) adapter
+    handler.go             GET /mcp/tools, POST /mcp (execute)
+    provider.go            Mormaegis ServiceProvider (7 mormaegis.* tools)
+    protocol/              MCP spec types, tool schema
+    dto/                   Request/Response models (DRY with REST)
+    tools/                 Bridge to Tool Registry; marketplace tools (Phase 1+)
+
   skills/                  Skill system
     loader.go              Load .md skills from directory
     format.go              Frontmatter serialization
@@ -252,7 +265,7 @@ internal/
     types.go               AutomatonConfig, SurvivalTier, TreasuryPolicy, etc.
 
   web/                     HTTP dashboard
-    server.go              HTTP server, REST API
+    server.go              HTTP server, REST API, /mcp routes
     wallet_api.go, heartbeat_api.go, skills_api.go
     static/index.html      Embedded Command Center UI
 

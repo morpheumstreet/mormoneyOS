@@ -19,6 +19,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/memory"
+	"github.com/morpheumlabs/mormoneyos-go/internal/mcp"
 	"github.com/morpheumlabs/mormoneyos-go/internal/mirofish"
 	"github.com/morpheumlabs/mormoneyos-go/internal/ratelimit"
 	"github.com/morpheumlabs/mormoneyos-go/internal/replication"
@@ -179,6 +180,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		conwayForTools = conwayClient
 	}
 	var serviceProviders []tools.ServiceProvider
+	serviceProviders = append(serviceProviders, mcp.NewServiceProvider())
 	if cfg.MiroFish != nil && cfg.MiroFish.Enabled {
 		serviceProviders = append(serviceProviders, mirofish.NewServiceProvider(cfg.MiroFish))
 	}
@@ -317,6 +319,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 			CreditsGetter:      creditsGetter,
 			ChatClient:         infClient,
 			ToolsLister:        reg,
+			Executor:           reg,
 			TunnelManager:      tunnelMgr,
 			TunnelReloader:     func(tc *types.TunnelConfig) { tunnelMgr.Reload(tc) },
 			InferenceReloader: func(cfg *types.AutomatonConfig) {

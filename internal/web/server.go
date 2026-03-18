@@ -23,6 +23,7 @@ import (
 	"github.com/morpheumlabs/mormoneyos-go/internal/config"
 	"github.com/morpheumlabs/mormoneyos-go/internal/conway"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity"
+	"github.com/morpheumlabs/mormoneyos-go/internal/mcp"
 	"github.com/morpheumlabs/mormoneyos-go/internal/inference"
 	"github.com/morpheumlabs/mormoneyos-go/internal/identity/signverify"
 	"github.com/morpheumlabs/mormoneyos-go/internal/social"
@@ -74,6 +75,9 @@ type ServerConfig struct {
 	JWTSecret     string // For issuing tokens on wallet verify; if empty, a random one is used (tokens invalid on restart)
 	ChatClient    inference.Client // Optional; when set, Agent Comm Link uses LLM for chat
 	ToolsLister    ToolsLister       // Optional; when set, GET /api/tools and PATCH /api/tools/:name work
+	Executor       interface {       // Optional; when set with ToolsLister, MCP POST /mcp can execute tools
+		Execute(ctx context.Context, name string, args map[string]any) (string, error)
+	}
 	TunnelManager  *tunnel.TunnelManager // Optional; when set, GET /api/tunnels returns active tunnels
 	TunnelReloader      func(cfg *types.TunnelConfig) // Optional; when set, POST /api/tunnels/providers/{name}/restart reloads providers
 	InferenceReloader  func(cfg *types.AutomatonConfig) // Optional; when set, config save triggers inference client reload (no restart)
@@ -194,6 +198,21 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/skills/{name}", s.handleAPISkillsDelete)
 	s.mux.HandleFunc("PATCH /api/skills/{name}/activate", s.handleAPISkillsActivate)
 	s.mux.HandleFunc("PATCH /api/skills/{name}/deactivate", s.handleAPISkillsDeactivate)
+
+	// MCP (Model Context Protocol) — agent-native tool discovery and execution at /mcp
+	var exec mcp.Executor
+	if s.Cfg != nil && s.Cfg.Executor != nil {
+		if e, ok := s.Cfg.Executor.(mcp.Executor); ok {
+			exec = e
+		}
+	}
+	var lister mcp.ToolsLister
+	if s.Cfg != nil {
+		lister = s.Cfg.ToolsLister
+	}
+	mcpHandler := mcp.NewHandler(lister, exec, s.Log)
+	s.mux.HandleFunc("GET /mcp/tools", mcpHandler.ToolsList)
+	s.mux.HandleFunc("POST /mcp", mcpHandler.Execute)
 
 	// Heartbeat schedule API
 	s.mux.HandleFunc("GET /api/heartbeat", s.handleAPIHeartbeatList)
