@@ -18,6 +18,7 @@ import ConfigWallet from "@/pages/config/ConfigWallet";
 import ConfigSoul from "@/pages/config/ConfigSoul";
 import ConfigLayoutSettings from "@/pages/config/ConfigLayoutSettings";
 import Skills from "@/pages/Skills";
+import Marketplace from "@/pages/Marketplace";
 
 function AppContent() {
   const { isAuthenticated } = useWalletAuth();
@@ -32,6 +33,7 @@ function AppContent() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/skills" element={<Skills />} />
+        <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/config" element={<ConfigLayout />}>
           <Route index element={<Navigate to="/config/general" replace />} />
           <Route path="layout" element={<ConfigLayoutSettings />} />

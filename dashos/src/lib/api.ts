@@ -840,6 +840,70 @@ export function patchSkillDeactivate(name: string): Promise<{ name: string; enab
   });
 }
 
+/** Mormaegis Marketplace (ClawHub + MORM rewards) */
+export interface MarketplaceSkill {
+  id: string;
+  name: string;
+  description?: string;
+  price_morm?: number;
+  badges?: string[];
+  permissions?: Record<string, unknown>;
+  security_hash?: string;
+  mirofish_preview?: string;
+  perp_ready?: boolean;
+}
+
+export interface MarketplaceSearchResponse {
+  skills: MarketplaceSkill[];
+}
+
+export interface MarketplaceSkillResponse {
+  skill: MarketplaceSkill;
+}
+
+export interface MarketplaceInstallResponse {
+  result: string;
+}
+
+export function getMarketplaceSearch(params?: { q?: string; filter?: string }): Promise<MarketplaceSearchResponse> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set("q", params.q);
+  if (params?.filter) search.set("filter", params.filter);
+  const qs = search.toString();
+  return fetch(`${API}/marketplace/search${qs ? `?${qs}` : ""}`).then((r) => {
+    if (!r.ok) throw new Error(r.status === 503 ? "Marketplace not configured" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getMarketplaceSkill(id: string): Promise<MarketplaceSkillResponse> {
+  return fetch(API + "/marketplace/skills/" + encodeURIComponent(id)).then((r) => {
+    if (!r.ok) throw new Error(r.status === 404 ? "Skill not found" : r.statusText);
+    return r.json();
+  });
+}
+
+export function postMarketplaceInstall(body: { skill_id: string; agent_card_sig?: string }): Promise<MarketplaceInstallResponse> {
+  return apiFetch<MarketplaceInstallResponse>("/marketplace/install", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getMarketplaceMySkills(): Promise<MarketplaceSearchResponse> {
+  return fetch(API + "/marketplace/my-skills").then((r) => {
+    if (!r.ok) throw new Error(r.status === 503 ? "Marketplace not configured" : r.statusText);
+    return r.json();
+  });
+}
+
+export function getMarketplaceSecurityReport(hash: string): Promise<{ report: string }> {
+  return fetch(API + "/marketplace/security-report?hash=" + encodeURIComponent(hash)).then((r) => {
+    if (!r.ok) throw new Error(r.statusText);
+    return r.json();
+  });
+}
+
 /** Wallet (mnemonic-derived, multi-chain; no mnemonic/keys exposed) */
 const WALLET_PATH = "/wallet";
 

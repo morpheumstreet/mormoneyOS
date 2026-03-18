@@ -5,6 +5,9 @@ import { useWalletAuth } from '@/contexts/WalletAuthContext';
 const routeTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/agent': 'Agent Chat',
+  '/reports': 'Reports',
+  '/skills': 'Skills',
+  '/marketplace': 'Marketplace',
   '/config': 'Config',
 };
 

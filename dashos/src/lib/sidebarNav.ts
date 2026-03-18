@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Puzzle,
   Settings,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 import { createVisibilityStorage } from "./storageVisibility";
@@ -19,6 +20,7 @@ export const SIDEBAR_NAV_ITEMS: SidebarNavItem[] = [
   { id: "dashboard", to: "/", icon: LayoutDashboard, label: "Dashboard", alwaysVisible: true },
   { id: "reports", to: "/reports", icon: FileText, label: "Reports" },
   { id: "skills", to: "/skills", icon: Puzzle, label: "Skills" },
+  { id: "marketplace", to: "/marketplace", icon: Store, label: "Marketplace" },
   { id: "config", to: "/config", icon: Settings, label: "Config", alwaysVisible: true },
 ];
 
