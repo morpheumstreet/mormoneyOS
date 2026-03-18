@@ -1,3 +1,8 @@
 // Package port defines interfaces for Dependency Inversion.
-// Phase 1 will add ScannerPort, OnChainPort, RegistryPort.
 package port
+
+// ScannerPort provides security scanning and badge resolution.
+type ScannerPort interface {
+	GetBadges(securityHash string) []string
+	GetReport(hash string) (string, error)
+}

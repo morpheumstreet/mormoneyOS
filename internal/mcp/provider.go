@@ -2,18 +2,49 @@
 package mcp
 
 import (
+	"github.com/morpheumlabs/mormoneyos-go/internal/marketplace/adapter"
+	"github.com/morpheumlabs/mormoneyos-go/internal/marketplace/usecase"
+	"github.com/morpheumlabs/mormoneyos-go/internal/mcp/tools/marketplace"
 	"github.com/morpheumlabs/mormoneyos-go/internal/tools"
 )
 
-const phase1Msg = "Mormaegis marketplace tool — Phase 1 implementation coming soon."
-
 // ServiceProvider implements tools.ServiceProvider for Mormaegis marketplace tools.
-// Registers the 7 mormaegis.* tools as stubs; Phase 1 will wire to marketplace usecases.
-type ServiceProvider struct{}
+// Registers the 7 mormaegis.* tools wired to marketplace usecases (Phase 1: stub ports).
+type ServiceProvider struct {
+	reg    *adapter.StubRegistry
+	scan   *adapter.StubScanner
+	tools  []tools.Tool
+}
 
 // NewServiceProvider creates the Mormaegis MCP service provider.
+// Phase 1 uses stub registry/scanner; Phase 2 will accept real port implementations.
 func NewServiceProvider() *ServiceProvider {
-	return &ServiceProvider{}
+	reg := &adapter.StubRegistry{}
+	scan := &adapter.StubScanner{}
+
+	searchUC := &usecase.SearchSkills{Registry: reg, Scanner: scan}
+	getSkillUC := &usecase.GetSkill{Registry: reg, Scanner: scan}
+	installUC := &usecase.InstallSkill{Registry: reg}
+	negotiateUC := &usecase.NegotiateOffer{Registry: reg, OnChain: nil}
+	claimUC := &usecase.ClaimReward{Registry: reg}
+	securityUC := &usecase.SecurityReport{Scanner: scan}
+	mySkillsUC := &usecase.MySkills{Registry: reg}
+
+	toolList := []tools.Tool{
+		&marketplace.SearchTool{UseCase: searchUC},
+		&marketplace.GetSkillTool{UseCase: getSkillUC},
+		&marketplace.InstallTool{UseCase: installUC},
+		&marketplace.NegotiateTool{UseCase: negotiateUC},
+		&marketplace.ClaimRewardTool{UseCase: claimUC},
+		&marketplace.SecurityReportTool{UseCase: securityUC},
+		&marketplace.MySkillsTool{UseCase: mySkillsUC},
+	}
+
+	return &ServiceProvider{
+		reg:   reg,
+		scan:  scan,
+		tools: toolList,
+	}
 }
 
 // Name returns the provider name.
@@ -21,50 +52,7 @@ func (p *ServiceProvider) Name() string {
 	return "mormaegis"
 }
 
-// Tools returns the 7 mormaegis marketplace tools (stubs until Phase 1).
+// Tools returns the 7 mormaegis marketplace tools.
 func (p *ServiceProvider) Tools() []tools.Tool {
-	return []tools.Tool{
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.search",
-			ToolDesc:   "Search for Perp Trading Skills, Mirofish Decision Packs, or Prediction Resolution Skills",
-			ToolParams: `{"type":"object","properties":{"query":{"type":"string"},"filter":{"type":"string"}}}`,
-			Message:    phase1Msg,
-		},
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.get_skill",
-			ToolDesc:   "Get full skill details + security report + Mirofish preview",
-			ToolParams: `{"type":"object","properties":{"skill_id":{"type":"string"}}}`,
-			Message:    phase1Msg,
-		},
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.install",
-			ToolDesc:   "Trigger safe install with permission manifest check",
-			ToolParams: `{"type":"object","properties":{"skill_id":{"type":"string"},"agent_card_sig":{"type":"string"}}}`,
-			Message:    phase1Msg,
-		},
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.negotiate",
-			ToolDesc:   "Post or counter-offer on a skill",
-			ToolParams: `{"type":"object","properties":{"offer_id":{"type":"string"},"morm_amount":{"type":"number"}}}`,
-			Message:    phase1Msg,
-		},
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.claim_reward",
-			ToolDesc:   "Claim micro MORM reward after safe install/run",
-			ToolParams: `{"type":"object","properties":{"skill_id":{"type":"string"},"run_proof":{"type":"string"}}}`,
-			Message:    phase1Msg,
-		},
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.security_report",
-			ToolDesc:   "View full static + mwvm scanner result",
-			ToolParams: `{"type":"object","properties":{"hash":{"type":"string"}}}`,
-			Message:    phase1Msg,
-		},
-		&tools.UnimplementedTool{
-			ToolName:   "mormaegis.my_skills",
-			ToolDesc:   "Publisher dashboard — list published skills + earnings",
-			ToolParams: `{"type":"object","properties":{}}`,
-			Message:    phase1Msg,
-		},
-	}
+	return p.tools
 }
